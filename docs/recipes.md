@@ -1,10 +1,8 @@
 # Recipes
 
-Practical solutions for common caching scenarios.
-
 ## Session Storage
 
-Use Valkey/Redis for Django sessions:
+Store Django sessions in Valkey or Redis:
 
 ```python
 # settings.py
@@ -19,7 +17,7 @@ CACHES = {
 }
 ```
 
-For dedicated session storage with longer TTL:
+To give sessions their own alias and a longer TTL:
 
 ```python
 CACHES = {
@@ -39,7 +37,7 @@ SESSION_CACHE_ALIAS = "sessions"
 
 ## Rate Limiting
 
-Simple rate limiter using sorted sets:
+A rate limiter on a sorted set:
 
 ```python
 import time
@@ -47,16 +45,7 @@ from django.core.cache import cache
 
 
 def is_rate_limited(user_id: str, limit: int = 100, window: int = 60) -> bool:
-    """Check if user has exceeded rate limit.
-
-    Args:
-        user_id: Unique identifier for the user
-        limit: Maximum requests allowed in window
-        window: Time window in seconds
-
-    Returns:
-        True if rate limited, False otherwise
-    """
+    """Record one request and return True if the user is over the limit."""
     key = f"ratelimit:{user_id}"
     now = time.time()
     window_start = now - window
@@ -80,7 +69,7 @@ def is_rate_limited(user_id: str, limit: int = 100, window: int = 60) -> bool:
 
 ### Pattern-based deletion
 
-Delete all keys matching a pattern:
+Delete every key that matches a pattern:
 
 ```python
 from django.core.cache import cache
@@ -94,10 +83,9 @@ cache.delete_pattern("api:*:response")
 
 ### Versioned cache keys
 
-Invalidate entire cache groups by incrementing a version counter. The counter
-is created with `add()` before it is incremented, and stored with
-`timeout=None` so it cannot expire while the data keys it namespaces are
-still alive:
+Invalidate a group of keys by incrementing a version counter. The counter is
+created with `add()` before the increment. It has `timeout=None`, so it cannot
+expire while the data keys it namespaces are alive:
 
 ```python
 from django.core.cache import cache
@@ -131,19 +119,18 @@ def get_user_data(user_id: int) -> dict:
     return data
 ```
 
-The `add()` is what makes the recipe portable. On the Valkey/Redis backends
-`incr()` on a missing key creates it at `delta`, so without the `add()` the
-first invalidation would leave the counter at `1`, the same value a missing
-key reads as, and the stale `v1` data would keep being served. On
-`LocMemCache` and `DatabaseCache` `incr()` on a missing key raises
-`ValueError`. With the counter created at `1` first, the increment moves it
-to `2` on every backend.
+On the Valkey and Redis backends, `incr()` on a missing key creates it at
+`delta`. Without the `add()`, the first invalidation would leave the counter at
+`1`, the value a missing key reads as, and the stale `v1` data would still be
+served. On `LocMemCache` and `DatabaseCache`, `incr()` on a missing key raises
+`ValueError`. With the counter created at `1` first, the increment moves it to
+`2` on every backend.
 
 ## Distributed Locking
 
-Prevent concurrent execution of critical sections. `lease` is the TTL of
-the held lock (auto-released if the holder crashes); `timeout` is the
-maximum time `acquire()` waits before giving up:
+A lock keeps a critical section from running concurrently. `lease` is the TTL
+of the held lock, so the lock is released if the holder crashes. `timeout` is
+the longest time `acquire()` waits:
 
 ```python
 from django.core.cache import cache
@@ -151,7 +138,7 @@ from django.core.cache import cache
 with cache.lock("process-payments", lease=30):
     process_pending_payments()
 
-# Or, to bound how long we wait for the lock:
+# Or bound the wait for the lock:
 lock = cache.lock("process-payments", lease=30, timeout=5)
 if lock.acquire():
     try:
@@ -160,25 +147,25 @@ if lock.acquire():
         lock.release()
 ```
 
-The redis-py and valkey-py backends hand back a thin wrapper around the
-driver's lock object, so `acquire()` there takes the driver's
-`blocking_timeout` name; failures raise `django_cachex.lock.LockError` with
-the driver's error as `__cause__`. Setting `timeout` on `cache.lock()` works
-across every backend.
+On the redis-py and valkey-py backends, `cache.lock()` returns a wrapper around
+the driver's lock. Its `acquire()` takes the driver's `blocking_timeout`
+argument, and its failures raise `django_cachex.lock.LockError` with the
+driver's error as `__cause__`. `timeout` on `cache.lock()` works on every
+backend with locks.
 
 ## Gate Memory-Heavy Work With a Weighted Semaphore
 
-When a worker pod has a limited memory budget but multiple task types compete for it, a weighted semaphore lets each caller declare how much it intends to consume. A task blocks while the budget cannot accommodate its weight. Admission is FIFO: a large task that is waiting holds back the smaller tasks queued behind it, even when their weight would fit, so the queue cannot starve the large task.
+A weighted semaphore shares a budget, such as a worker's memory, between tasks of different sizes. Each caller declares its weight and blocks while the budget has no room for it. Admission is FIFO. A waiting large task holds back the smaller tasks queued behind it, even when their weight would fit, so they cannot starve it.
 
 ```python
 from django.core.cache import cache
 
-# Stay under 500 MB across all callers; this task uses ~100 MB.
+# 500 MB budget across all callers. This task uses ~100 MB.
 with cache.semaphore("memory-pool", weight=100, capacity=500, lease=300):
     convert_huge_image(...)
 ```
 
-If `acquire()` should give up after some bounded wait, pass `timeout`:
+To bound the wait in `acquire()`, pass `timeout`:
 
 ```python
 from django_cachex import SemaphoreTimeoutError
@@ -204,11 +191,11 @@ async with await cache.asemaphore("memory-pool", weight=100, capacity=500, lease
     await convert_async(...)
 ```
 
-On RESP backends, `lease` is required and acts as a TTL on the held claim: if the worker crashes mid-task, the next acquirer reclaims the budget after the lease expires. Use `sem.extend(seconds)` to bump the TTL for tasks that may legitimately exceed their original lease.
+On the RESP backends, `lease` is required. It is the TTL of the held claim, so if a worker crashes mid-task, the next acquirer reclaims the budget after the lease expires. For a task that can run longer than its lease, call `sem.extend(seconds)`.
 
 ## Development Without a Server
 
-For local development without a running server, use `LocMemCache`:
+For local development without a server, use `LocMemCache`:
 
 ```python
 # settings_dev.py
@@ -223,12 +210,10 @@ CACHES = {
 `django_cachex.cache.LocMemCache` extends Django's built-in `LocMemCache`
 with the hash, list, set and sorted-set commands (`hset`, `lpush`, `zadd` and
 the rest), the `ttl()` / `expire()` / `persist()` helpers, and admin support.
-It has no streams, locks, pipelines or Lua;
-[Local backends](user-guide/configuration.md#local-backends) lists the exact
-surface, and
-[LocMemCache vs fakeredis](development/locmem-vs-fakeredis.md) covers the
-performance comparison and rationale.
+It has no streams, locks, pipelines or Lua.
+[Local backends](user-guide/configuration.md#local-backends) lists what it
+supports.
 
 !!! tip "For testing"
-    django-cachex uses [testcontainers](https://testcontainers.com/) for its test suite.
-    Consider using the same approach for accurate behavior in your tests.
+    django-cachex runs its test suite with [testcontainers](https://testcontainers.com/).
+    Use it in your tests for accurate server behavior.

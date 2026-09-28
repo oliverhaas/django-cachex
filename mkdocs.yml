@@ -75,5 +75,3 @@ nav:
       - API: reference/api.md
       - Benchmarks: reference/benchmarks.md
       - Changelog: reference/changelog.md
-  - Development:
-      - LocMemCache vs fakeredis: development/locmem-vs-fakeredis.md

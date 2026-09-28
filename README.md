@@ -25,24 +25,24 @@ CACHES = {
 
 ## What's in the box
 
-- One package for both Valkey and Redis, default and Sentinel and Cluster.
-- Sync and async support sharing one configuration: every cache exposes both `get()` and `aget()`, backed by the same alias.
-- Hash, list, set, sorted set, and stream operations on the cache object.
+- One package for Valkey and Redis, standalone, Sentinel and Cluster.
+- Sync and async methods on every cache, such as `get()` and `aget()`, from one alias and one configuration.
+- Hash, list, set, sorted set and stream operations on the cache object.
 - TTL and pattern helpers (`ttl()`, `expire()`, `keys()`, `delete_pattern()`).
-- Distributed locks: `cache.lock()`.
-- Weighted semaphores: `cache.semaphore()` for budget-based concurrency gating (counting and weighted, in-process and distributed).
-- Lua scripting via `eval_script()`, with optional hooks for key prefixing and value encoding/decoding.
-- Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with fallback chains for safe migrations.
+- Distributed locks with `cache.lock()`.
+- Counting and weighted semaphores with `cache.semaphore()`, in-process or distributed, to cap concurrent work at a budget.
+- Lua scripting with `eval_script()`, with optional hooks for key prefixing and value encoding and decoding.
+- Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with a fallback chain to migrate between formats.
 - Cache stampede prevention (TTL-based XFetch).
-- `TrackingCache`, a local read cache over a Redis/Valkey alias, invalidated by the server's `CLIENT TRACKING` or bounded by a local TTL.
-- An opt-in ORM cache, `django_cachex.orm`: ORM query results cached per table and invalidated by every write, derived from django-cachalot with write leases that keep a write from leaving a stale result behind.
-- Django `LocMemCache` and `DatabaseCache` extensions with the hash, list, set and sorted set ops, `ttl()`/`expire()`/`persist()`, key patterns, and admin support (no streams, locks, pipelines or Lua).
-- Optional `valkey-glide` adapter: Valkey's official Rust-cored client, exposed as `ValkeyGlideCache`. Experimental.
-- Django admin UI for browsing keys, inspecting values, editing, and flushing. See below.
+- `TrackingCache`, a local read cache over a Redis or Valkey alias, invalidated by the server's `CLIENT TRACKING` or bounded by a local TTL.
+- An opt-in [ORM cache](https://oliverhaas.github.io/django-cachex/latest/user-guide/orm-cache/), `django_cachex.orm`, derived from django-cachalot. It caches ORM query results per table and invalidates them on every write. Write leases keep a write from leaving a stale result behind.
+- `LocMemCache` and `DatabaseCache` extensions with the hash, list, set and sorted set operations, `ttl()`/`expire()`/`persist()`, key patterns and admin support. They have no streams, locks, pipelines or Lua.
+- An experimental `ValkeyGlideCache` backend on `valkey-glide`, Valkey's official client with a Rust core.
+- A Django admin UI to browse keys, inspect and edit values, and flush caches.
 
 ## Cache Admin
 
-Add `django_cachex.admin` to your `INSTALLED_APPS` to enable the cache admin interface:
+Add `django_cachex.admin` to `INSTALLED_APPS` to enable the cache admin:
 
 ```python
 INSTALLED_APPS = [
@@ -51,20 +51,14 @@ INSTALLED_APPS = [
 ]
 ```
 
-Browse all configured caches, search and filter keys by type, and manage values directly:
+The admin lists every configured cache (Valkey, Redis, `LocMemCache`, `DatabaseCache` and others).
+The key browser searches keys with wildcard patterns such as `user:*` or `*:session`.
+It filters keys by type: string, list, set, hash, zset or stream.
+The admin also edits values with type-specific operations, reads and changes TTLs, shows server info and memory statistics, and flushes caches.
 
 ![Cache list](https://raw.githubusercontent.com/oliverhaas/django-cachex/main/docs/assets/screenshot-cache-list.png)
 ![Key list](https://raw.githubusercontent.com/oliverhaas/django-cachex/main/docs/assets/screenshot-key-list.png)
 ![Key detail](https://raw.githubusercontent.com/oliverhaas/django-cachex/main/docs/assets/screenshot-key-detail.png)
-
-Features:
-- Browse all configured cache backends (Valkey, Redis, LocMemCache, DatabaseCache, and more)
-- Search keys with wildcard patterns (`user:*`, `*:session`)
-- Filter by key type (string, list, set, hash, zset, stream)
-- View and edit values with type-specific operations
-- Inspect and modify TTL
-- View server info and memory statistics
-- Flush caches
 
 ## Documentation
 
@@ -81,21 +75,21 @@ Full documentation at [oliverhaas.github.io/django-cachex](https://oliverhaas.gi
 - valkey-py 6.1 to 6.x (`valkey>=6.1,<7`) or redis-py 7.2 to 8.x (`redis>=7.2,<9`)
 - Valkey 7.2+ or Redis 6.2+ on the server. `set(get=True)` and the
   immediate-expiry conditional writes (`add()` and `set(nx=/xx=/get=)` with
-  `timeout=0`) send `SET ... GET` and `SET ... PXAT`, both Redis 6.2 commands;
+  `timeout=0`) send `SET ... GET` and `SET ... PXAT`, both Redis 6.2 commands.
   `set(nx=True, get=True)` and `expiretime()` need Redis 7.0+
 - Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and `hsetex`/`hgetex`
-  Valkey 9.0+ or Redis 8.0+; older servers raise `NotSupportedError` for those
+  Valkey 9.0+ or Redis 8.0+. Older servers raise `NotSupportedError` for those
   methods
 
-The `valkey-glide` adapter is optional and experimental: interfaces and
-behavior may still change, and it has seen less production testing than
-the redis-py/valkey-py paths. Install with the `valkey-glide` extra
-(`pip install django-cachex[valkey-glide]`) to enable
-`ValkeyGlideCache`; it pulls in `valkey-glide-sync` and `valkey-glide`
-(2.5 to 2.x), the official Rust-cored Valkey client. cp314 GIL only; no
-free-threaded wheels yet. Cluster is supported via
-`ValkeyGlideClusterCache`; Sentinel is not currently exposed
-(`valkey-glide` itself does not ship a Sentinel client).
+The `valkey-glide` adapter is optional and experimental. Its interfaces and
+behavior can change, and it has less production testing than the redis-py
+and valkey-py backends. The `valkey-glide` extra
+(`pip install django-cachex[valkey-glide]`) enables `ValkeyGlideCache` and
+installs `valkey-glide-sync` and `valkey-glide` (2.5 to 2.x), Valkey's
+official client with a Rust core. The adapter needs the cp314 GIL build,
+because `valkey-glide` publishes no free-threaded wheels.
+`ValkeyGlideClusterCache` supports Cluster. The adapter has no Sentinel
+backend, because `valkey-glide` does not ship a Sentinel client.
 
 ## Acknowledgments
 

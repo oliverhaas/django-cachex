@@ -13,46 +13,37 @@ CACHES = {
 
 ## Backend Classes
 
-All backends live in `django_cachex.cache`. See the [configuration reference](../user-guide/configuration.md#backend-classes) for the full table.
-
-**Valkey / Redis (Python driver, default):**
+All backends live in `django_cachex.cache`. The valkey-py and redis-py backends are the default. The [configuration reference](../user-guide/configuration.md#backend-classes) has the full table.
 
 | Backend | Description |
 |---------|-------------|
-| `ValkeyCache` / `RedisCache` | Standard connection |
-| `ValkeySentinelCache` / `RedisSentinelCache` | Sentinel high availability |
-| `ValkeyClusterCache` / `RedisClusterCache` | Cluster sharding |
-
-**Other adapters:**
-
-| Backend | Description |
-|---------|-------------|
-| `ValkeyGlideCache` | valkey-glide (opt-in via `valkey-glide` extra; experimental) |
-| `ValkeyGlideClusterCache` | Cluster sharding via valkey-glide (same extra; experimental) |
+| `ValkeyCache` / `RedisCache` | Standard connection (valkey-py / redis-py) |
+| `ValkeySentinelCache` / `RedisSentinelCache` | Sentinel high availability (valkey-py / redis-py) |
+| `ValkeyClusterCache` / `RedisClusterCache` | Cluster sharding (valkey-py / redis-py) |
+| `ValkeyGlideCache` | Standard connection through valkey-glide (`valkey-glide` extra, experimental) |
+| `ValkeyGlideClusterCache` | Cluster sharding through valkey-glide (same extra, experimental) |
 | `LocMemCache` | Drop-in replacement for Django's `LocMemCache` |
 | `DatabaseCache` | Drop-in replacement for Django's `DatabaseCache` |
-| `TrackingCache` | Local read cache over a Redis/Valkey alias, kept coherent by `CLIENT TRACKING` |
+| `TrackingCache` | Local read cache over a Redis or Valkey alias, kept coherent by `CLIENT TRACKING` |
 
-!!! note "Valkey and Redis Compatibility"
-    Valkey and Redis are protocol-compatible, so either backend works with either server.
-    Prefer Valkey: it remains fully open source.
+Valkey and Redis are protocol-compatible, so either backend works with either server.
+Prefer Valkey, which remains fully open source.
 
 ## Connection URL Formats
 
-Uses the valkey-py/redis-py native URL notation:
+`LOCATION` uses the valkey-py and redis-py URL notation:
 
-- `valkey://[[username]:[password]]@localhost:6379/0` - Valkey TCP connection
-- `redis://[[username]:[password]]@localhost:6379/0` - Redis TCP connection
-- `valkeys://[[username]:[password]]@localhost:6379/0` - Valkey SSL/TLS connection
-- `rediss://[[username]:[password]]@localhost:6379/0` - Redis SSL/TLS connection
-- `unix://[[username]:[password]]@/path/to/socket.sock?db=0` - Unix socket
+| URL | Connection |
+|-----|------------|
+| `valkey://[[username]:[password]]@localhost:6379/0` | Valkey TCP |
+| `redis://[[username]:[password]]@localhost:6379/0` | Redis TCP |
+| `valkeys://[[username]:[password]]@localhost:6379/0` | Valkey SSL/TLS |
+| `rediss://[[username]:[password]]@localhost:6379/0` | Redis SSL/TLS |
+| `unix://[[username]:[password]]@/path/to/socket.sock?db=0` | Unix socket |
 
 ### Database Selection
 
-Two ways to specify the database number:
-
-1. Query string: `valkey://localhost?db=0`
-2. Path (for `valkey://` or `redis://` scheme): `valkey://localhost/0`
+Set the database number in the query string (`valkey://localhost?db=0`) or, on every scheme except `unix://`, in the path (`valkey://localhost/0`).
 
 ## Basic Usage
 
@@ -74,7 +65,7 @@ await cache.aset("key", "value", timeout=300)
 
 ## Raw Client Access
 
-For operations not exposed by the cache interface:
+For commands the cache does not wrap, use the driver client from `cache.get_client()`:
 
 ```python
 client = cache.get_client()

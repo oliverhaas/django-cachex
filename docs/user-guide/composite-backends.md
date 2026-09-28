@@ -1,8 +1,6 @@
 # TrackingCache
 
-A local read cache over an existing Redis or Valkey alias, kept coherent by the server's `CLIENT TRACKING` broadcast mode. It does not talk to a server directly; it composes another entry in your `CACHES` setting.
-
-Reads are served from a bounded in-process store and fall through to the transport on a miss. Writes go to the transport and evict the local copy. One listener thread per process receives the server's invalidation messages for the transport's key prefix, so a write by any client of that database evicts the local copies everywhere. Nothing is cached while the listener is disconnected.
+`TrackingCache` keeps local copies of the values it reads from another alias in `CACHES`, the transport. Reads check the in-process store first, and writes go to the transport and evict the local copy. A listener thread per process receives the server's `CLIENT TRACKING` invalidations, so a write from any client evicts the local copies in every process. While the listener is disconnected, nothing is cached locally.
 
 ```python
 CACHES = {
@@ -14,52 +12,45 @@ CACHES = {
     "default": {
         "BACKEND": "django_cachex.cache.TrackingCache",
         "OPTIONS": {
-            "transport": "redis",  # alias of a redis-py or valkey-py backend (standalone or Sentinel)
-            "coherence": "tracking",  # "ttl" runs no listener; see below
-            "MAX_ENTRIES": 1000,  # local store bound, LRU
-            "local_timeout": None,  # extra cap on how long a value stays local, in seconds
-            "prefixes": None,  # tracked key prefixes; derived from the transport by default
-            "poll_timeout": 1.0,  # seconds the listener waits for a message before checking for shutdown
-            "health_check_interval": 15.0,  # wall-clock seconds between listener pings
-            "reconnect_delay": 1.0,  # seconds between reconnection attempts
+            "transport": "redis",  # a redis-py or valkey-py alias, standalone or Sentinel
+            "coherence": "tracking",  # or "ttl", see below
+            "MAX_ENTRIES": 1000,  # size of the local LRU store
+            "local_timeout": None,  # longest time in seconds a value stays local
+            "prefixes": None,  # tracked key prefixes, derived from the transport by default
+            "poll_timeout": 1.0,  # seconds the listener blocks before it checks for shutdown
+            "health_check_interval": 15.0,
+            "reconnect_delay": 1.0,
         },
     },
 }
 ```
 
-`local_timeout`, `poll_timeout`, `health_check_interval` and `reconnect_delay` must be positive finite numbers (numeric strings are accepted; `local_timeout: None` keeps meaning no cap). Anything else raises `ImproperlyConfigured` at `caches[alias]`.
+Set `KEY_PREFIX`, `KEY_FUNCTION`, `VERSION` and `TIMEOUT` on the transport. The `TrackingCache` alias rejects them.
 
 ## Coherence
 
-- A write is visible locally one network round trip after the server applies it. A read in flight when the invalidation arrives is served but not kept.
-- A local copy never outlives its key: it expires with the key's remaining TTL, minus the stampede buffer if the transport uses stampede prevention, and `local_timeout` caps that further.
-- `FLUSHDB`, `FLUSHALL`, `clear()` and a lost listener connection flush the local store. The listener reconnects after `reconnect_delay`; until then every read goes to the transport.
-- The listener pings its tracking connection every `health_check_interval` seconds of wall clock, busy or idle. A connection the server drops silently is therefore noticed within `health_check_interval + reconnect_delay` plus the reconnect itself, and the local store is flushed at that point, so that sum bounds how long a stale local copy can be served.
-- The transport's stampede prevention applies to local hits too, so early recomputes stay spread across processes. The XFetch roll uses the key's remaining server TTL, not the local copy's age, so a `local_timeout` cap does not make local hits return the default early, and a local copy of a key without a TTL never rolls. A local hit whose roll fires returns the default; it is not refetched from the transport and rolled a second time. `has_key()` never rolls, and `get_or_set()` reads the value it just wrote back without a roll, so short-timeout keys still warm the local store.
+- A write from another client evicts the local copy one network round trip after the server applies it.
+- A local copy expires with the key's TTL on the server, and `local_timeout` shortens that further.
+- `FLUSHDB`, `FLUSHALL`, `clear()` and a lost listener connection empty the local store. Until the listener reconnects, every read goes to the transport.
+- The listener pings the server every `health_check_interval` seconds. On a Sentinel transport it also checks that the primary has not moved. A failed check empties the local store. A stale copy is thus served for at most `health_check_interval + poll_timeout` seconds, plus 5 seconds for the ping reply.
+- The transport's stampede prevention also applies to local hits.
 
-## Without a listener
+With `"coherence": "ttl"`, no listener runs and a write from another client stays invisible until the local copy expires, so `local_timeout` is required. This mode needs no extra connection and works with every transport, cluster and valkey-glide included.
 
-`"coherence": "ttl"` runs no listener, so nothing evicts a local copy before it expires: a write elsewhere stays invisible until then, and `local_timeout` is required as the bound. In exchange there is no thread and no extra connection, `prefixes` is not needed, and any transport works, cluster and valkey-glide included.
+## Tracked prefixes
 
-## Prefixes
+The server sends invalidations per key prefix. With Django's default `KEY_FUNCTION`, `TrackingCache` tracks the transport's `KEY_PREFIX` followed by a colon. With a custom `KEY_FUNCTION`, it tracks every key in the database. `OPTIONS["prefixes"]` overrides both. The prefixes must not overlap, and a key outside all of them raises `ImproperlyConfigured`.
 
-`CLIENT TRACKING BCAST` subscribes to key prefixes. With Django's default `KEY_FUNCTION` the tracked prefix is the transport's `KEY_PREFIX` plus a colon; with a custom `KEY_FUNCTION` every key in the database is tracked. `OPTIONS["prefixes"]` overrides that. Prefixes must not overlap, and a key outside every tracked prefix raises `ImproperlyConfigured`, since writes to it would never be seen.
+## Supported operations
 
-## What's supported
+`TrackingCache` supports the standard Django cache API and the `nx`, `xx` and `get` flags of `set()`. It passes `keys`, `iter_keys`, `scan`, `ttl`, `pttl`, `type`, `expire`, `persist`, `delete_pattern`, `memory_usage`, `largest_keys`, `slowlog_get` and `slowlog_len` to the transport, and each has its async twin. `delete_pattern()`, `incr_version()` and `decr_version()` also evict the matching local copies. Other methods, such as the hash, list, set, sorted-set and stream commands, `lock()` and `pipeline()`, raise `NotSupportedError`; call them on the transport alias.
 
-The standard Django cache interface, the `nx`/`xx`/`get` flags on `set`, and the key metadata helpers delegated to the transport (`keys`, `iter_keys`, `scan`, `ttl`, `pttl`, `type`, `memory_usage`, `largest_keys`, `info`, `slowlog_get`, `slowlog_len`, `persist`, `expire`, `delete_pattern`), all with async counterparts (`akeys`, `aiter_keys`, `ascan`, `attl`, `apttl`, `atype`, `amemory_usage`, `alargest_keys`, `apersist`, `aexpire`, `adelete_pattern`). A `NotSupportedError` the transport raises for a delegated call propagates unchanged, so it still names the server's reason. Data-structure ops (`lpush`, `hset`, `zadd`, ...) raise `NotSupportedError`; use the transport alias for them. `info()` adds a `tracking` section with the listener state, the store size and the hit, miss, invalidation and flush counters.
+`info()` adds a `tracking` section with the listener state, the store size and the hit, miss, invalidation and flush counters. The admin lists a `TrackingCache` alias as limited, without key browsing. Browse its keys through the transport alias.
 
-`delete_pattern` takes a Redis glob on both sides: the same pattern picks the local entries to evict and the keys the transport deletes, so `[^0]` negates the way it does on the server. Local copies are matched by their made key against the transport's `make_pattern()` glob, so eviction also works under a custom `KEY_FUNCTION` without a `REVERSE_KEY_FUNCTION`.
+## Operation
 
-`KEY_PREFIX`, `KEY_FUNCTION`, `VERSION` and `TIMEOUT` are not accepted on a `TrackingCache` alias, in either slot: keys are made and the default timeout is resolved by the transport, so set them there. Key versions come from the transport, and `incr_version` / `decr_version` (with their async twins) honor that: they delegate the rename to the transport and forget the local copies of both versions. `VERSION` on the transport alias works.
-
-In the admin a `TrackingCache` alias is badged limited and offers no key browsing, because its keys live on the transport; browse and edit through the transport alias.
-
-## Operational notes
-
-- With tracking coherence the transport must be a redis-py or valkey-py backend, standalone or Sentinel. Cluster (tracking is per node) and valkey-glide (cannot receive invalidations) transports raise `ImproperlyConfigured` on first use. Behind Sentinel, the health check reconnects the listener after a failover.
-- Each process holds one extra connection, opened outside the pool's accounting. It speaks RESP3, so the server pushes invalidations on the tracking connection itself. The first operation opens it; a transport that is down at that moment is retried in the background.
-- The listener always parses with its driver's pure-Python RESP3 parser, whatever `parser_class` the transport is configured with. `hiredis` and `libvalkey` stay on the data path; only the listener's own handful of messages is parsed in Python.
-- The local store, listener thread and counters are shared per `LOCATION` (defaulting to the transport alias) within a process. Two aliases with different `LOCATION`s over one transport act as two independent pods. Aliases sharing one `LOCATION` must agree on `transport`, `coherence`, `prefixes`, `local_timeout`, `MAX_ENTRIES`, `poll_timeout`, `health_check_interval` and `reconnect_delay`; a mismatch raises `ImproperlyConfigured` naming the differing options.
-- `close()` is a no-op so the listener outlives requests; `shutdown()` stops it. A dead listener thread is restarted on the next operation. When the tracking socket drops, the listener fails fast rather than letting the driver reconnect without `CLIENT TRACKING`; `TrackingCache` rebuilds it. An outage logs one traceback, then a one-line warning per attempt.
-- A local miss costs one pipelined `GET` plus `PTTL`; `get_many` fetches all missing keys in one pipeline.
+- Tracking coherence needs a redis-py or valkey-py transport, standalone or Sentinel. A cluster or valkey-glide transport raises `ImproperlyConfigured` on first use.
+- Each process opens one extra RESP3 connection for the listener, outside the transport's pool. The first cache operation opens it, and a failed connect is retried in the background.
+- Aliases with the same `LOCATION` (by default the transport alias) share one local store and listener, and must have the same `OPTIONS`.
+- `close()` leaves the listener running between requests, and `shutdown()` stops it.
+- A local miss costs one pipelined `GET` and `PTTL`. `get_many()` fetches all missing keys in one pipeline.

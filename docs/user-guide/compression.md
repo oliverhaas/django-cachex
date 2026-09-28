@@ -1,6 +1,6 @@
 # Compression
 
-django-cachex supports pluggable compression to reduce memory usage. Compression is only applied to values larger than 256 bytes by default.
+Compressors shrink cached values to save server memory. By default, only values larger than 256 bytes are compressed.
 
 ## Configuration
 
@@ -18,9 +18,9 @@ CACHES = {
 
 ## Minimum Size
 
-`min_length` is a constructor argument of the compressor, not a cache `OPTIONS`
-key. It defaults to `256`, so payloads at or below 256 bytes are stored
-uncompressed. Raise the threshold by configuring a compressor instance instead
+`min_length` is a constructor argument of the compressor, not a key in
+`OPTIONS`. It defaults to `256`, so payloads of 256 bytes or less are stored
+uncompressed. To change the threshold, configure a compressor instance instead
 of a dotted path:
 
 ```python
@@ -48,8 +48,8 @@ class LargeOnlyZstdCompressor(ZstdCompressor):
 
 Every compressor also takes a keyword-only `level`, passed the same way
 (`ZstdCompressor(level=10)`) or set as a class attribute on a subclass. The
-defaults are the library defaults: zlib `6`, gzip `9`, lzma preset `4`, lz4
-`0` (fast mode), zstd `3`.
+defaults are zlib `6`, gzip `9`, lzma preset `4`, lz4 `0` (fast mode) and
+zstd `3`.
 
 ## Available Compressors
 
@@ -61,7 +61,7 @@ defaults are the library defaults: zlib `6`, gzip `9`, lzma preset `4`, lz4
 | `django_cachex.compressors.lz4.Lz4Compressor` | `lz4` |
 | `django_cachex.compressors.zstd.ZstdCompressor` | (stdlib on 3.14+) |
 
-Install optional dependencies:
+Install the `lz4` extra for `Lz4Compressor`:
 
 ```console
 uv add django-cachex[lz4]
@@ -69,53 +69,51 @@ uv add django-cachex[lz4]
 
 ## Performance
 
-Two views; pick whichever matches the decision you're making.
-
 ### Micro: algorithm in isolation
 
-Pure compress/decompress in a tight loop, no driver, no network. Output
-size is a percentage of the input (i.e. the no-compression baseline);
-compress/decompress are absolute MB/s on the benchmark host.
+This benchmark compresses and decompresses a ~14 KiB pickled
+queryset-shaped payload in a tight loop, with no driver and no network.
+Output size is the compressed size as a percentage of the input. Compress
+and decompress speeds are the median of 20 runs of 200 operations on a single
+core. They depend on the hardware, so compare the ratios between rows, not
+the absolute values. Real payloads vary: text and JSON compress about 10×,
+and already-compressed bytes barely shrink.
 
-| Compressor | Output size¹ | Compress² | Decompress² |
+| Compressor | Output size | Compress | Decompress |
 |------------|:-----------:|:--------:|:----------:|
 | `zlib`     | 12%         | ~190 MB/s   | ~1.3 GB/s   |
 | `gzip`     | 12%         | ~150 MB/s   | ~1.2 GB/s   |
-| `lzma`     | 11%         | **~13 MB/s** | ~490 MB/s  |
-| `lz4`      | 17%         | **~3.1 GB/s** | **~7.7 GB/s** |
+| `lzma`     | 11%         | ~13 MB/s    | ~490 MB/s   |
+| `lz4`      | 17%         | ~3.1 GB/s   | ~7.7 GB/s   |
 | `zstd`     | 11%         | ~820 MB/s   | ~2.2 GB/s   |
 
 ### Macro: end-to-end via Django cache
 
-Same compressors, but measured through `cache.get()` / `cache.set()` /
-`cache.get_many()` / `cache.set_many()` against a real Valkey server.
-Throughput factor is normalized to **no compression**, so the table reads
-"this is what enabling each compressor costs you."
+This benchmark runs `cache.get()`, `cache.set()`, `cache.get_many()` and
+`cache.set_many()` through the `valkey-py+libvalkey` adapter against a local
+Valkey server. The figure is the geometric mean of the four rates, relative
+to running without a compressor. The
+[benchmarks](https://github.com/oliverhaas/django-cachex/tree/main/benchmarks)
+harness reproduces it.
 
-| Compressor | Throughput vs no-compression³ |
-|------------|:-----------------------------:|
-| no compression | 1.00×                     |
-| `zlib`         | 0.81×                     |
-| `gzip`         | 0.76×                     |
-| `lzma`         | **0.37×**                 |
-| `lz4`          | **0.99×**                 |
-| `zstd`         | **0.94×**                 |
+| Compressor | Throughput vs no compression |
+|------------|:----------------------------:|
+| no compression | 1.00×                    |
+| `zlib`         | 0.81×                    |
+| `gzip`         | 0.76×                    |
+| `lzma`         | 0.37×                    |
+| `lz4`          | 0.99×                    |
+| `zstd`         | 0.94×                    |
 
-Picking guide:
-
-- `zstd`: same ratio as `lzma` at ~60× the compress speed, and only ~6 % slower end-to-end than no compression at all. Default choice if available.
-- `lz4`: pick when CPU is the bottleneck and a ~40 % larger payload is acceptable. End-to-end throughput is statistically indistinguishable from no compression while still cutting payload size ~5×.
-- `lzma`: pick only when output size matters more than write latency. Even then, `zstd` is usually a better trade now (same ratio, ~2.5× faster end-to-end).
-- `zlib` / `gzip`: nearly identical. Pick `zlib` unless you need gzip's framing for an external consumer.
-- No compression: sets the throughput ceiling but stores ~8× more server memory. Outside narrow latency-critical paths, compression almost always wins.
-
-¹ Compressed size as a percentage of the input (~14 KiB pickled queryset-shaped payload).
-² Absolute compress/decompress throughput in a tight loop (200 ops × 20 runs, median, single core). Numbers are hardware-dependent; use the ratios between rows, not the absolute values. Real-world impact also depends on payload compressibility (text/JSON compresses ~10×; already-compressed bytes barely shrink).
-³ Geometric mean of `get`/`set`/`mget`/`mset` ops/sec end-to-end via Django cache → `valkey-py+libvalkey` adapter → localhost Valkey, normalized to running without a compressor. Reproduce with the [benchmarks](https://github.com/oliverhaas/django-cachex/tree/main/benchmarks) harness.
+- `zstd` has the same ratio as `lzma` at ~60× the compress speed, and runs ~6% slower end to end than no compression. Pick it by default.
+- `lz4` suits workloads where CPU is the bottleneck and a ~40% larger payload is acceptable. Its end-to-end throughput is within 1% of no compression, and it still cuts payload size ~5×.
+- `lzma` fits only when output size matters more than write latency. Even then, `zstd` has the same ratio and runs ~2.5× faster end to end.
+- `zlib` and `gzip` are nearly identical. Pick `zlib` unless an external consumer needs gzip's framing.
+- No compression sets the throughput ceiling, but uses ~8× more server memory.
 
 ## Fallback for Migration
 
-Specify a list of compressors to safely migrate between formats. The first is used for writing, all are tried for reading:
+To migrate between formats, pass a list of compressors. The cache writes with the first and tries each in order on read:
 
 ```python
 "OPTIONS": {

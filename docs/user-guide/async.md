@@ -1,10 +1,6 @@
 # Async Support
 
-django-cachex implements Django's async cache methods (`aget`, `aset`, `adelete`, etc.) using native async clients: `redis.asyncio` and `valkey.asyncio` on the redis-py and valkey-py backends, and glide's own async `glide.GlideClient` on the valkey-glide backends. Async callers don't pay the asgiref threadpool round-trip.
-
-## Overview
-
-`cache.get()` and `await cache.aget()` operate on the same backend with no separate configuration.
+django-cachex implements Django's async cache methods with native async clients. The redis-py and valkey-py backends use `redis.asyncio` and `valkey.asyncio`, and the valkey-glide backends use glide's own async `glide.GlideClient`. Their async calls do not go through the asgiref thread pool. `cache.get()` and `await cache.aget()` use the same backend, with no separate configuration.
 
 ## Basic Usage
 
@@ -14,56 +10,27 @@ from django.core.cache import cache
 
 # Async views (ASGI)
 async def my_view(request):
-    # Read
     value = await cache.aget("key")
-
-    # Write
     await cache.aset("key", "value", timeout=300)
-
-    # Delete
     await cache.adelete("key")
-
-    # Check existence
     exists = await cache.ahas_key("key")
-
     return JsonResponse({"value": value})
 ```
 
 ## Available Async Methods
 
-### Standard Django Cache Methods
-
-All standard Django cache methods have async equivalents with the `a` prefix:
-
-| Sync | Async |
-|------|-------|
-| `get(key)` | `aget(key)` |
-| `set(key, value, timeout)` | `aset(key, value, timeout)` |
-| `add(key, value, timeout)` | `aadd(key, value, timeout)` |
-| `delete(key)` | `adelete(key)` |
-| `get_many(keys)` | `aget_many(keys)` |
-| `set_many(mapping, timeout)` | `aset_many(mapping, timeout)` |
-| `delete_many(keys)` | `adelete_many(keys)` |
-| `has_key(key)` | `ahas_key(key)` |
-| `incr(key, delta)` | `aincr(key, delta)` |
-| `decr(key, delta)` | `adecr(key, delta)` |
-| `touch(key, timeout)` | `atouch(key, timeout)` |
-| `clear()` | `aclear()` |
-| `close()` | `aclose()` |
-| `get_or_set(key, default, timeout)` | `aget_or_set(key, default, timeout)` |
-| `incr_version(key)` | `aincr_version(key)` |
-| `decr_version(key)` | `adecr_version(key)` |
+Each standard Django cache method has an async twin with an `a` prefix, such as `aget()`, `aget_or_set()`, `aincr_version()` and `aclose()`.
 
 ### Extended Methods
 
-django-cachex extended methods also have async versions, called directly on the cache:
+The django-cachex extensions have async twins on the cache too:
 
 ```python
 # TTL operations
-ttl = await cache.attl(key)  # Get TTL in seconds
-pttl = await cache.apttl(key)  # Get TTL in milliseconds
-await cache.aexpire(key, timeout=60)  # Set expiration
-await cache.apersist(key)  # Remove expiration
+ttl = await cache.attl(key)  # seconds
+pttl = await cache.apttl(key)  # milliseconds
+await cache.aexpire(key, timeout=60)
+await cache.apersist(key)  # remove the expiry
 
 # Key operations
 keys = await cache.akeys("pattern:*")
@@ -75,12 +42,11 @@ async for key in cache.aiter_keys("user:*"):
     print(key)
 ```
 
-!!! note "Adapter-level methods"
-    For ops that bypass the prefix/serializer pipeline, drop down to `cache.adapter` (e.g. `await cache.adapter.aget(raw_key)`). Adapter methods take already-prefixed keys and return raw bytes/values.
+Methods on `cache.adapter`, such as `await cache.adapter.aget(raw_key)`, skip key prefixing and serialization. They take already-prefixed keys and return raw bytes or values.
 
 ### Data Structures
 
-Data structure operations have async equivalents on the cache directly:
+The data structure methods have async twins as well:
 
 ```python
 # Hashes
@@ -106,7 +72,7 @@ top_players = await cache.azrange(key, 0, 9, withscores=True)
 
 ### Async Pipelines
 
-Batch multiple operations and dispatch them in a single round trip:
+An async pipeline sends the queued commands in one round trip:
 
 ```python
 async with await cache.apipeline() as pipe:
@@ -116,57 +82,28 @@ async with await cache.apipeline() as pipe:
     results = await pipe.execute()
 ```
 
-Queueing methods (`set`, `hset`, `lpush`, ...) stay synchronous; only `apipeline()` and `execute()` are awaited. The wrapper's behaviour mirrors the sync `pipeline()`; see [Pipelines](../reference/api.md#pipelines) for the shared command surface.
+Queueing methods such as `set`, `hset` and `lpush` are synchronous. Only `apipeline()` and `execute()` are awaited. Otherwise the async pipeline behaves like the sync `pipeline()`, with the commands listed under [Pipelines](../reference/api.md#pipelines).
 
-`apipeline()` is `async def` because the valkey-glide adapter resolves the underlying async client during construction. The `await` is required even on adapters where the construction is trivial.
+`apipeline()` must be awaited on every backend, because the valkey-glide adapter creates its async client asynchronously.
 
 ## How It Works
 
-### Connection Pool Architecture
+On the redis-py and valkey-py backends, sync and async calls use separate connection pools. Sync calls use one `redis.ConnectionPool` or `valkey.ConnectionPool` per server. Async calls use a `redis.asyncio.ConnectionPool` or `valkey.asyncio.ConnectionPool` per server and event loop.
 
-Separate connection pools are maintained for sync and async operations:
-
-- Sync pools: standard pools (`redis.ConnectionPool` / `valkey.ConnectionPool`), one per server
-- Async pools: `redis.asyncio.ConnectionPool` / `valkey.asyncio.ConnectionPool`, cached per event loop
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Cache Backend                         │
-├─────────────────────────────────────────────────────────┤
-│  Sync Pools                 │  Async Pools              │
-│  ────────────               │  ────────────             │
-│  pools[0] → server1         │  loop1 → {0: pool, ...}   │
-│  pools[1] → server2         │  loop2 → {0: pool, ...}   │
-│  ...                        │  ...                      │
-└─────────────────────────────────────────────────────────┘
-```
-
-### Per-Event-Loop Caching
-
-Async pools live in a registry keyed by event loop, so each loop gets its own
-pools and reuses them for every call it makes.
-
-A pool cannot outlive its loop: every open connection holds a transport that
-belongs to the loop that opened it. Weak keys alone would never free those
-entries, because the pool keeps its own loop alive. So cachex sweeps the
-registry on every pool lookup and on `close()`, dropping the entry of any loop
-that has been closed. Dropping the entry releases the pool, its client and its
-connections; each socket closes when the garbage collector reclaims the
-connection that owns it.
+Each event loop gets its own async pools and reuses them for every call it makes. A pool cannot outlive its loop, because its connections belong to the loop that opened them. On every pool lookup and on `close()`, django-cachex drops the pools of loops that have closed. The sockets of a dropped pool close when the garbage collector reclaims their connections.
 
 ## Performance Considerations
 
 !!! warning "Event Loop Lifecycle"
-    Async pools are cached **per event loop**. This is efficient for long-lived loops but wasteful for short-lived ones.
+    Async pools are cached per event loop. That suits long-lived loops and wastes connections on short-lived ones.
 
 ### Efficient: Long-Lived Event Loops
 
-ASGI servers (uvicorn, daphne, hypercorn) maintain long-lived event loops where connections are reused across requests:
+ASGI servers such as uvicorn, daphne and hypercorn run long-lived event loops, so connections are reused across requests:
 
 ```python
-# In an ASGI application: the loop, and so the pool, outlives the request
+# In an ASGI application, the loop, and so the pool, outlives the request
 async def my_view(request):
-    # Connections are reused across requests
     value = await cache.aget("key")
     await cache.aset("key", "new_value")
     return JsonResponse({"value": value})
@@ -174,20 +111,20 @@ async def my_view(request):
 
 ### Inefficient: Short-Lived Event Loops
 
-Avoid async methods when event loops are frequently created and destroyed:
+Avoid async methods when event loops are created and closed often:
 
 ```python
-# BAD: each asyncio.run() gets a new event loop, so a new pool and a new
-# TCP connection. The 100 pools do not pile up (each run sweeps out the
-# previous one), but you pay 100 handshakes instead of one.
+# Each asyncio.run() starts a new event loop, so a new pool and a new TCP
+# connection. The pools do not pile up, because each run sweeps out the
+# previous one, but this costs 100 handshakes instead of one.
 def sync_function():
     for i in range(100):
         asyncio.run(cache.aget(f"key:{i}"))
 
 
-# BAD: async_to_sync() inside a sync_to_async() body finds the outer loop
-# and schedules on it, so the pool is reused, but every call hops threads
-# twice (loop -> worker thread -> loop and back). Await cache.aget() directly.
+# async_to_sync() inside a sync_to_async() body schedules on the outer loop,
+# so the pool is reused, but every call hops threads twice. Await
+# cache.aget() directly instead.
 @sync_to_async
 def wrapped_function():
     return async_to_sync(cache.aget)("key")
@@ -197,8 +134,8 @@ def wrapped_function():
 
 | Context | Recommendation |
 |---------|----------------|
-| ASGI views (uvicorn, daphne) | Use async methods (`aget`, `aset`, etc.) |
-| WSGI views (gunicorn, uwsgi) | Use sync methods (`get`, `set`, etc.) |
+| ASGI views (uvicorn, daphne) | Use async methods (`aget`, `aset`) |
+| WSGI views (gunicorn, uwsgi) | Use sync methods (`get`, `set`) |
 | Management commands | Use sync methods |
 | Celery tasks | Use sync methods |
 | Background tasks with persistent loop | Use async methods |
@@ -207,7 +144,7 @@ def wrapped_function():
 
 ### Custom Async Pool Class
 
-Provide a custom async connection pool class:
+`async_pool_class` sets the async connection pool class, as an import path or a class:
 
 ```python
 CACHES = {
@@ -215,7 +152,6 @@ CACHES = {
         "BACKEND": "django_cachex.cache.RedisCache",
         "LOCATION": "redis://127.0.0.1:6379/1",
         "OPTIONS": {
-            # Custom async pool class (import path or class)
             "async_pool_class": "myapp.pools.CustomAsyncConnectionPool",
         },
     }
@@ -228,33 +164,17 @@ CACHES = {
 await cache.aclose()
 ```
 
-`aclose()` disconnects the async pools this cache alias opened on the loop it
-runs on and drops them from the registry. The next `await` on the cache opens
-fresh ones, so call it when you are done with a loop, not between requests. It
-also sweeps the registry, releasing the pools of any loop that has been closed.
-On a cluster backend it closes that loop's cluster client; on a Sentinel
-backend it also closes the loop's Sentinel manager and the clients it
-discovered with.
+`aclose()` disconnects and drops the async pools this cache alias opened on the running loop. The next `await` on the cache opens new ones, so call it when you are done with a loop, not between requests. It also drops the pools of loops that have closed. On a cluster backend, it closes the loop's cluster client. On a Sentinel backend, it also closes the loop's Sentinel manager and the clients it used for discovery.
 
-Only pools under the calling alias's own registry keys are released: an alias
-with a different URL or options keeps its connections. An alias configured
-identically shares the very same pool object, so it is disconnected too
-(a driver pool's `aclose()` drops in-use connections along with idle ones) and
-reconnects lazily on its next command. Pools leave the registry one at a time
-as they close, so a failure mid-way keeps the rest reachable.
+An alias with a different URL or options keeps its connections. An alias with the same configuration shares the same pools, so it is disconnected too, including connections in use, and reconnects on its next command. If closing one pool fails, the pools not yet closed stay registered.
 
-`close()` leaves the sync pools connected: Django fires it on every
-`request_finished` signal, and tearing pools down there would force a reconnect
-per request. It does sweep the registry, since that needs no running loop.
+`close()` leaves the sync pools connected, because Django calls it on every `request_finished` signal and a teardown there would force a reconnect per request. It does drop the async pools of closed loops.
 
-Both are safe to skip. A process that only ever runs one loop never
-accumulates anything, and a process that creates loops (`asyncio.run()`, or
-`async_to_sync()` called from a sync thread) has each new loop sweep out the
-pools of the loops that closed before it.
+Calling either is optional. A process that runs one loop accumulates nothing. A process that creates loops, through `asyncio.run()` or `async_to_sync()` from a sync thread, drops the pools of closed loops with each new loop.
 
 ## Mixed Sync/Async Usage
 
-A single backend works for both sync and async code:
+One cache alias serves sync and async code:
 
 ```python
 from django.core.cache import cache
@@ -274,39 +194,27 @@ async def async_view(request):
     return JsonResponse({"value": value})
 ```
 
-Both views use the same cache backend configured in settings.
-
 ## Other backends
 
-The async ext surface (`alpush`, `ahset`, `azadd`, `attl`, `aexpire` and the
-rest) is also available on `LocMemCache` and `DatabaseCache`. The two backends
-take different routes because the underlying work is different:
+`LocMemCache` and `DatabaseCache` also have the async extensions, such as `alpush()`, `ahset()`, `azadd()`, `attl()` and `aexpire()`:
 
-- `LocMemCache` is in-memory: each `a*` method calls its sync
-  counterpart directly with no thread offload. There's no I/O to await,
-  so awaiting from an event loop is harmless.
-- `DatabaseCache` does real DB queries, so each `a*` method offloads
-  the sync call via `asgiref.sync.sync_to_async` (Django's own pattern
-  for `BaseCache.aget`). Native async DB cursors will replace this path
-  once Django exposes them, without changing the public surface.
+- `LocMemCache` keeps its data in memory, so each `a*` method calls its sync twin directly, without a thread. It does no I/O, so awaiting it from an event loop is harmless.
+- `DatabaseCache` runs database queries, so each `a*` method runs its sync twin through `asgiref.sync.sync_to_async`, as Django's `BaseCache.aget()` does.
 
-Stock Django backends (`django.core.cache.backends.*`) and any other
-non-cachex backend don't get an ext surface from django-cachex. The admin
-shows them with a "limited" badge (configuration only, no key browsing)
-and recommends switching `BACKEND` to a cachex equivalent if available.
+Django's own backends (`django.core.cache.backends.*`) and other non-cachex backends get no extensions from django-cachex. The admin marks them "limited" and shows only their configuration, without key browsing. It suggests a cachex `BACKEND` where one exists.
 
 ## Cluster and Sentinel
 
-Async works identically with Cluster and Sentinel backends:
+The async methods work the same on Cluster and Sentinel backends:
 
 ```python
-# Cluster - async works the same way
+# Cluster
 async def cluster_example():
     await cache.aset("key", "value")
     await cache.aget_many(["key1", "key2", "key3"])
 
 
-# Sentinel - async works the same way
+# Sentinel
 async def sentinel_example():
     await cache.aset("key", "value")
     value = await cache.aget("key")
@@ -331,12 +239,10 @@ from django.http import JsonResponse
 
 async def user_profile(request, user_id):
     cache_key = f"user:{user_id}:profile"
-
-    # Try cache first
     profile = await cache.aget(cache_key)
 
     if profile is None:
-        # Cache miss - fetch from database
+        # Cache miss: load from the database
         profile = await get_user_profile_from_db(user_id)
         await cache.aset(cache_key, profile, timeout=3600)
 
@@ -344,7 +250,7 @@ async def user_profile(request, user_id):
 
 
 async def leaderboard(request):
-    # Get top 10 from sorted set (descending by score)
+    # Top 10, highest score first
     top_players = await cache.azrevrange(
         "game:leaderboard",
         0,

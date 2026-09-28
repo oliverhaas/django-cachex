@@ -5,11 +5,11 @@
 - Python 3.14+. The free-threaded build (3.14t) is supported, with one caveat for the C parsers below.
 - Django 6.0 to 6.x (`Django>=6,<7`)
 - valkey-py 6.1 to 6.x (`valkey>=6.1,<7`) or redis-py 7.2 to 8.x (`redis>=7.2,<9`)
-- Valkey server 7.2+ or Redis server 6.2+. `set(get=True)` and the immediate-expiry conditional writes (`add()` and `set(nx=/xx=/get=)` with `timeout=0`) send `SET ... GET` and `SET ... PXAT`, both Redis 6.2 commands; `set(nx=True, get=True)` and `expiretime()` need Redis 7.0+. Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and `hsetex`/`hgetex` Valkey 9.0+ or Redis 8.0+; older servers raise `NotSupportedError` for those methods only.
+- Valkey server 7.2+ or Redis server 6.2+. `set(get=True)` and the immediate-expiry conditional writes (`add()` and `set(nx=/xx=/get=)` with `timeout=0`) send `SET ... GET` and `SET ... PXAT`, both Redis 6.2 commands. `set(nx=True, get=True)` and `expiretime()` need Redis 7.0+. Hash field expiration needs Valkey 9.0+ or Redis 7.4+, and `hsetex`/`hgetex` Valkey 9.0+ or Redis 8.0+. Older servers raise `NotSupportedError` for those methods only.
 
 ## Install with uv
 
-The base package pulls in no client driver; pick the extra that matches your setup:
+The base package installs no client driver. Add the extra for your server:
 
 ```console
 # For Valkey
@@ -21,7 +21,7 @@ uv add django-cachex[redis-py]
 
 ## Install with libvalkey/hiredis
 
-For better performance, install with the libvalkey (for Valkey) or hiredis (for Redis) parser:
+The `libvalkey` (Valkey) and `hiredis` (Redis) extras add a C parser, which parses server replies faster than the pure-Python parser:
 
 ```console
 # For Valkey
@@ -31,35 +31,32 @@ uv add django-cachex[libvalkey]
 uv add django-cachex[hiredis]
 ```
 
-These provide C-based parsers that improve protocol parsing throughput on the hot read path.
-
-Neither `hiredis` nor `libvalkey` declares free-threading support, so on the
-free-threaded build (3.14t) importing either re-enables the GIL for the
-process, with a `RuntimeWarning` at import. Use the pure-Python parser
-(the plain `valkey-py` / `redis-py` extras) to keep the GIL off.
+Neither `hiredis` nor `libvalkey` declares free-threading support. On the
+free-threaded build (3.14t), importing either re-enables the GIL for the
+process and emits a `RuntimeWarning`. Use the pure-Python parser (the plain
+`valkey-py` or `redis-py` extra) to keep the GIL off.
 
 ## Valkey-Glide adapter (optional)
 
 !!! warning "Experimental"
-    The valkey-glide adapter is experimental: interfaces and behavior may
-    change, and it has seen less production testing than the
-    redis-py/valkey-py paths.
+    The valkey-glide adapter is experimental. Its interfaces and behavior can
+    change, and it has less production testing than the redis-py and
+    valkey-py backends.
 
-The `ValkeyGlideCache` backend wraps Valkey's official client,
-[valkey-glide]. It has a Rust core, packaged through PyPI as two
-distributions, `valkey-glide-sync` and `valkey-glide`,
-pulled in together via the `valkey-glide` extra:
+`ValkeyGlideCache` wraps [valkey-glide], Valkey's official client with a
+Rust core. The `valkey-glide` extra installs its two PyPI distributions,
+`valkey-glide-sync` and `valkey-glide`:
 
 ```console
 uv add django-cachex[valkey-glide]
 ```
 
-The extra pins `valkey-glide-sync` and `valkey-glide` 2.5 to 2.x. cp314 GIL
-only; no cp314t (free-threaded) wheels are published yet.
-Standalone (`ValkeyGlideCache`) and cluster (`ValkeyGlideClusterCache`)
-backends are wired up; Sentinel is not exposed (`valkey-glide` itself does
-not ship a Sentinel client). See the
-[user-guide configuration page](../user-guide/configuration.md#valkey-glide)
-for setup details.
+The extra pins `valkey-glide-sync` and `valkey-glide` 2.5 to 2.x. The
+adapter runs on the cp314 GIL build only, because valkey-glide publishes no
+cp314t (free-threaded) wheels. It has a standalone backend
+(`ValkeyGlideCache`) and a cluster backend (`ValkeyGlideClusterCache`). It
+has no Sentinel backend, because `valkey-glide` does not ship a Sentinel
+client. See [Configuration](../user-guide/configuration.md#valkey-glide)
+for the setup.
 
 [valkey-glide]: https://github.com/valkey-io/valkey-glide

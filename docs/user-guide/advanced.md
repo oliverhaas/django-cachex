@@ -2,7 +2,8 @@
 
 ## Serializer
 
-By default, `PickleSerializer` is used with `pickle.DEFAULT_PROTOCOL`. To use a different serializer, name it in the `serializer` option:
+The default serializer is `PickleSerializer` with `pickle.DEFAULT_PROTOCOL`.
+To use another one, name it in the `serializer` option:
 
 ```python
 CACHES = {
@@ -16,7 +17,8 @@ CACHES = {
 }
 ```
 
-A dotted path is instantiated with no arguments. To set a constructor option such as the pickle protocol, pass an instance instead:
+cachex instantiates a dotted path with no arguments. To set a constructor
+option such as the pickle protocol, pass an instance:
 
 ```python
 from django_cachex.serializers.pickle import PickleSerializer
@@ -40,11 +42,8 @@ cache.ttl("foo")  # Returns 25
 cache.ttl("missing")  # Returns -2 (key doesn't exist)
 ```
 
-Returns:
-
-- `-2` - Key doesn't exist or already expired
-- `None` - Key exists but has no expiration (set with `timeout=None`)
-- `int` - Seconds until expiration
+`ttl()` returns the seconds until expiry, `None` for a key without expiry (set
+with `timeout=None`), and `-2` for a missing or expired key.
 
 ### Get TTL in Milliseconds
 
@@ -81,7 +80,7 @@ cache.expireat("foo", datetime.now() + timedelta(hours=1))
 cache.ttl("foo")  # Returns ~3600
 ```
 
-### Expire at Specific Time (milliseconds precision)
+### Expire at Specific Time in Milliseconds
 
 ```python
 cache.set("foo", "bar", timeout=22)
@@ -99,7 +98,7 @@ cache.ttl("foo")  # Returns None (no expiration)
 
 ## Locks
 
-Distributed locks with the `threading.Lock` interface:
+`lock()` returns a distributed lock with the `threading.Lock` interface:
 
 ```python
 from django.core.cache import cache
@@ -119,9 +118,9 @@ from django.core.cache import cache
 cache.keys("foo_*")  # Returns ["foo_1", "foo_2"]
 ```
 
-### Iterate Keys (Recommended)
+### Iterate Keys
 
-For large datasets, use server-side cursors:
+For large datasets, iterate with server-side cursors:
 
 ```python
 # Returns a generator
@@ -135,15 +134,15 @@ for key in cache.iter_keys("foo_*"):
 cache.delete_pattern("foo_*")
 ```
 
-For better performance with many keys:
+When many keys match, a larger `itersize` needs fewer round trips:
 
 ```python
 cache.delete_pattern("foo_*", itersize=100_000)
 ```
 
-The pattern is a Redis glob on every backend, matched case-sensitively. An
-empty pattern matches only the empty key, so `delete_pattern("")` deletes at
-most one key; pass `"*"` to clear everything. See
+The pattern is a case-sensitive Redis glob on every backend. An empty pattern
+matches only the empty key, so `delete_pattern("")` deletes at most one key.
+`"*"` deletes every key under the cache's prefix and version. See
 [Key patterns](../reference/api.md#key-patterns).
 
 ## Atomic Operations
@@ -167,11 +166,7 @@ cache.decr("counter")  # Returns 5
 
 ## Data Structures
 
-Direct access to Valkey/Redis data structures through the cache interface.
-
 ### Hashes
-
-Maps of field-value pairs:
 
 ```python
 from django.core.cache import cache
@@ -210,7 +205,9 @@ cache.hvals("user:1")  # ["Alice", "alice@example.com", 0.5]
 
 #### Field Expiration
 
-Fields can carry their own TTL. This needs Redis 7.4+ or Valkey 9.0+, and `hsetex`/`hgetex` Redis 8.0+ or Valkey 9.0+; an older server raises `NotSupportedError`.
+Hash fields can have their own TTL. This needs Redis 7.4+ or Valkey 9.0+, and
+`hsetex` and `hgetex` need Redis 8.0+ or Valkey 9.0+. An older server raises
+`NotSupportedError`.
 
 ```python
 from datetime import datetime, timedelta
@@ -241,15 +238,13 @@ cache.hgetex("session:42", "token", persist=True)  # ["ghi"], TTL removed
 cache.hpersist("session:42", "csrf")  # [1]
 ```
 
-Field TTL rules:
-
-- Rewriting a field with `hset`, or with `hsetex` without `keepttl=True`, clears that field's TTL.
-- `hsetex(timeout=...)` follows `set()`: the default uses the backend's `TIMEOUT`, `None` means no expiry, and `timeout=0` deletes the fields immediately.
-- Stampede prevention pads key-level timeouts only; field TTLs are sent as given.
+Rewriting a field with `hset`, or with `hsetex` without `keepttl=True`, clears
+that field's TTL. `hsetex()` treats `timeout` the way `set()` does. The default
+uses the backend's `TIMEOUT`, `None` means no expiry, and `timeout=0` deletes
+the fields immediately. Stampede prevention pads key-level timeouts only and
+sends field TTLs as given.
 
 ### Sorted Sets
-
-Unique members with scores, automatically sorted:
 
 ```python
 from django.core.cache import cache
@@ -294,8 +289,6 @@ cache.zcard("leaderboard")
 
 ### Lists
 
-Ordered collections of elements:
-
 ```python
 from django.core.cache import cache
 
@@ -331,7 +324,7 @@ cache.lmove("source", "dest", "LEFT", "RIGHT")  # LPOP source, RPUSH dest
 
 ## Raw Client Access
 
-Access the underlying valkey-py/redis-py client directly:
+`get_client()` returns the underlying valkey-py or redis-py client:
 
 ```python
 client = cache.get_client()
@@ -340,9 +333,9 @@ client.publish("channel", "message")
 
 ## Lua Scripts
 
-Execute Lua scripts with `eval_script()`. Keys and args go to the server as
-given: a `pre_hook` such as `keys_only_pre` adds this cache's key prefix and
-version, and the [hooks](#prepost-processing-hooks) also encode and decode values.
+`eval_script()` runs a Lua script and sends its keys and args as given. A
+`pre_hook` such as `keys_only_pre` adds the cache's key prefix and version, and
+the [hooks](#prepost-processing-hooks) also encode and decode values.
 
 ### Basic Usage
 
@@ -362,15 +355,16 @@ count = cache.eval_script(
 )
 ```
 
-`eval_script()` runs the script by its SHA-1 (`EVALSHA`), loading it with
-`SCRIPT LOAD` on the first `NOSCRIPT` reply. The full source is sent once per
-script per server; every later call sends the 40-byte digest. Scripts queued
-in a pipeline are sent as plain `EVAL`, since a pipeline cannot retry a
-`NOSCRIPT` reply.
+`eval_script()` sends the script's SHA-1 digest with `EVALSHA`. After a
+`NOSCRIPT` reply, it loads the script with `SCRIPT LOAD` and retries. Each
+server receives the full source once per script, and later calls send only the
+40-byte digest. A pipeline sends the full source with `EVAL`, because it cannot
+retry a `NOSCRIPT` reply.
 
 ### Pre/Post Processing Hooks
 
-Scripts support `pre_hook` (transform keys/args before execution) and `post_hook` (transform results after execution).
+`pre_hook` transforms the keys and args before the script runs, and
+`post_hook` transforms the result.
 
 #### Built-in Helpers
 
@@ -385,15 +379,14 @@ from django_cachex import (
 )
 ```
 
-Pass `post_hook=None` (the default) when no decoding is needed; the result is
-returned unchanged.
+With `post_hook=None`, the default, the result comes back unchanged.
 
 #### Mixed Values and Scalars
 
-Most real scripts carry two kinds of ARGV: values that a later `get()` has to
-read back, which must go through the serializer and compressor, and scalars
-that Lua itself consumes with `tonumber` or a string compare, which must not.
-Wrap the values in `Encoded` and use `encoded_pre`:
+A script's ARGV often mixes two kinds of arguments. Values that a later `get()`
+reads back must go through the serializer and compressor. Scalars that Lua
+consumes with `tonumber` or a string compare must not. Wrap the values in
+`Encoded` and use `encoded_pre`:
 
 ```python
 from django_cachex import Encoded, encoded_pre
@@ -417,15 +410,14 @@ cache.eval_script(
 )
 ```
 
-The marker is position-independent, so a variadic tail is
-`[str(score), "0", *map(Encoded, members)]` and alternating field/value
-pairs are `[field, Encoded(value), ...]`. With nothing wrapped `encoded_pre`
-behaves like `keys_only_pre`; with everything wrapped, like `full_encode_pre`.
+`Encoded` works at any position, for example in a variadic tail such as
+`[str(score), "0", *map(Encoded, members)]` or in alternating field/value pairs
+such as `[field, Encoded(value), ...]`. With nothing wrapped, `encoded_pre` behaves
+like `keys_only_pre`, and with everything wrapped, like `full_encode_pre`.
 
-An `Encoded` that reaches the adapter unwrapped, because the call passed no
-`pre_hook` or one that does not handle it, raises `TypeError` instead of
-sending the dataclass repr to the server. `Encoded` in `keys` and
-`Encoded(Encoded(...))` raise too.
+An `Encoded` in `args` that no `pre_hook` unwraps raises `TypeError` before
+anything reaches the server. So do an `Encoded` in `keys` and
+`Encoded(Encoded(...))`.
 
 #### Key Prefixing
 
@@ -467,7 +459,7 @@ old_session = cache.eval_script(
 
 ### Custom Processing Hooks
 
-Create custom hooks with `ScriptHelpers`:
+Custom hooks receive a `ScriptHelpers` instance:
 
 ```python
 from django_cachex import ScriptHelpers
@@ -533,3 +525,4 @@ count = await cache.aeval_script(
     args=[60],
     pre_hook=keys_only_pre,
 )
+```
