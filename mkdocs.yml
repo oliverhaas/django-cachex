@@ -68,6 +68,7 @@ nav:
       - Sentinel: user-guide/sentinel.md
       - Cluster: user-guide/cluster.md
       - TrackingCache: user-guide/composite-backends.md
+      - ORM Cache: user-guide/orm-cache.md
   - Recipes: recipes.md
   - Migration: migration.md
   - Reference:

@@ -3,7 +3,9 @@ name = "django-cachex"
 version = "0.10.0"
 description = "Valkey and Redis cache backends for Django: standalone, Sentinel and Cluster topologies, sync and async APIs"
 readme = "README.md"
-license = "MIT"
+license = "MIT AND BSD-3-Clause"
+# django_cachex/orm is derived from django-cachalot (BSD-3-Clause).
+license-files = ["LICENSE", "django_cachex/orm/LICENSE"]
 requires-python = ">=3.14"
 keywords = ["django", "valkey", "redis", "cache", "backend"]
 authors = [{ name = "Oliver Haas", email = "ohaas@e1plus.de" }]
@@ -53,23 +55,26 @@ dev = [
   "redis[hiredis]==8.1.0",
   "beautifulsoup4==4.15.0",
   "django-stubs==6.1.1",
-  "djlint==1.46.1",
+  "djlint==1.46.2",
   "lz4==4.4.5",
   "msgpack==1.2.2",
   "ormsgpack==1.12.2",
   "mypy==2.3.1",
   "pre-commit==4.6.2",
+  # ORM cache tests (tests/orm) on PostgreSQL. The pure-Python build loads the
+  # system libpq, so it installs on the free-threaded interpreter as well.
+  "psycopg==3.3.6",
   "pytest-asyncio==1.4.0",
   "pytest-cov==7.1.0",
   "pytest-django==4.14.0",
   "pytest-flakefinder==1.1.0",
-  "pytest-mock==3.15.1",
+  "pytest-mock==3.16.0",
   "pytest-xdist==3.8.0",
   "pytest==9.1.1",
-  "ruff==0.16.8",
+  "ruff==0.16.9",
   "testcontainers==4.15.0",
-  "ty==0.0.81",
-  "types-docker==7.2.0.20260827",
+  "ty==0.0.84",
+  "types-docker==7.2.0.20260923",
   # ASGI benchmark only: granian (real ASGI server) plus httpx (load gen).
   "granian>=2.6,<3",
   "httpx>=0.28,<0.29",
@@ -151,6 +156,14 @@ suppress-none-returning = true # Don't require -> None on functions
   "S105",   # Hardcoded passwords in test settings
   "S301",   # pickle in tests is fine
   "S311",   # random is fine for tests
+]
+"tests/orm/**" = [
+  "B018",   # Querysets are evaluated for the queries they run
+  "DTZ001", # The ORM test settings run with USE_TZ = False
+  "PT012",  # Raising inside atomic() is how the tests roll back
+  "RUF012", # Django migrations and model Meta classes use mutable class attributes
+  "S608",   # Raw SQL statements are what the tests exercise
+  "S610",   # and so is QuerySet.extra()
 ]
 "benchmarks/**" = [
   "ANN",     # Type annotations not required in benchmarks

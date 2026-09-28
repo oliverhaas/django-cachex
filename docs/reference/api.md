@@ -695,3 +695,5 @@ failure.
 | `LockNotOwnedError` | Releasing or extending a lock the caller no longer owns (expired or stolen). Subclass of `LockError`. |
 | `SemaphoreError` | A semaphore operation failed (e.g. re-acquiring before release). |
 | `SemaphoreTimeoutError` | `timeout` elapsed before the semaphore could be acquired. Subclass of `SemaphoreError`. |
+
+The [ORM cache](../user-guide/orm-cache.md) raises `django_cachex.orm.exceptions.InvalidationError` when a write cannot invalidate the cache. It subclasses `CachexError` and Django's `DatabaseError`, so `atomic()` rolls the transaction back; see [Failures](../user-guide/orm-cache.md#failures).

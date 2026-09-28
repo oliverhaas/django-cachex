@@ -39,6 +39,8 @@ _REDIS_ASYNC_CLUSTERS: AsyncClusterRegistry = weakref.WeakKeyDictionary()
 _REDIS_AVAILABLE = False
 try:
     import redis
+    from redis import ConnectionPool as RedisConnectionPool
+    from redis import Redis as RedisClient
     from redis._parsers import _RESP3Parser as RedisRESP3Parser
     from redis.asyncio import ConnectionPool as RedisAsyncConnectionPool
     from redis.asyncio import Redis as RedisAsyncClient
@@ -55,7 +57,7 @@ try:
 
     _REDIS_AVAILABLE = True
 except ImportError:
-    redis = None  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+    redis = None  # type: ignore[assignment]
 
 
 def _missing_redis() -> ImportError:
@@ -96,8 +98,8 @@ class RedisPyAdapter(_RedisPyMixin, ValkeyPyAdapter):
 
     if _REDIS_AVAILABLE:
         _lib = redis
-        _client_class = redis.Redis
-        _pool_class = redis.ConnectionPool
+        _client_class = RedisClient
+        _pool_class = RedisConnectionPool
         _async_client_class = RedisAsyncClient
         _async_pool_class = RedisAsyncConnectionPool
 
@@ -107,7 +109,7 @@ class RedisPySentinelAdapter(_RedisPyMixin, ValkeyPySentinelAdapter):
 
     if _REDIS_AVAILABLE:
         _lib = redis
-        _client_class = redis.Redis
+        _client_class = RedisClient
         _pool_class = RedisSentinelConnectionPool
         _sentinel_class = RedisSentinel
         _sentinel_pool_class = RedisSentinelConnectionPool
@@ -129,8 +131,8 @@ class RedisPyClusterAdapter(_RedisPyMixin, ValkeyPyClusterAdapter):
         _lib = redis
         # Commands go through the cluster client, which owns per-node pools, but the
         # generic pool helpers are still inherited and must not build a valkey-py pool.
-        _client_class = redis.Redis
-        _pool_class = redis.ConnectionPool
+        _client_class = RedisClient
+        _pool_class = RedisConnectionPool
         _cluster_class = RedisCluster
         _async_cluster_class = AsyncRedisCluster
 

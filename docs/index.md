@@ -20,6 +20,7 @@ A drop-in replacement for Django's built-in Redis cache, plus:
 - Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with fallback chains for safe migrations.
 - Cache stampede prevention (TTL-based XFetch).
 - `TrackingCache`, a local read cache over a Redis/Valkey alias, invalidated by the server's `CLIENT TRACKING` or bounded by a local TTL.
+- An opt-in [ORM cache](user-guide/orm-cache.md), `django_cachex.orm`: ORM query results cached per table and invalidated by every write, derived from django-cachalot with write leases that keep a write from leaving a stale result behind.
 - Django `LocMemCache` and `DatabaseCache` extensions with the hash, list, set and sorted set ops, `ttl()`/`expire()`/`persist()`, key patterns, and admin support (no streams, locks, pipelines or Lua).
 - Optional `valkey-glide` adapter: Valkey's official Rust-cored client, exposed as `ValkeyGlideCache`. Experimental.
 - Django admin UI for browsing keys, inspecting values, editing, and flushing.
@@ -81,7 +82,7 @@ INSTALLED_APPS = [
 
 ## Acknowledgments
 
-This project started from [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some serializer and compressor utility code is derived from django-redis, licensed under BSD-3-Clause. The admin UI was inspired by [django-redisboard](https://github.com/ionelmc/django-redisboard).
+This project started from [django-redis](https://github.com/jazzband/django-redis) and Django's official [Redis cache backend](https://docs.djangoproject.com/en/stable/topics/cache/#redis). Some serializer and compressor utility code is derived from django-redis, licensed under BSD-3-Clause. The admin UI was inspired by [django-redisboard](https://github.com/ionelmc/django-redisboard). The ORM cache (`django_cachex.orm`) is derived from [django-cachalot](https://github.com/noripyt/django-cachalot) 2.9.1 by Bertrand Bordage, licensed under BSD-3-Clause.
 
 The ASGI benchmark follows the shape of [django-vcache](https://gitlab.com/glitchtip/django-vcache)'s `bench_compare.py` (MIT, by David Burke / GlitchTip), so the numbers are directly comparable.
 

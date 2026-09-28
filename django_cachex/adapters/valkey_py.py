@@ -402,6 +402,8 @@ class _DriverLock:
 _VALKEY_AVAILABLE = False
 try:
     import valkey
+    from valkey import ConnectionPool as ValkeyConnectionPool
+    from valkey import Valkey as ValkeyClient
     from valkey._parsers import _RESP3Parser as ValkeyRESP3Parser
     from valkey.asyncio import ConnectionPool as ValkeyAsyncConnectionPool
     from valkey.asyncio import Valkey as ValkeyAsyncClient
@@ -418,7 +420,7 @@ try:
 
     _VALKEY_AVAILABLE = True
 except ImportError:
-    valkey = None  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+    valkey = None  # type: ignore[assignment]
 
 
 def _missing_valkey() -> ImportError:
@@ -667,8 +669,8 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
     if _VALKEY_AVAILABLE:
         _lib = valkey
-        _client_class = valkey.Valkey
-        _pool_class = valkey.ConnectionPool
+        _client_class = ValkeyClient
+        _pool_class = ValkeyConnectionPool
         _async_client_class = ValkeyAsyncClient
         _async_pool_class = ValkeyAsyncConnectionPool
         _resp3_parser_class = ValkeyRESP3Parser
