@@ -135,7 +135,7 @@ and pattern helpers and `cache.lock()`, you gain:
 
 ## From django-cachalot
 
-The [ORM cache](user-guide/orm-cache.md) started as a copy of django-cachalot 2.9.1, so its settings and functions carry over under new names. Invalidation works differently: results are stored under table generations instead of timestamps, and writes take leases, so a query that runs while a write commits can no longer leave a stale result in the cache.
+The [ORM cache](user-guide/orm-cache.md) started as a copy of django-cachalot 2.9.1, so most of its settings and functions carry over under new names. Invalidation works differently: results are stored under table generations instead of timestamps, and writes take leases, so a query that runs while a write commits can no longer leave a stale result in the cache.
 
 Replace the app and uninstall cachalot; running both would patch the ORM twice:
 
@@ -165,11 +165,13 @@ CACHEX_ORM = {
 
 | django-cachalot | django-cachex |
 |-----------------|---------------|
-| `CACHALOT_ENABLED`, `CACHALOT_CACHE`, `CACHALOT_DATABASES`, `CACHALOT_CACHE_RANDOM`, `CACHALOT_CACHE_ITERATORS`, `CACHALOT_INVALIDATE_RAW`, `CACHALOT_ONLY_CACHABLE_TABLES`, `CACHALOT_ONLY_CACHABLE_APPS`, `CACHALOT_UNCACHABLE_APPS`, `CACHALOT_ADDITIONAL_TABLES`, `CACHALOT_FINAL_SQL_CHECK` | The same key without the prefix |
+| `CACHALOT_ENABLED`, `CACHALOT_CACHE`, `CACHALOT_DATABASES`, `CACHALOT_ONLY_CACHABLE_TABLES`, `CACHALOT_ADDITIONAL_TABLES`, `CACHALOT_FINAL_SQL_CHECK` | The same key without the prefix |
 | `CACHALOT_UNCACHABLE_TABLES` | `UNCACHABLE_TABLES`. `django_migrations` is never cached, so it can be left out. |
 | `CACHALOT_TIMEOUT` | `TIMEOUT`. The default is the cache's default timeout, not `None`. Either way a write leaves its tables' results in the cache until they expire or are evicted, see [Eviction](user-guide/orm-cache.md#eviction). |
-| `CACHALOT_QUERY_KEYGEN`, `CACHALOT_TABLE_KEYGEN` | `QUERY_KEYGEN`, `TABLE_KEYGEN`, with the same arguments. The defaults live in `django_cachex.orm.utils`. |
-| `CACHALOT_USE_UNSUPPORTED_DATABASE`, `CACHALOT_ADDITIONAL_SUPPORTED_DATABASES` | Removed. List the aliases of other vendors in `DATABASES` (warning `cachex_orm.W003`). |
+| `CACHALOT_ONLY_CACHABLE_APPS`, `CACHALOT_UNCACHABLE_APPS` | Removed. List the apps' tables, many-to-many tables included, in `ONLY_CACHABLE_TABLES` or `UNCACHABLE_TABLES`. |
+| `CACHALOT_CACHE_RANDOM`, `CACHALOT_CACHE_ITERATORS`, `CACHALOT_INVALIDATE_RAW` | Removed. Random queries and the results of `iterator()` are never cached, and raw SQL writes always invalidate. |
+| `CACHALOT_QUERY_KEYGEN`, `CACHALOT_TABLE_KEYGEN` | Removed. The keys go through the cache alias's `KEY_FUNCTION`, which can tell tenants apart. |
+| `CACHALOT_USE_UNSUPPORTED_DATABASE`, `CACHALOT_ADDITIONAL_SUPPORTED_DATABASES` | Removed. Only PostgreSQL and SQLite are cached. |
 | | `LEASE_TIMEOUT` is new, see [Failures](user-guide/orm-cache.md#failures). |
 
 `CACHE` must name a django-cachex Redis or Valkey backend, or a `TrackingCache` over one, with a serializer that keeps Python types, like the default pickle one. Other backends cache nothing (`cachex_orm.W001`), apart from `LocMemCache` for tests and single processes. See [Caches and databases](user-guide/orm-cache.md#caches-and-databases).
@@ -184,7 +186,7 @@ Import from `django_cachex.orm.api` instead of `cachalot.api`:
 | `cachalot_disabled(all_queries=False)` | `orm_cache_disabled()`. The `all_queries` argument is gone; cachalot 2.9.1 ignored it. |
 | `get_last_invalidation(*tables_or_models, cache_alias=None, db_alias=None)` | `table_generations(*tables_or_models, db_alias="default")`, returning generations instead of a timestamp and needing at least one table, see [table_generations()](user-guide/orm-cache.md#table_generations) |
 | `manage.py invalidate_cachalot` | `manage.py invalidate_orm_cache`, with the same arguments and options. An app label also covers the app's many-to-many tables, and an app without models invalidates nothing instead of every table. |
-| `cachalot.signals.post_invalidation` | `django_cachex.orm.signals.post_invalidation`, with the same arguments |
+| `cachalot.signals.post_invalidation` | Removed. Cache values derived from tables under their [table_generations()](user-guide/orm-cache.md#table_generations) instead. |
 | `cachalot.*` system checks | `cachex_orm.*`, see [System checks](user-guide/orm-cache.md#system-checks) |
 | The `get_last_invalidation` template tag, the Jinja2 extension and the Django Debug Toolbar panel | Removed |
 
@@ -210,11 +212,12 @@ def order_totals():
 
 - A write can no longer leave a stale result behind: while a write holds its lease, queries on its tables are neither served from the cache nor stored in it. See [How invalidation works](user-guide/orm-cache.md#how-invalidation-works).
 - Writes need the cache. A write that cannot take its lease raises `InvalidationError`, a `DatabaseError`, before its statement or `COMMIT` runs, unless `ENABLED` is off. See [Failures](user-guide/orm-cache.md#failures).
-- Subqueries nested in expressions, in the ordering or in `FilteredRelation` conditions count with their tables, and `Now()` anywhere in a query keeps it from being cached; cachalot looked at the top level of filters and annotations only. `Random()`, `UUID4()`, `UUID7()` and `RandomUUID()` count as random, like `order_by("?")`.
-- `"supported_only"` covers PostgreSQL and SQLite, and leaves out replicas, the aliases with a `TEST["MIRROR"]`. Cachalot also covered MySQL, which is untested here: listed in `DATABASES`, it raises the `cachex_orm.W003` warning, and inside transactions its results are cached for the transaction only.
-- Under autocommit, `post_invalidation` is sent after the write instead of before it, and an error a receiver raises is logged to `django.dispatch` instead of failing the write.
+- Subqueries nested in expressions, in the ordering or in `FilteredRelation` conditions count with their tables, and `Now()` anywhere in a query keeps it from being cached; cachalot looked at the top level of filters and annotations only. Queries calling `Random()`, `UUID4()`, `UUID7()` or `RandomUUID()` are never cached, like those ordered by `"?"`.
+- Only PostgreSQL and SQLite are cached. Cachalot also covered MySQL; listing it in `DATABASES` is now the error `cachex_orm.E006`. `"supported_only"` also leaves out replicas, the aliases with a `TEST["MIRROR"]`.
+- The results of `iterator()` are not cached; cachalot read them into memory in full and cached them by default.
+- With psycopg2 instead of psycopg 3, queries with JSON, binary or range parameters are not cached.
 - `migrate` invalidates only when it applied a migration, and then the many-to-many tables too; cachalot invalidated every model after each `migrate` and left out the many-to-many tables.
-- Query parameters are keyed by their type and whole value. Cachalot keyed them by `str()`, which psycopg 3 shortens for long JSON and binary values, so two queries differing only there could share a result, as could `Value(1)` and `Value("1")`. A custom `QUERY_KEYGEN` copied from cachalot's has the same flaw; build it on `django_cachex.orm.utils.get_query_cache_key` instead.
+- Query parameters are keyed by their type and whole value. Cachalot keyed them by `str()`, which psycopg 3 shortens for long JSON and binary values, so two queries differing only there could share a result, as could `Value(1)` and `Value("1")`.
 
 ### Rolling out
 

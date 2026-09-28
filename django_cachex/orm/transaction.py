@@ -178,10 +178,9 @@ def _read_isolation(connection: BaseDatabaseWrapper) -> str:
             cursor.execute("SHOW default_transaction_isolation")
             (name,) = cursor.fetchone()
         return SHARED if name in {"read uncommitted", "read committed"} else SNAPSHOT
-    if connection.vendor == "sqlite":
-        (mode,) = raw.execute("PRAGMA journal_mode").fetchone()
-        return SNAPSHOT if str(mode).lower() == "wal" else SHARED
-    return SNAPSHOT
+    # SQLite, the only other vendor the ORM cache caches.
+    (mode,) = raw.execute("PRAGMA journal_mode").fetchone()
+    return SNAPSHOT if str(mode).lower() == "wal" else SHARED
 
 
 def isolation_changed(connection: BaseDatabaseWrapper, *, known: bool) -> None:

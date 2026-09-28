@@ -19,16 +19,16 @@ from django.db.models.sql.compiler import SQLCompiler, SQLDeleteCompiler, SQLIns
 from django.db.models.sql.constants import GET_ITERATOR_CHUNK_SIZE, MULTI, SINGLE
 
 from django_cachex.orm import transaction
-from django_cachex.orm.api import LOCAL_STORAGE, _invalidation_failed, _send_signals, _table_keys, invalidate
+from django_cachex.orm.api import LOCAL_STORAGE, _invalidation_failed, _table_keys, invalidate
 from django_cachex.orm.settings import ITERABLES, orm_settings
 from django_cachex.orm.store import Store, get_store
 from django_cachex.orm.utils import (
-    _GENERATED_SQL,
     UncachableQuery,
     _get_tables,
     _get_tables_from_sql,
     deletion_dependents,
     filter_cachable,
+    get_query_cache_key,
     models_of_tables,
 )
 
@@ -58,9 +58,9 @@ _NOTHING: frozenset[str] = frozenset()
 
 
 def _execute(execute: Callable[[], Any]) -> tuple[Any, bool]:
-    """Run the query; return its result, materialized, and whether it may be cached."""
+    """Run the query; return its result, materialized unless iterator() streams it, and whether it may be cached."""
     result = execute()
-    if result.__class__ is types.GeneratorType and not orm_settings.CACHE_ITERATORS:
+    if result.__class__ is types.GeneratorType:
         return result, False
     if result.__class__ not in ITERABLES and isinstance(result, Iterable):
         result = list(result)
@@ -76,11 +76,8 @@ def _key_and_tables(compiler: Any, result_type: Any, store: Store | None) -> tup
         return None
     try:
         # A SINGLE and a MULTI query can share their SQL but not their result.
-        query_key = f"{orm_settings.QUERY_KEYGEN(compiler)}:{result_type}"
-        if getattr(compiler, _GENERATED_SQL, None) is None:
-            # Compiling joins the tables select_related() and the ordering
-            # need, and a custom QUERY_KEYGEN may not compile.
-            setattr(compiler, _GENERATED_SQL, compiler.as_sql()[0].lower())
+        query_key = f"{get_query_cache_key(compiler)}:{result_type}"
+        # Compiled for its key, the query has joined the tables select_related() and the ordering need.
         tables = _get_tables(compiler.connection.alias, compiler.query, compiler)
     except EmptyResultSet, UncachableQuery:
         return None
@@ -212,11 +209,9 @@ def _write(connection: Any, tables: set[str], run: Callable[[], Any]) -> Any:
             finally:
                 transaction.mark_written(connection, tables)
         # Under autocommit the statement commits itself.
-        result = _leased(connection, tables, run)
+        return _leased(connection, tables, run)
     finally:
         setattr(connection, _WRITING, active)
-    _send_signals(connection.alias, tables)
-    return result
 
 
 def _patch_write(original: Callable[..., Any]) -> Callable[..., Any]:
@@ -245,7 +240,7 @@ def _patch_cursor(original: Callable[..., Any]) -> Callable[..., Any]:
             return original(cursor, sql, *args, **kwargs)
         lowered = (sql.decode(errors="replace") if isinstance(sql, bytes) else str(sql)).lower()
         tables: set[str] = set()
-        if orm_settings.INVALIDATE_RAW and SQL_DATA_CHANGE_RE.search(lowered):
+        if SQL_DATA_CHANGE_RE.search(lowered):
             # The tables the SQL may write to, and those it changes through their foreign keys.
             tables = _get_tables_from_sql(connection, lowered)
             truncate = bool(_TRUNCATE_CASCADE_RE.search(lowered))
@@ -264,13 +259,11 @@ def _patch_commit(original: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(original)
     def commit(connection: Any) -> None:
         tables = transaction.written(connection)
-        if not tables:
+        if tables:
+            _leased(connection, tables, lambda: original(connection))
+        else:
             original(connection)
-            transaction.reset(connection)
-            return
-        _leased(connection, tables, lambda: original(connection))
         transaction.reset(connection)
-        _send_signals(connection.alias, tables)
 
     return commit
 
@@ -284,14 +277,12 @@ def _patch_set_autocommit(original: Callable[..., Any]) -> Callable[..., Any]:
             original(connection, autocommit, *args, **kwargs)
             return
         tables = transaction.written(connection)
-        if not tables:
+        if tables:
+            # SQLite commits a pending transaction when autocommit is turned on.
+            _leased(connection, tables, lambda: original(connection, autocommit, *args, **kwargs))
+        else:
             original(connection, autocommit, *args, **kwargs)
-            transaction.reset(connection)
-            return
-        # SQLite commits a pending transaction when autocommit is turned on.
-        _leased(connection, tables, lambda: original(connection, autocommit, *args, **kwargs))
         transaction.reset(connection)
-        _send_signals(connection.alias, tables)
 
     return set_autocommit
 

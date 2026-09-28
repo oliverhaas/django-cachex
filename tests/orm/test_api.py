@@ -43,11 +43,8 @@ def test_invalidate(table_or_model):
     with assert_num_queries(1):
         assert list(Test.objects.values_list("name", flat=True)) == ["test1"]
 
-    with override_orm_settings(INVALIDATE_RAW=False), connection.cursor() as cursor:
-        cursor.execute(
-            "INSERT INTO ormtest_test (name, public) VALUES ('test2', %s);",
-            [1 if connection.vendor == "sqlite" else True],
-        )
+    # On the driver's connection, which the ORM cache does not watch.
+    connection.connection.execute("INSERT INTO ormtest_test (name, public) VALUES ('test2', TRUE)")
 
     with assert_num_queries(0):
         assert list(Test.objects.values_list("name", flat=True)) == ["test1"]

@@ -17,7 +17,7 @@ from django.db.models import Count
 from django.db.models.expressions import RawSQL
 
 from tests.orm.app.models import Test, TestChild, TestParent
-from tests.orm.utils import assert_num_queries, override_orm_settings
+from tests.orm.utils import assert_num_queries
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -923,18 +923,6 @@ def row():
 
 
 def test_flush(row):
-    with assert_num_queries(1):
-        assert list(Test.objects.all()) == [row]
-
-    call_command("flush", verbosity=0, interactive=False)
-
-    with assert_num_queries(1):
-        assert list(Test.objects.all()) == []
-
-
-@override_orm_settings(INVALIDATE_RAW=False)
-def test_flush_without_raw_invalidation(row):
-    # flush signals post_migrate without a plan, which invalidates too.
     with assert_num_queries(1):
         assert list(Test.objects.all()) == [row]
 

@@ -50,11 +50,13 @@ def test_async_for():
     assert_cached(names, ["test1"])
 
 
-def test_aiterator():
+def test_aiterator_not_cached():
     async def names():
         return [t.name async for t in Test.objects.aiterator()]
 
-    assert_cached(names, ["test1"])
+    with assert_num_queries(2):
+        assert async_to_sync(names)() == ["test1"]
+        assert async_to_sync(names)() == ["test1"]
 
 
 def test_acreate_invalidates():

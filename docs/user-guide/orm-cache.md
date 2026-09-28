@@ -37,11 +37,11 @@ Any other backend (Memcached, `DatabaseCache`, Django's own `RedisCache`, ...) c
 
 Results must come back from the cache with their Python types (`Decimal`, `datetime`, tuples). The default pickle serializer does that; the JSON and MsgPack serializers do not, and the `cachex_orm.E004` check rejects them. Any compressor works.
 
-PostgreSQL and SQLite are supported: the ORM cache reads their transaction isolation to decide what a transaction may share (see [Transactions](#transactions)). By default every PostgreSQL and SQLite alias in `DATABASES` is cached except those with a `TEST["MIRROR"]`, which marks a replica. `CACHEX_ORM["DATABASES"]` lists the aliases explicitly instead. An alias of another vendor can be listed as well: inside transactions it then caches results for the transaction only (`cachex_orm.W003`), and it is untested.
+PostgreSQL and SQLite are supported: the ORM cache reads their transaction isolation to decide what a transaction may share (see [Transactions](#transactions)). By default every PostgreSQL and SQLite alias in `DATABASES` is cached except those with a `TEST["MIRROR"]`, which marks a replica. `CACHEX_ORM["DATABASES"]` lists the aliases explicitly instead. An alias of another vendor is never cached, and listing it is the error `cachex_orm.E006`.
 
 ## Settings
 
-All settings live in the `CACHEX_ORM` dict. Keys are upper case; unknown keys raise the `cachex_orm.W005` warning.
+All settings live in the `CACHEX_ORM` dict. Keys are upper case; unknown keys raise the `cachex_orm.W004` warning.
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -50,16 +50,9 @@ All settings live in the `CACHEX_ORM` dict. Keys are upper case; unknown keys ra
 | `DATABASES` | `"supported_only"` | Database aliases whose queries are cached: every PostgreSQL and SQLite alias except replicas, or a list, tuple or set of aliases. |
 | `TIMEOUT` | the cache's default timeout | Seconds a result is kept. A write stops its tables' results from being served without deleting them, so `None` keeps a result until the cache evicts it, see [Eviction](#eviction). |
 | `LEASE_TIMEOUT` | `60` | Seconds a write's lease lasts if the write cannot release it. Keep it above the longest write, see [Failures](#failures). |
-| `CACHE_RANDOM` | `False` | Cache queries ordered by `"?"` or calling `Random()`, `UUID4()`, `UUID7()` or `RandomUUID()`. |
-| `CACHE_ITERATORS` | `True` | Cache the results of `iterator()`, which reads them into memory in full. |
-| `INVALIDATE_RAW` | `True` | Invalidate the tables raw SQL writes to (see [Limits](#limits)). |
 | `ONLY_CACHABLE_TABLES` | `()` | If set, only queries whose tables are all listed are cached. |
-| `ONLY_CACHABLE_APPS` | `()` | Adds the tables of the apps with these labels, many-to-many tables included, to `ONLY_CACHABLE_TABLES`. |
 | `UNCACHABLE_TABLES` | `()` | Queries reading one of these tables are not cached, and writes to them invalidate nothing. `django_migrations` is never cached. |
-| `UNCACHABLE_APPS` | `()` | Adds the tables of the apps with these labels, many-to-many tables included, to `UNCACHABLE_TABLES`. |
 | `ADDITIONAL_TABLES` | `()` | Tables no model covers, to look for in raw SQL. |
-| `QUERY_KEYGEN` | `"django_cachex.orm.utils.get_query_cache_key"` | Callable, or its dotted path, building the key of a query from its SQL compiler. |
-| `TABLE_KEYGEN` | `"django_cachex.orm.utils.get_table_cache_key"` | Callable, or its dotted path, building the key of a table from a database alias and a table name. |
 | `FINAL_SQL_CHECK` | `False` | Also search the final SQL of every query for table names, to catch the tables custom expressions name in SQL of their own, such as a `Func` template. Queries with `extra()` conditions or ordered by a subquery are always searched. |
 
 The settings are read again when a test overrides `CACHEX_ORM`, `DATABASES` or `CACHES`.
@@ -71,10 +64,10 @@ Queries the ORM compiles: querysets, `get()`, `count()`, `exists()`, `aggregate(
 Not cached:
 
 - `select_for_update()` and `explain()`.
-- Queries calling `Now()` or `TransactionNow()` anywhere: in a filter, an annotation, the ordering, a subquery or a `FilteredRelation` condition.
-- Queries ordered by `"?"` or calling `Random()`, `UUID4()`, `UUID7()` or `RandomUUID()`, unless `CACHE_RANDOM` is on.
+- Queries ordered by `"?"`, and queries calling `Now()`, `TransactionNow()`, `Random()`, `UUID4()`, `UUID7()` or `RandomUUID()` anywhere: in a filter, an annotation, the ordering, a subquery or a `FilteredRelation` condition.
+- The results of `iterator()` and `aiterator()`, which stream their rows. A result the same query stored without them is still served.
 - Queries holding an expression that compiles to SQL the ORM cache cannot look into, one without `get_source_expressions()`.
-- Queries with a parameter of a type the cache key cannot represent faithfully. The standard scalar, date and time types, `Decimal`, `UUID`, containers of them and the PostgreSQL driver's types are fine.
+- Queries with a parameter of a type the cache key cannot represent faithfully. The standard scalar, date and time types, `Decimal`, `UUID`, containers of them and psycopg 3's types are fine. With psycopg2, queries with JSON, binary or range parameters are not cached.
 - Raw SQL: `cursor.execute()` and `Manager.raw()`.
 - Queries reading `django_migrations`, a table in `UNCACHABLE_TABLES` or one outside `ONLY_CACHABLE_TABLES`.
 - Inside a transaction, queries reading a table the transaction has written.
@@ -110,7 +103,7 @@ A write stops its tables' results from being served but leaves them in the cache
 What a transaction writes is tracked per savepoint; rolling back to a savepoint forgets what was written since. Leases are taken at `COMMIT`, so other connections keep using the cache while the transaction runs.
 
 - Under PostgreSQL's `READ COMMITTED` (the default) and on SQLite with a rollback journal (the default), each statement sees what was committed when it started, like the shared cache. A transaction reads the tables it has not written through the shared cache, and the tables it has written from the database.
-- Under `REPEATABLE READ` and `SERIALIZABLE`, on SQLite in WAL mode and on other vendors, a transaction reads a snapshot that may be older than the shared cache. Its results are cached for the transaction alone and dropped when it ends.
+- Under `REPEATABLE READ` and `SERIALIZABLE`, and on SQLite in WAL mode, a transaction reads a snapshot that may be older than the shared cache. Its results are cached for the transaction alone and dropped when it ends.
 
 The isolation is read once per database connection, from the `isolation_level` option or from the server. Raw SQL changing the session default (`SET SESSION CHARACTERISTICS`, `default_transaction_isolation`, `PRAGMA journal_mode`) makes the ORM cache read it again. Other statements naming an isolation, like `SET TRANSACTION ISOLATION LEVEL`, make the connection cache per transaction until it reconnects.
 
@@ -184,27 +177,22 @@ python manage.py invalidate_orm_cache shop.Order --cache default --db default
 
 An unknown label is an error; an app without models invalidates nothing.
 
-### Signal
-
-`django_cachex.orm.signals.post_invalidation` is sent once per table after its queries were invalidated: after a write under autocommit, when a transaction that wrote the table commits, and by `invalidate()` (at the commit, inside a transaction). The sender is the table name, and `db_alias` names the database. A receiver that raises does not fail the write, which has happened by then: the error is logged to the `django.dispatch` logger.
-
 ## System checks
 
 | ID | Meaning |
 |----|---------|
 | `cachex_orm.W001` | The cache backend cannot hold the ORM cache, so nothing is cached. |
 | `cachex_orm.W002` | None of the databases are PostgreSQL or SQLite. |
-| `cachex_orm.W003` | A database listed in `DATABASES` is neither PostgreSQL nor SQLite. |
-| `cachex_orm.W004` | `DATABASES` is empty. |
-| `cachex_orm.W005` | `CACHEX_ORM` has unknown keys. |
-| `cachex_orm.W006` | A database listed in `DATABASES` has a `TEST["MIRROR"]`, so it looks like a replica. |
+| `cachex_orm.W003` | `DATABASES` is empty. |
+| `cachex_orm.W004` | `CACHEX_ORM` has unknown keys. |
+| `cachex_orm.W005` | A database listed in `DATABASES` has a `TEST["MIRROR"]`, so it looks like a replica. |
 | `cachex_orm.E001` | `DATABASES` names an alias missing from Django's `DATABASES`. |
 | `cachex_orm.E002` | `DATABASES` is neither `"supported_only"` nor a list, tuple or set. |
 | `cachex_orm.E003` | `CACHE` names an alias missing from `CACHES`. |
 | `cachex_orm.E004` | The cache's serializer does not bring query results back unchanged. |
 | `cachex_orm.E005` | The cache could not be loaded. |
-| `cachex_orm.E006` | `ONLY_CACHABLE_APPS` or `UNCACHABLE_APPS` names a label no installed app has. |
-| `cachex_orm.E007` | A table or app setting is not a list, tuple or set, like `("django_session")` without its comma. The value counts as empty. |
+| `cachex_orm.E006` | A database listed in `DATABASES` is neither PostgreSQL nor SQLite. It is not cached. |
+| `cachex_orm.E007` | A table setting is not a list, tuple or set, like `("django_session")` without its comma. The value counts as empty. |
 
 ## Limits
 

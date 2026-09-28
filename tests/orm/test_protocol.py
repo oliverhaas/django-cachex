@@ -21,7 +21,7 @@ from django_cachex.orm.api import invalidate
 from django_cachex.orm.exceptions import InvalidationError
 from django_cachex.orm.settings import orm_settings
 from django_cachex.orm.store import BYPASS, Lookup, RespStore, _entry_key, _LocalResults
-from django_cachex.orm.utils import deletion_dependents
+from django_cachex.orm.utils import deletion_dependents, get_table_cache_key
 from django_cachex.script import keys_only_pre
 from tests.orm.app.models import Test, TestChild, TestParent
 from tests.orm.utils import assert_num_queries, assert_query_cached, orm_store, override_orm_settings
@@ -302,7 +302,7 @@ def test_cached_copy(conn):
 
 def leased():
     """Whether a write holds a lease on the table of Test."""
-    table_key = orm_settings.TABLE_KEYGEN(DEFAULT_DB_ALIAS, Test._meta.db_table)
+    table_key = get_table_cache_key(DEFAULT_DB_ALIAS, Test._meta.db_table)
     return orm_store().generations(DEFAULT_DB_ALIAS, [table_key]) is None
 
 

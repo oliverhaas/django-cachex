@@ -243,20 +243,10 @@ def test_django_enums():
     assert_query_cached(qs, [t])
 
 
-def test_iterator(rows):
-    with override_orm_settings(CACHE_ITERATORS=False):
-        with assert_num_queries(2):
-            data1 = list(Test.objects.iterator())
-            data2 = list(Test.objects.iterator())
-        assert data2 == data1
-        assert data2 == [rows.t1, rows.t2]
-
-    with assert_num_queries(1):
-        data1 = list(Test.objects.iterator())
-    with assert_num_queries(0):
-        data2 = list(Test.objects.iterator())
-    assert data2 == data1
-    assert data2 == [rows.t1, rows.t2]
+def test_iterator_not_cached(rows):
+    with assert_num_queries(2):
+        assert list(Test.objects.iterator()) == [rows.t1, rows.t2]
+        assert list(Test.objects.iterator()) == [rows.t1, rows.t2]
 
 
 def test_in_bulk(rows):

@@ -5,13 +5,11 @@
 
 from typing import TYPE_CHECKING, Any
 
-from django.apps import apps
 from django.conf import settings
 from django.core.cache import DEFAULT_CACHE_ALIAS
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.exceptions import ImproperlyConfigured
 from django.db.utils import load_backend
-from django.utils.module_loading import import_string
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -28,14 +26,8 @@ ITERABLES = frozenset({tuple, list, frozenset, set})
 # as each test run does, would not invalidate a cached list of old migrations.
 ALWAYS_UNCACHABLE_TABLES = frozenset({"django_migrations"})
 
-# Settings holding table names or app labels.
-TABLE_SETTINGS = (
-    "ONLY_CACHABLE_TABLES",
-    "ONLY_CACHABLE_APPS",
-    "UNCACHABLE_TABLES",
-    "UNCACHABLE_APPS",
-    "ADDITIONAL_TABLES",
-)
+# Settings holding table names.
+TABLE_SETTINGS = ("ONLY_CACHABLE_TABLES", "UNCACHABLE_TABLES", "ADDITIONAL_TABLES")
 
 DEFAULTS: dict[str, Any] = {
     "ENABLED": True,
@@ -46,16 +38,9 @@ DEFAULTS: dict[str, Any] = {
     # Seconds a write keeps its lease if it cannot release it; keep it above
     # the database's statement timeout.
     "LEASE_TIMEOUT": 60,
-    "CACHE_RANDOM": False,
-    "CACHE_ITERATORS": True,
-    "INVALIDATE_RAW": True,
     "ONLY_CACHABLE_TABLES": (),
-    "ONLY_CACHABLE_APPS": (),
     "UNCACHABLE_TABLES": (),
-    "UNCACHABLE_APPS": (),
     "ADDITIONAL_TABLES": (),
-    "QUERY_KEYGEN": "django_cachex.orm.utils.get_query_cache_key",
-    "TABLE_KEYGEN": "django_cachex.orm.utils.get_table_cache_key",
     "FINAL_SQL_CHECK": False,
 }
 
@@ -89,44 +74,24 @@ def supported_databases() -> set[str]:
     }
 
 
-def _convert_databases(value: Any, _raw: dict[str, Any]) -> Any:
-    if value == SUPPORTED_ONLY:
-        value = supported_databases()
-    if value.__class__ in ITERABLES:
-        return frozenset(value)
-    return value
-
-
 def _items(value: Any) -> tuple[Any, ...]:
     # A value of another type, like a string missing the comma of a one-item
-    # tuple, counts as empty; the cachex_orm.E007 check reports it.
+    # tuple, counts as empty; the cachex_orm.E002 and E007 checks report it.
     return tuple(value) if value.__class__ in ITERABLES else ()
 
 
-def _tables_with_apps(value: Any, app_labels: Any) -> frozenset[str]:
-    # A label no installed app has adds nothing; the cachex_orm.E006 check
-    # reports it.
-    labels = set(_items(app_labels))
-    app_tables = [
-        model._meta.db_table
-        for app_config in apps.get_app_configs()
-        if app_config.label in labels
-        for model in app_config.get_models(include_auto_created=True)
-    ]
-    return frozenset((*_items(value), *app_tables))
+def _convert_databases(value: Any) -> frozenset[str]:
+    if value == SUPPORTED_ONLY:
+        return frozenset(supported_databases())
+    # Other vendors are left out; the cachex_orm.E006 check reports them.
+    return frozenset(alias for alias in _items(value) if database_vendor(alias) in SUPPORTED_VENDORS)
 
 
-def _import_if_path(value: Any, _raw: dict[str, Any]) -> Any:
-    return import_string(value) if isinstance(value, str) else value
-
-
-CONVERTERS: dict[str, Callable[[Any, dict[str, Any]], Any]] = {
+CONVERTERS: dict[str, Callable[[Any], Any]] = {
     "DATABASES": _convert_databases,
-    "ONLY_CACHABLE_TABLES": lambda value, raw: _tables_with_apps(value, raw["ONLY_CACHABLE_APPS"]),
-    "UNCACHABLE_TABLES": lambda value, raw: _tables_with_apps(value, raw["UNCACHABLE_APPS"]) | ALWAYS_UNCACHABLE_TABLES,
-    "ADDITIONAL_TABLES": lambda value, _raw: list(_items(value)),
-    "QUERY_KEYGEN": _import_if_path,
-    "TABLE_KEYGEN": _import_if_path,
+    "ONLY_CACHABLE_TABLES": lambda value: frozenset(_items(value)),
+    "UNCACHABLE_TABLES": lambda value: frozenset(_items(value)) | ALWAYS_UNCACHABLE_TABLES,
+    "ADDITIONAL_TABLES": lambda value: list(_items(value)),
 }
 
 
@@ -135,19 +100,12 @@ class OrmSettings:
 
     ENABLED: bool
     CACHE: str
-    DATABASES: Any
+    DATABASES: frozenset[str]
     TIMEOUT: Any
     LEASE_TIMEOUT: float
-    CACHE_RANDOM: bool
-    CACHE_ITERATORS: bool
-    INVALIDATE_RAW: bool
     ONLY_CACHABLE_TABLES: frozenset[str]
-    ONLY_CACHABLE_APPS: Any
     UNCACHABLE_TABLES: frozenset[str]
-    UNCACHABLE_APPS: Any
     ADDITIONAL_TABLES: list[str]
-    QUERY_KEYGEN: Callable[..., str]
-    TABLE_KEYGEN: Callable[[str, str], str]
     FINAL_SQL_CHECK: bool
 
     def __init__(self) -> None:
@@ -157,7 +115,7 @@ class OrmSettings:
         raw = {**DEFAULTS, **{k: v for k, v in user_settings().items() if k in DEFAULTS}}
         for name, value in raw.items():
             converter = CONVERTERS.get(name)
-            setattr(self, name, value if converter is None else converter(value, raw))
+            setattr(self, name, value if converter is None else converter(value))
 
         if not self.patched:
             # Imported here because monkey_patch imports this module.

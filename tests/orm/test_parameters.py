@@ -11,7 +11,7 @@ from django.db import connection
 from django.db.models import Value
 from django.db.models.functions import Now
 
-from django_cachex.orm.utils import UncachableQuery, _param_key, _psycopg2_param_keys, _psycopg_param_keys
+from django_cachex.orm.utils import UncachableQuery, _param_key, _psycopg_param_keys
 from tests.orm.app.models import SomeChoices, Test
 from tests.orm.utils import assert_num_queries, assert_query_cached, assert_tables
 
@@ -250,20 +250,3 @@ def test_psycopg():
     with pytest.raises(UncachableQuery):
         key[Binary](Binary("a"))
     assert key[Range](Range(1, 2)) != key[Range](Range(1, 2, "[]"))
-
-
-def test_psycopg2():
-    pytest.importorskip("psycopg2")
-    from psycopg2 import Binary
-    from psycopg2.extras import Json, NumericRange
-
-    key = _psycopg2_param_keys()
-    prefix = "x" * 60
-    first = key[Json](Json({"key": prefix, "name": "Jürgen"}))
-    assert first != key[Json](Json({"key": prefix, "name": "Jörgen"}))
-    assert prefix in first
-    with pytest.raises(UncachableQuery):
-        key[Json](Json({"key": object()}))
-    binary = type(Binary(b""))
-    assert key[binary](Binary(f"{prefix}1".encode())) != key[binary](Binary(f"{prefix}2".encode()))
-    assert key[NumericRange](NumericRange(1, 2)) != key[NumericRange](NumericRange(1, 2, "[]"))

@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from django.apps import AppConfig, apps
+from django.apps import AppConfig
 from django.conf import settings
 from django.core.checks import CheckMessage, Error, Tags, Warning, register  # noqa: A004
 from django.core.signals import setting_changed
@@ -58,9 +58,7 @@ def check_databases_compatibility(app_configs: Any, **kwargs: Any) -> list[Check
             errors.append(
                 Warning(
                     "None of the configured databases are supported by the ORM cache.",
-                    hint=f"The ORM cache supports PostgreSQL and SQLite. Use one of them, remove "
-                    f"django_cachex.orm, or list database aliases in `{SETTING_NAME}['DATABASES']` to cache "
-                    "them anyway.",
+                    hint="The ORM cache supports PostgreSQL and SQLite. Use one of them, or remove django_cachex.orm.",
                     id="cachex_orm.W002",
                 ),
             )
@@ -77,12 +75,12 @@ def check_databases_compatibility(app_configs: Any, **kwargs: Any) -> list[Check
                 continue
             if (vendor := database_vendor(db_alias)) not in SUPPORTED_VENDORS:
                 errors.append(
-                    Warning(
+                    Error(
                         f"Database {db_alias!r} ({vendor or 'backend not loadable'}) is not supported by the "
                         "ORM cache.",
-                        hint="The ORM cache cannot read its transaction isolation, so inside transactions it "
-                        "caches results for the transaction only.",
-                        id="cachex_orm.W003",
+                        hint=f"The ORM cache supports PostgreSQL and SQLite. Remove {db_alias!r} from "
+                        f"`{SETTING_NAME}['DATABASES']`.",
+                        id="cachex_orm.E006",
                     ),
                 )
             if primary := replica_of(db_alias):
@@ -91,7 +89,7 @@ def check_databases_compatibility(app_configs: Any, **kwargs: Any) -> list[Check
                         f"Database {db_alias!r} mirrors {primary!r} (TEST['MIRROR']), so it looks like a replica.",
                         hint=f"Writes to {primary!r} do not invalidate the queries the ORM cache caches from "
                         f"{db_alias!r}. Remove it from `{SETTING_NAME}['DATABASES']`.",
-                        id="cachex_orm.W006",
+                        id="cachex_orm.W005",
                     ),
                 )
 
@@ -100,7 +98,7 @@ def check_databases_compatibility(app_configs: Any, **kwargs: Any) -> list[Check
                 Warning(
                     f"The ORM cache is useless because no database is configured in `{SETTING_NAME}['DATABASES']`.",
                     hint="Reconfigure the ORM cache or remove it.",
-                    id="cachex_orm.W004",
+                    id="cachex_orm.W003",
                 ),
             )
     else:
@@ -124,7 +122,7 @@ def check_cache(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:  # noqa:
             Warning(
                 f"Unknown `{SETTING_NAME}` settings: {', '.join(map(str, unknown))}.",
                 hint=f"The ORM cache ignores them. Settings are upper case: {', '.join(DEFAULTS)}.",
-                id="cachex_orm.W005",
+                id="cachex_orm.W004",
             ),
         )
     alias = orm_settings.CACHE
@@ -168,30 +166,16 @@ def check_cache(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:  # noqa:
 
 
 @register(Tags.models)
-def check_tables_and_apps(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:  # noqa: ARG001
-    errors: list[CheckMessage] = []
-    installed = {app_config.label for app_config in apps.get_app_configs()}
-    for name in TABLE_SETTINGS:
-        value = user_settings().get(name, ())
-        if value.__class__ not in ITERABLES:
-            errors.append(
-                Error(
-                    f"`{SETTING_NAME}['{name}']` must be a list, tuple, frozenset or set.",
-                    hint="A tuple of one item needs a trailing comma: ('name',).",
-                    id="cachex_orm.E007",
-                ),
-            )
-        elif name.endswith("_APPS"):
-            errors.extend(
-                Error(
-                    f"`{SETTING_NAME}['{name}']` names {label!r}, which is not the label of an installed app.",
-                    hint="An app's label is the last part of its name, unless its AppConfig sets `label`.",
-                    id="cachex_orm.E006",
-                )
-                for label in value
-                if label not in installed
-            )
-    return errors
+def check_table_settings(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:  # noqa: ARG001
+    return [
+        Error(
+            f"`{SETTING_NAME}['{name}']` must be a list, tuple, frozenset or set.",
+            hint="A tuple of one item needs a trailing comma: ('name',).",
+            id="cachex_orm.E007",
+        )
+        for name in TABLE_SETTINGS
+        if user_settings().get(name, ()).__class__ not in ITERABLES
+    ]
 
 
 def _reload_settings(*, setting: str, **kwargs: Any) -> None:  # noqa: ARG001

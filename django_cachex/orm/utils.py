@@ -61,30 +61,15 @@ _REPR_KEYED_TYPES = frozenset(
         UUID,
     },
 )
-# Functions whose result changes over time: a query calling one is not cached.
-UNCACHABLE_FUNCS: tuple[type, ...] = (Now, TransactionNow)
-# Functions returning a new random value on every call: a query calling one is
-# cached only with CACHE_RANDOM. UUID4 and UUID7 are new in Django 6.1.
-RANDOM_FUNCS: tuple[type, ...] = (
+# Functions whose result changes between calls: a query calling one is not
+# cached. UUID4 and UUID7 are new in Django 6.1.
+UNCACHABLE_FUNCS: tuple[type, ...] = (
+    Now,
+    TransactionNow,
     Random,
     RandomUUID,
     *(func for name in ("UUID4", "UUID7") if (func := getattr(functions, name, None))),
 )
-
-
-def _bytes_key(value: Any) -> str:
-    if value.__class__ not in {bytes, bytearray, memoryview}:
-        raise UncachableQuery
-    return repr(bytes(value))
-
-
-def _json_key(name: str, dumps: Callable[[Any], Any], value: Any) -> str:
-    try:
-        text = dumps(value)
-    except Exception as e:
-        # The query fails the same way without the cache.
-        raise UncachableQuery from e
-    return f"{name}({text!r})"
 
 
 def _psycopg_param_keys() -> dict[type, Callable[[Any], str]]:
@@ -93,50 +78,37 @@ def _psycopg_param_keys() -> dict[type, Callable[[Any], str]]:
     from psycopg.types.numeric import Float4, Float8, Int2, Int4, Int8
     from psycopg.types.range import Range
 
+    def binary_key(param: Any) -> str:
+        if param.obj.__class__ not in {bytes, bytearray, memoryview}:
+            raise UncachableQuery
+        return f"Binary({bytes(param.obj)!r})"
+
     def json_key(param: Any) -> str:
         # Without a dumps of its own, the value is serialized by a function
         # set on the connection, which the key cannot see.
         if param.dumps is None:
             raise UncachableQuery
-        return _json_key(param.__class__.__name__, param.dumps, param.obj)
+        try:
+            text = param.dumps(param.obj)
+        except Exception as e:
+            # The query fails the same way without the cache.
+            raise UncachableQuery from e
+        return f"{param.__class__.__name__}({text!r})"
 
     return {
         # The repr of these shortens long values.
-        Binary: lambda param: f"Binary({_bytes_key(param.obj)})",
+        Binary: binary_key,
         Json: json_key,
         Jsonb: json_key,
         **dict.fromkeys((Range, Int2, Int4, Int8, Float4, Float8, IPv4Address, IPv6Address), repr),
     }
 
 
-def _psycopg2_param_keys() -> dict[type, Callable[[Any], str]]:
-    from psycopg2 import Binary  # ty: ignore[unresolved-import]
-    from psycopg2.extras import (  # ty: ignore[unresolved-import]
-        DateRange,
-        DateTimeRange,
-        DateTimeTZRange,
-        Inet,
-        Json,
-        NumericRange,
-    )
-
-    return {
-        # These have no repr of their own.
-        Binary: lambda param: f"Binary({_bytes_key(param.adapted)})",
-        Json: lambda param: _json_key("Json", param.dumps, param.adapted),
-        **dict.fromkeys((NumericRange, DateRange, DateTimeRange, DateTimeTZRange, Inet), repr),
-    }
-
-
-# Keys of the parameter types of the PostgreSQL driver Django uses: psycopg,
-# else psycopg2.
-_DRIVER_PARAM_KEYS: dict[type, Callable[[Any], str]] = {}
-for _driver_param_keys in (_psycopg_param_keys, _psycopg2_param_keys):
-    try:
-        _DRIVER_PARAM_KEYS = _driver_param_keys()
-    except ImportError:
-        continue
-    break
+# Without psycopg, as on psycopg2, queries with parameters of driver types are not cached.
+try:
+    _DRIVER_PARAM_KEYS = _psycopg_param_keys()
+except ImportError:
+    _DRIVER_PARAM_KEYS = {}
 
 
 def _param_key(param: Any) -> str:
@@ -228,7 +200,7 @@ class _TableFinder:
         ordering: Sequence[Any] = query.order_by
         if not ordering and query.default_ordering and meta:
             ordering = meta.ordering or ()
-        if query.select_for_update or (not orm_settings.CACHE_RANDOM and "?" in ordering):
+        if query.select_for_update or "?" in ordering:
             raise UncachableQuery
         if query.extra_select:
             self.raw_sql = True
@@ -275,7 +247,7 @@ class _TableFinder:
             self.raw_sql = True
         elif isinstance(node, RawSQL):
             self.tables.update(_get_tables_from_sql(connections[self.db_alias], node.sql.lower()))
-        elif isinstance(node, UNCACHABLE_FUNCS) or (not orm_settings.CACHE_RANDOM and isinstance(node, RANDOM_FUNCS)):
+        elif isinstance(node, UNCACHABLE_FUNCS):
             raise UncachableQuery
         elif isinstance(node, Lookup):
             # A right-hand side of plain values is not a source expression.

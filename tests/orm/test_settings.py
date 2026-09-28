@@ -1,11 +1,9 @@
 # Derived from django-cachalot 2.9.1 (BSD-3-Clause, Copyright (c) 2014-2016
 # Bertrand Bordage); see django_cachex/orm/LICENSE.
 
-from hashlib import sha1
 from time import sleep
 
 import pytest
-from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.cache import DEFAULT_CACHE_ALIAS
@@ -103,9 +101,9 @@ def test_unsupported_vendor():
     assert supported_databases() == set()
     with override_orm_settings(DATABASES=SUPPORTED_ONLY):
         assert_query_cached(qs, after=1)
-    # A listed database is cached whatever its vendor.
     with override_orm_settings(DATABASES=[DEFAULT_DB_ALIAS]):
-        assert_query_cached(qs)
+        assert frozenset() == orm_settings.DATABASES
+        assert_query_cached(qs, after=1)
 
 
 @pytest.mark.filterwarnings("ignore:Overriding setting DATABASES:UserWarning")
@@ -150,56 +148,8 @@ def test_cache_timeout():
         pytest.param(Test.objects.annotate(random=Random()), id="annotate_random"),
     ],
 )
-def test_cache_random(qs):
+def test_random_not_cached(qs):
     assert_query_cached(qs, after=1, compare_results=False)
-
-    with override_orm_settings(CACHE_RANDOM=True):
-        assert_query_cached(qs)
-
-
-def test_query_keygen_without_compiling():
-    """The tables compiling a query joins count although QUERY_KEYGEN does not compile it."""
-    user = User.objects.create_user("user")
-    Test.objects.create(name="test", owner=user)
-
-    def query_keygen(compiler):
-        query = compiler.query
-        key = f"{compiler.using}:{query.model._meta.label}:{query.select_related}:{query.where}"
-        return sha1(key.encode(), usedforsecurity=False).hexdigest()
-
-    qs = Test.objects.select_related("owner")
-    with override_orm_settings(QUERY_KEYGEN=query_keygen):
-        assert_query_cached(qs)
-        User.objects.filter(pk=user.pk).update(username="renamed")
-        with assert_num_queries(1):
-            assert [test.owner.username for test in qs.all()] == ["renamed"]
-
-
-def test_table_keygen():
-    """Reads, writes and invalidate() key the generations of a table with TABLE_KEYGEN."""
-    keyed = set()
-
-    def table_keygen(db_alias, table):
-        keyed.add((db_alias, table))
-        return f"custom:{db_alias}:{table}"
-
-    qs = Test.objects.all()
-    with override_orm_settings(TABLE_KEYGEN=table_keygen):
-        assert_query_cached(qs)
-        Test.objects.create(name="test")
-        assert_query_cached(qs)
-        invalidate(Test)
-        assert_query_cached(qs)
-    assert (DEFAULT_DB_ALIAS, Test._meta.db_table) in keyed
-
-
-def test_invalidate_raw():
-    with assert_num_queries(1):
-        list(Test.objects.all())
-    with override_orm_settings(INVALIDATE_RAW=False), assert_num_queries(1), connection.cursor() as cursor:
-        cursor.execute(f"UPDATE {Test._meta.db_table} SET name = 'new name';")
-    with assert_num_queries(0):
-        list(Test.objects.all())
 
 
 def test_only_cachable_tables():
@@ -220,20 +170,6 @@ def test_only_cachable_tables():
         assert_query_cached(TestChild.objects.values("public"))
 
 
-@override_orm_settings(ONLY_CACHABLE_APPS=("ormtest",))
-def test_only_cachable_apps():
-    assert_query_cached(Test.objects.all())
-    assert_query_cached(TestParent.objects.all())
-    assert_query_cached(Test.objects.select_related("owner"), after=1)
-
-
-@override_orm_settings(ONLY_CACHABLE_TABLES=("ormtest_test", "auth_user"), ONLY_CACHABLE_APPS=("ormtest",))
-def test_only_cachable_apps_set_combo():
-    assert_query_cached(Test.objects.all())
-    assert_query_cached(TestParent.objects.all())
-    assert_query_cached(Test.objects.select_related("owner"))
-
-
 def test_uncachable_tables():
     qs = Test.objects.all()
 
@@ -249,18 +185,6 @@ def test_uncachable_tables():
 def test_django_migrations_never_cached():
     with override_orm_settings(UNCACHABLE_TABLES=("ormtest_test",)):
         assert_query_cached(MigrationRecorder(connection).migration_qs, after=1)
-
-
-@override_orm_settings(UNCACHABLE_APPS=("ormtest",))
-def test_uncachable_apps():
-    assert_query_cached(Test.objects.all(), after=1)
-    assert_query_cached(TestParent.objects.all(), after=1)
-
-
-@override_orm_settings(UNCACHABLE_TABLES=("ormtest_test",), UNCACHABLE_APPS=("ormtest",))
-def test_uncachable_apps_set_combo():
-    assert_query_cached(Test.objects.all(), after=1)
-    assert_query_cached(TestParent.objects.all(), after=1)
 
 
 def test_only_cachable_and_uncachable_table():
@@ -296,20 +220,13 @@ def test_database_compatibility():
 
     warning002 = Warning(
         "None of the configured databases are supported by the ORM cache.",
-        hint="The ORM cache supports PostgreSQL and SQLite. Use one of them, remove django_cachex.orm, or "
-        "list database aliases in `CACHEX_ORM['DATABASES']` to cache them anyway.",
+        hint="The ORM cache supports PostgreSQL and SQLite. Use one of them, or remove django_cachex.orm.",
         id="cachex_orm.W002",
     )
     warning003 = Warning(
-        "Database 'default' (unknown) is not supported by the ORM cache.",
-        hint="The ORM cache cannot read its transaction isolation, so inside transactions it caches results "
-        "for the transaction only.",
-        id="cachex_orm.W003",
-    )
-    warning004 = Warning(
         "The ORM cache is useless because no database is configured in `CACHEX_ORM['DATABASES']`.",
         hint="Reconfigure the ORM cache or remove it.",
-        id="cachex_orm.W004",
+        id="cachex_orm.W003",
     )
     error001 = Error(
         "Database alias 'secondary' from `CACHEX_ORM['DATABASES']` is not defined in `DATABASES`.",
@@ -321,6 +238,11 @@ def test_database_compatibility():
         "frozenset or set of database aliases.",
         hint="Remove `CACHEX_ORM['DATABASES']` or change it.",
         id="cachex_orm.E002",
+    )
+    error006 = Error(
+        "Database 'default' (unknown) is not supported by the ORM cache.",
+        hint="The ORM cache supports PostgreSQL and SQLite. Remove 'default' from `CACHEX_ORM['DATABASES']`.",
+        id="cachex_orm.E006",
     )
 
     with override_settings(DATABASES={"default": incompatible_database}):
@@ -336,11 +258,11 @@ def test_database_compatibility():
 
     with override_settings(DATABASES={"default": incompatible_database}), override_orm_settings(DATABASES=["default"]):
         errors = run_checks(tags=[Tags.compatibility])
-        assert errors == [warning003]
+        assert errors == [error006]
 
     with override_settings(DATABASES={"default": incompatible_database}), override_orm_settings(DATABASES=[]):
         errors = run_checks(tags=[Tags.compatibility])
-        assert errors == [warning004]
+        assert errors == [warning003]
 
     with (
         override_settings(DATABASES={"default": incompatible_database}),
@@ -364,45 +286,18 @@ def test_database_compatibility():
 def test_replica():
     database = {"ENGINE": "django.db.backends.sqlite3", "NAME": "non_existent_db.sqlite3"}
     replica = {**database, "TEST": {"MIRROR": "default"}}
-    warning006 = Warning(
+    warning005 = Warning(
         "Database 'replica' mirrors 'default' (TEST['MIRROR']), so it looks like a replica.",
         hint="Writes to 'default' do not invalidate the queries the ORM cache caches from 'replica'. Remove "
         "it from `CACHEX_ORM['DATABASES']`.",
-        id="cachex_orm.W006",
+        id="cachex_orm.W005",
     )
     with override_settings(DATABASES={"default": database, "replica": replica}):
         # Left out unless listed.
         assert supported_databases() == {"default"}
         assert run_checks(tags=[Tags.compatibility]) == []
         with override_orm_settings(DATABASES=["default", "replica"]):
-            assert run_checks(tags=[Tags.compatibility]) == [warning006]
-
-
-def test_app_labels():
-    through = TestChild.permissions.through._meta.db_table
-    with override_orm_settings(ONLY_CACHABLE_APPS=("ormtest",), UNCACHABLE_APPS=("auth",)):
-        assert through in orm_settings.ONLY_CACHABLE_TABLES
-        assert "auth_user_groups" in orm_settings.UNCACHABLE_TABLES
-        assert run_checks(tags=[Tags.models], databases=[]) == []
-
-
-def test_unknown_app_labels():
-    def error(name, label):
-        return Error(
-            f"`CACHEX_ORM['{name}']` names {label!r}, which is not the label of an installed app.",
-            hint="An app's label is the last part of its name, unless its AppConfig sets `label`.",
-            id="cachex_orm.E006",
-        )
-
-    with override_orm_settings(ONLY_CACHABLE_APPS=("ormtest", "ormtset"), UNCACHABLE_APPS=("tests.orm.app",)):
-        assert run_checks(tags=[Tags.models], databases=[]) == [
-            error("ONLY_CACHABLE_APPS", "ormtset"),
-            error("UNCACHABLE_APPS", "tests.orm.app"),
-        ]
-        # The known label still counts; the unknown ones stay out of the app registry.
-        assert "ormtest_test" in orm_settings.ONLY_CACHABLE_TABLES
-        assert {"django_migrations"} == orm_settings.UNCACHABLE_TABLES
-        assert "ormtset" not in apps.all_models
+            assert run_checks(tags=[Tags.compatibility]) == [warning005]
 
 
 def test_table_settings_of_another_type():
@@ -413,16 +308,8 @@ def test_table_settings_of_another_type():
             id="cachex_orm.E007",
         )
 
-    with override_orm_settings(
-        UNCACHABLE_TABLES="django_session",
-        UNCACHABLE_APPS="ormtest",
-        ADDITIONAL_TABLES=None,
-    ):
-        assert run_checks(tags=[Tags.models], databases=[]) == [
-            error("UNCACHABLE_TABLES"),
-            error("UNCACHABLE_APPS"),
-            error("ADDITIONAL_TABLES"),
-        ]
+    with override_orm_settings(UNCACHABLE_TABLES="django_session", ADDITIONAL_TABLES=None):
+        assert run_checks(tags=[Tags.models], databases=[]) == [error("UNCACHABLE_TABLES"), error("ADDITIONAL_TABLES")]
         # Each counts as empty.
         assert {"django_migrations"} == orm_settings.UNCACHABLE_TABLES
         assert orm_settings.ADDITIONAL_TABLES == []
@@ -436,7 +323,7 @@ def test_cache_checks():
             Warning(
                 "Unknown `CACHEX_ORM` settings: TIMEOUTS.",
                 hint="The ORM cache ignores them. Settings are upper case: " + ", ".join(DEFAULTS) + ".",
-                id="cachex_orm.W005",
+                id="cachex_orm.W004",
             ),
         ]
 
