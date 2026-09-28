@@ -76,7 +76,6 @@ class TestOrmStore:
         assert after is not None
         assert int(after[0]) == int(before[0]) + 2
         assert after[1] == before[1]
-        # A result read before the write no longer stores.
         assert not store.store(DB, "query", TABLES, miss.token, "stale", 60)
         fresh = store.lookup(DB, "query", TABLES)
         assert store.store(DB, "query", TABLES, fresh.token, "fresh", 60)

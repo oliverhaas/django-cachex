@@ -94,7 +94,6 @@ class StoreTestCase(TestCase):
         self.assertFalse(self.store.store(DEFAULT_DB_ALIAS, f"{self.query}:reader", self.tables, reader, "old", None))
         self.end_write("writer")
         self.assertFalse(self.store.store(DEFAULT_DB_ALIAS, f"{self.query}:reader", self.tables, reader, "old", None))
-        # What was stored before the write is gone.
         lookup = self.lookup()
         self.assertFalse(lookup.hit)
         self.assertIsNotNone(lookup.token)
@@ -348,7 +347,6 @@ class WriteTestCase(TestUtilsMixin, FilteredTransactionTestCase):
                 Test.objects.create(name="autocommit")
             self.assertIsInstance(raised.exception, CachexError)
             self.assertIsInstance(raised.exception.__cause__, ConnectionError)
-            # The commit fails, so the transaction rolls back.
             with self.assertRaisesMessage(InvalidationError, message), transaction.atomic():
                 Test.objects.create(name="atomic")
         self.assertFalse(Test.objects.exists())
@@ -406,7 +404,6 @@ class WriteTestCase(TestUtilsMixin, FilteredTransactionTestCase):
         permission = Permission.objects.first()
         child = TestChild.objects.create(name="child")
         child.permissions.add(permission)
-        # Reads only the table of the many-to-many relation.
         permissions = TestChild.permissions.through.objects.values_list("permission", flat=True)
         self.assert_query_cached(permissions, [permission.pk])
         with connection.cursor() as cursor:
