@@ -202,5 +202,5 @@ An unknown label is an error; an app without models invalidates nothing.
 - Leave replicas out of `DATABASES`. Generations are kept per database alias, so writes to the primary do not invalidate what was cached from the replica, and the replica lags behind anyway.
 - A failover of the cache server can lose the latest generation bumps to asynchronous replication, which makes stale results current again. Run `invalidate_orm_cache` after a failover.
 - Writes made while the app was not installed, while a database was left out of `DATABASES` or while `CACHE` pointed at another alias invalidated nothing in the cache in question. Run `invalidate_orm_cache` before switching back.
-- Migrations invalidate the models of each migrated app when they finish, and their schema changes take leases like any write, so they need the cache too (or `ENABLED` off, followed by `invalidate_orm_cache`).
+- A `migrate` that applied a migration invalidates every model when it finishes, many-to-many tables included, and so does `flush`; a `migrate` that applied nothing invalidates nothing. Schema changes and data migrations take leases like any write, so migrations need the cache too (or `ENABLED` off, followed by `invalidate_orm_cache`).
 - `TIMEOUT` bounds how long a result takes up memory, not how stale it can get: results are current until their tables are written.

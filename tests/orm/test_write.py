@@ -8,13 +8,15 @@ from django.contrib.auth.models import Group, Permission, User
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import MultipleObjectsReturned
 from django.core.management import call_command
-from django.db import OperationalError, ProgrammingError, connection, transaction
+from django.core.management.sql import emit_post_migrate_signal
+from django.db import DEFAULT_DB_ALIAS, OperationalError, ProgrammingError, connection, transaction
+from django.db.migrations import Migration
 from django.db.models import Count
 from django.db.models.expressions import RawSQL
 from django.test import TransactionTestCase, skipUnlessDBFeature
 
 from tests.orm.app.models import Test, TestChild, TestParent
-from tests.orm.utils import FilteredTransactionTestCase, TestUtilsMixin
+from tests.orm.utils import FilteredTransactionTestCase, TestUtilsMixin, override_orm_settings
 
 
 class WriteTestCase(TestUtilsMixin, FilteredTransactionTestCase):
@@ -902,6 +904,35 @@ class DatabaseCommandTestCase(TestUtilsMixin, TransactionTestCase):
 
         with self.assertNumQueries(1):
             self.assertListEqual(list(Test.objects.all()), [])
+
+    @override_orm_settings(INVALIDATE_RAW=False)
+    def test_flush_without_raw_invalidation(self):
+        # flush signals post_migrate without a plan, which invalidates too.
+        with self.assertNumQueries(1):
+            self.assertListEqual(list(Test.objects.all()), [self.t])
+
+        call_command("flush", verbosity=0, interactive=False)
+
+        self.force_reopen_connection()
+
+        with self.assertNumQueries(1):
+            self.assertListEqual(list(Test.objects.all()), [])
+
+    def test_migrate(self):
+        # A migrate that applied nothing invalidates nothing. One that applied
+        # a migration invalidates every model, many-to-many tables included.
+        TestChild.objects.create(name="child").permissions.add(Permission.objects.first())
+        permissions = TestChild.permissions.through.objects.all()
+        with self.assertNumQueries(1):
+            self.assertEqual(len(permissions.all()), 1)
+
+        call_command("migrate", verbosity=0)
+        with self.assertNumQueries(0):
+            self.assertEqual(len(permissions.all()), 1)
+
+        emit_post_migrate_signal(0, False, DEFAULT_DB_ALIAS, plan=[(Migration("0002_test", "ormtest"), False)])
+        with self.assertNumQueries(1):
+            self.assertEqual(len(permissions.all()), 1)
 
     def test_loaddata(self):
         with self.assertNumQueries(1):

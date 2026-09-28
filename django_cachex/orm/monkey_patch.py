@@ -372,8 +372,11 @@ def _patch_savepoint_commit(original: Callable[..., Any]) -> Callable[..., Any]:
     return savepoint_commit
 
 
-def _invalidate_on_migration(sender: Any, *, using: str, **kwargs: Any) -> None:  # noqa: ARG001
-    models = list(sender.get_models())
+def _invalidate_on_migration(sender: Any, *, using: str, plan: Any = None, **kwargs: Any) -> None:  # noqa: ARG001
+    # migrate sends an empty plan when it applied nothing, flush no plan.
+    if plan is not None and not plan:
+        return
+    models = list(sender.get_models(include_auto_created=True))
     if models:
         invalidate(*models, db_alias=using, cache_alias=orm_settings.CACHE)
 
