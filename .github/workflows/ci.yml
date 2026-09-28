@@ -275,6 +275,16 @@ jobs:
           PYTHON_GIL: "0"
           PYTHONDONTWRITEBYTECODE: "1"
 
+      # The ORM cache keeps per-thread state and shares its stores across
+      # threads; test_thread_safety runs queries from several threads at once.
+      - name: Run ORM cache tests
+        run: uv run --no-sync pytest tests/orm --ds=tests.orm.settings
+        env:
+          CACHEX_ORM_TEST_DB: postgresql
+          CACHEX_ORM_TEST_CACHE: redis
+          PYTHON_GIL: "0"
+          PYTHONDONTWRITEBYTECODE: "1"
+
   test-minimum-servers:
     name: Test against the minimum supported servers (Redis 6.2, Valkey 7.2)
     runs-on: ubuntu-latest
