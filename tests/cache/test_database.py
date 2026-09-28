@@ -57,6 +57,16 @@ def db_cache(db) -> Iterator[DatabaseCache]:
         yield cache  # type: ignore[misc]
 
 
+@pytest.fixture
+def small_db_cache(db) -> Iterator[DatabaseCache]:
+    """Like ``db_cache``, with ``MAX_ENTRIES=4`` and ``CULL_FREQUENCY=2``."""
+    call_command("createcachetable", "django_cachex_test_cache")
+    with override_settings(CACHES=SMALL_DATABASE_CACHES):
+        cache = caches["db_small"]
+        cache.clear()
+        yield cache  # type: ignore[misc]
+
+
 class TestSetFlags:
     """DatabaseCache nx implemented via ``_base_set("add", ...)``; xx/get raise."""
 
@@ -516,6 +526,14 @@ class TestSetAlgebra:
             db_cache.sunion(["a", "b"])
 
 
+@pytest.mark.parametrize("method", ["sdiff", "sinter", "sunion"])
+def test_single_key_set_algebra_result_stores_as_a_plain_value(db_cache: DatabaseCache, method: str):
+    db_cache.sadd("s", "a", "b")
+    db_cache.set("copy", getattr(db_cache, method)(["s"]))
+    assert db_cache.type("copy") == KeyType.STRING
+    assert db_cache.get("copy") == {"a", "b"}
+
+
 class TestInsertRaceRetriesTransform:
     """A lost insert race re-runs the transform against the winner's row."""
 
@@ -651,20 +669,30 @@ class TestCompoundInsertCulling:
     as plain ``set()``; all compound creates share the ``_atomic_compound``
     insert path."""
 
-    @pytest.fixture
-    def small_db_cache(self, db) -> Iterator[DatabaseCache]:
-        call_command("createcachetable", "django_cachex_test_cache")
-        with override_settings(CACHES=SMALL_DATABASE_CACHES):
-            cache = caches["db_small"]
-            cache.clear()
-            yield cache  # type: ignore[misc]
-
     def test_compound_inserts_cull_when_over_max_entries(self, small_db_cache: DatabaseCache):
         for i in range(10):
             small_db_cache.sadd(f"k{i}", "m")
         # MAX_ENTRIES=4 with CULL_FREQUENCY=2 halves the table whenever an
         # insert finds it over the limit, so growth stays bounded.
         assert len(small_db_cache.keys("*")) <= 5
+
+
+def test_compound_insert_culls_outside_its_transaction(small_db_cache: DatabaseCache, mocker):
+    for i in range(5):
+        small_db_cache.set(f"k{i}", i)
+    conn = connections["default"]
+    depth = len(conn.atomic_blocks)
+    cull_depths = []
+    real_cull = small_db_cache._cull
+
+    def cull(*args):
+        cull_depths.append(len(conn.atomic_blocks))
+        return real_cull(*args)
+
+    mocker.patch.object(small_db_cache, "_cull", side_effect=cull)
+    small_db_cache.sadd("new", "m")
+    assert cull_depths == [depth]
+    assert small_db_cache.smembers("new") == {"m"}
 
 
 class TestZSetScoreRanges:
@@ -1029,6 +1057,40 @@ class TestDatabaseTimeZone:
         keyspace = tokyo_cache.info()["keyspace"]["db0"]
         assert keyspace["keys"] == 2
         assert keyspace["expires"] == 1
+
+
+def test_persist_on_a_key_without_a_ttl_returns_false(db_cache: DatabaseCache):
+    db_cache.set("plain", 1, timeout=None)
+    db_cache.rpush("list", 1)
+    assert db_cache.persist("plain") is False
+    assert db_cache.persist("list") is False
+    assert db_cache.persist("absent") is False
+
+
+def test_persist_on_a_key_with_a_ttl_returns_true(db_cache: DatabaseCache):
+    db_cache.set("k", 1, timeout=300)
+    assert db_cache.persist("k") is True
+    assert db_cache.ttl("k") is None
+    assert db_cache.persist("k") is False
+
+
+def test_hdel_counts_a_repeated_field_once(db_cache: DatabaseCache):
+    db_cache.hset("k", mapping={"a": 1, "b": 2})
+    assert db_cache.hdel("k", "a", "a") == 1
+    assert db_cache.hkeys("k") == ["b"]
+
+
+def test_zrem_counts_a_repeated_member_once(db_cache: DatabaseCache):
+    db_cache.zadd("k", {"a": 1.0, "b": 2.0})
+    assert db_cache.zrem("k", "a", "a") == 1
+    assert db_cache.zrange("k", 0, -1) == ["b"]
+
+
+def test_zincrby_rejects_a_nan_sum(db_cache: DatabaseCache):
+    db_cache.zadd("k", {"a": float("inf")})
+    with pytest.raises(ValueError, match="NaN"):
+        db_cache.zincrby("k", float("-inf"), "a")
+    assert db_cache.zscore("k", "a") == float("inf")
 
 
 class TestListArgumentValidation:

@@ -10,7 +10,7 @@ Per-backend tests live next to the backends they cover:
 
 import pytest
 
-from django_cachex.cache.base import BaseCachex
+from django_cachex.cache.base import BaseCachex, _scan_hash
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
@@ -168,9 +168,50 @@ class TestBaseCachexScan:
 
     def test_cursor_advances(self, cache: KeysOnlyCache):
         next_cursor, keys = cache.scan(count=2)
-        assert keys == ["k0", "k1"]
-        assert next_cursor == 2
+        assert len(keys) == 2
+        assert next_cursor != 0
+        _, rest = cache.scan(next_cursor, count=10)
+        assert sorted(keys + rest) == ["k0", "k1", "k2", "k3", "k4"]
 
     def test_key_type_filter_is_applied(self, cache: KeysOnlyCache):
         assert cache.scan(key_type="string")[1] == ["k0", "k1", "k2", "k3", "k4"]
         assert cache.scan(key_type="hash")[1] == []
+
+
+def _scan_pages(cache: BaseCachex, cursor: int = 0, count: int = 3) -> list[list[str]]:
+    pages = []
+    while True:
+        cursor, keys = cache.scan(cursor, count=count)
+        pages.append(keys)
+        if cursor == 0:
+            return pages
+
+
+def test_scan_pages_return_every_key_once():
+    cache = KeysOnlyCache({f"k{i}": i for i in range(10)})
+    pages = _scan_pages(cache)
+    assert all(len(page) <= 3 for page in pages)
+    assert sorted(key for page in pages for key in page) == sorted(cache._data)
+
+
+def test_scan_hash_is_a_fixed_function_of_the_key():
+    # Pinned: the admin hands the cursor to whichever process serves the next page.
+    assert _scan_hash("k0") == 5966777531559889355
+    assert _scan_hash("") == 8238016292129134938
+
+
+def test_scan_keeps_keys_sharing_a_position_on_one_page(mocker):
+    positions = {"a": 1, "b": 5, "c": 5, "d": 9, "e": 9}
+    mocker.patch("django_cachex.cache.base._scan_hash", positions.__getitem__)
+    cache = KeysOnlyCache(dict.fromkeys(positions, 0))
+    assert cache.scan(count=2) == (6, ["a", "b", "c"])
+    assert cache.scan(6, count=2) == (0, ["d", "e"])
+
+
+def test_scan_returns_remaining_keys_after_earlier_pages_are_deleted():
+    cache = KeysOnlyCache({f"k{i}": i for i in range(10)})
+    cursor, first = cache.scan(count=3)
+    for key in first:
+        del cache._data[key]
+    rest = _scan_pages(cache, cursor)
+    assert sorted(key for page in rest for key in page) == sorted(cache._data)

@@ -60,6 +60,7 @@ from django_cachex.exceptions import NotSupportedError, WrongTypeError
 from django_cachex.types import KeyType
 from django_cachex.utils import (
     _apply_zrange_limit,
+    _as_incremented_score,
     _as_score,
     _glob_to_like,
     _glob_to_regex,
@@ -283,8 +284,9 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         row is deleted; if it is ``_MISSING``, nothing is written;
         otherwise it is upserted. The existing ``expires`` is preserved on
         UPDATE; new rows get ``datetime.max`` (no expiry, matches Redis
-        compound-op semantics) and trigger the same MAX_ENTRIES cull check
-        as Django's ``_base_set``.
+        compound-op semantics). An insert that finds the table over
+        ``MAX_ENTRIES`` rolls its transaction back, culls outside it as
+        Django's ``_base_set`` does, and runs again.
 
         Losing the insert race against a concurrent writer re-runs the whole
         read-modify-write against the row they committed, so their value is
@@ -316,9 +318,10 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             f"INSERT INTO {table} ({quote('cache_key')}, {quote('value')}, {quote('expires')}) "  # noqa: S608
             f"VALUES (%s, %s, %s)"
         )
-        with transaction.atomic(using=db), conn.cursor() as cursor:
-            attempt = 0
-            while True:
+        attempt = 0
+        culled = False
+        while True:
+            with transaction.atomic(using=db), conn.cursor() as cursor:
                 current, row_exists = self._locked_read(cursor, conn, select_sql, delete_sql, internal_key)
                 new_value, ret = transform(current)
                 if isinstance(new_value, _TAGGED_COLLECTIONS) and not new_value:
@@ -333,25 +336,31 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
                 if row_exists:
                     cursor.execute(update_sql, [encoded, internal_key])
                     return ret
-                cursor.execute(f"SELECT COUNT(*) FROM {table}")  # noqa: S608
-                num = cursor.fetchone()[0]
-                if num > self._max_entries:
-                    cast("Any", self)._cull(db, cursor, _now(), num)
-                try:
-                    # Savepoint so a lost insert race doesn't poison the outer
-                    # transaction on backends that abort on IntegrityError.
-                    with transaction.atomic(using=db):
-                        cursor.execute(insert_sql, [internal_key, encoded, _adapt_dt(conn, _no_expiry_dt())])
-                except IntegrityError:
-                    # A concurrent writer created the row between our SELECT and
-                    # INSERT; redo the read-modify-write against their value.
-                    # The last attempt re-raises, so the loop always exits
-                    # through a return or an exception.
-                    attempt += 1
-                    if attempt >= _INSERT_RACE_ATTEMPTS:
-                        raise
-                    continue
-                return ret
+                if not culled:
+                    cursor.execute(f"SELECT COUNT(*) FROM {table}")  # noqa: S608
+                    num = cursor.fetchone()[0]
+                if culled or num <= self._max_entries:
+                    try:
+                        # Savepoint so a lost insert race doesn't poison the outer
+                        # transaction on backends that abort on IntegrityError.
+                        with transaction.atomic(using=db):
+                            cursor.execute(insert_sql, [internal_key, encoded, _adapt_dt(conn, _no_expiry_dt())])
+                    except IntegrityError:
+                        # A concurrent writer created the row between our SELECT and
+                        # INSERT; redo the read-modify-write against their value.
+                        # The last attempt re-raises, so the loop always exits
+                        # through a return or an exception.
+                        attempt += 1
+                        if attempt >= _INSERT_RACE_ATTEMPTS:
+                            raise
+                        continue
+                    return ret
+                # Cull outside the row lock, as _base_set does, since a concurrent cull can
+                # deadlock with it. PostgreSQL also releases the lock when a savepoint rolls back.
+                transaction.set_rollback(True, using=db)
+            with conn.cursor() as cursor:
+                cast("Any", self)._cull(db, cursor, _now(), num)
+            culled = True
 
     # =========================================================================
     # Standard set / aset
@@ -554,19 +563,20 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
     def persist(self, key: str, version: int | None = None) -> bool:
         """Remove the TTL by setting expires to ``datetime.max``.
 
-        Skips rows whose ``expires`` is already in the past so a logically
-        expired key isn't accidentally revived.
+        Returns False, like Redis ``PERSIST``, for a missing or expired key
+        (an expired row stays expired) and for a key that has no TTL.
         """
         now = _now()
         conn = self._get_connection(write=True)
         quote = conn.ops.quote_name
         table = quote(self._get_table_name())
         internal_key = self._internal_key(key, version=version)
+        no_expiry = _adapt_dt(conn, _no_expiry_dt())
         with conn.cursor() as cursor:
             cursor.execute(
                 f"UPDATE {table} SET {quote('expires')} = %s "  # noqa: S608
-                f"WHERE {quote('cache_key')} = %s AND {quote('expires')} > %s",
-                [_adapt_dt(conn, _no_expiry_dt()), internal_key, _adapt_dt(conn, now)],
+                f"WHERE {quote('cache_key')} = %s AND {quote('expires')} > %s AND {quote('expires')} < %s",
+                [no_expiry, internal_key, _adapt_dt(conn, now), no_expiry],
             )
             return cursor.rowcount > 0
 
@@ -1124,7 +1134,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         sets = self._collect_sets(keys, version=version)
         if not sets:
             return set()
-        result = sets[0]
+        result = set(sets[0])
         for s in sets[1:]:
             result = result - s
         return result
@@ -1133,7 +1143,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         sets = self._collect_sets(keys, version=version)
         if not sets:
             return set()
-        result = sets[0]
+        result = set(sets[0])
         for s in sets[1:]:
             result = result & s
         return result
@@ -1201,7 +1211,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             existing = self._coerce_hash(key, current)
             if not existing:
                 return _MISSING, 0
-            removed = sum(1 for f in fields if f in existing)
+            removed = len({f for f in fields if f in existing})
             for f in fields:
                 existing.pop(f, None)
             if removed == 0:
@@ -1461,7 +1471,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             existing = self._coerce_zset(key, current)
             if not existing:
                 return _MISSING, 0
-            removed = sum(1 for m in members if m in existing)
+            removed = len({m for m in members if m in existing})
             for m in members:
                 existing.pop(m, None)
             if removed == 0:
@@ -1475,7 +1485,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
 
         def transform(current: Any) -> tuple[Any, float]:
             existing = self._coerce_zset(key, current) or _ZSet()
-            existing[member] = existing.get(member, 0.0) + delta
+            existing[member] = _as_incremented_score(existing.get(member, 0.0), delta)
             return existing, existing[member]
 
         return cast("float", self._atomic_compound(self._internal_key(key, version=version), transform))

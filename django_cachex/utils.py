@@ -1,5 +1,6 @@
 """Helpers shared by the backends that emulate RESP semantics in Python."""
 
+import math
 import re
 import sys
 from functools import lru_cache
@@ -141,11 +142,23 @@ def _glob_to_like(pattern: str, escape: Callable[[str], str]) -> str:
 
 def _as_score(value: Any) -> float:
     """Coerce a sorted-set score the way Redis parses one."""
+    msg = "value is not a valid float"
     try:
-        return float(value)
+        score = float(value)
     except TypeError, ValueError:
-        msg = "value is not a valid float"
         raise ValueError(msg) from None
+    if math.isnan(score):
+        raise ValueError(msg)
+    return score
+
+
+def _as_incremented_score(current: float, increment: float) -> float:
+    """Add ``increment`` to a stored score, rejecting a NaN sum the way ``ZINCRBY`` does."""
+    score = current + increment
+    if math.isnan(score):
+        msg = "resulting score is not a number (NaN)"
+        raise ValueError(msg)
+    return score
 
 
 def _validate_zadd_flags(*, nx: bool, xx: bool, gt: bool, lt: bool) -> None:
@@ -204,6 +217,9 @@ def _apply_zrange_limit(items: list[Any], start: int | None, num: int | None) ->
     _validate_zrange_limit(start, num)
     if start is None or num is None:
         return items
+    if start < 0:
+        # Redis steps past the offset one entry at a time until it reaches zero, which a negative one never does.
+        return []
     # A negative count is Redis's "to the end of the range".
     return items[start:] if num < 0 else items[start : start + num]
 

@@ -44,6 +44,7 @@ from django_cachex.semaphore import Semaphore, _SemaphoreRegistry
 from django_cachex.types import KeyType
 from django_cachex.utils import (
     _apply_zrange_limit,
+    _as_incremented_score,
     _as_score,
     _deep_getsizeof,
     _format_bytes,
@@ -545,13 +546,15 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             return True
 
     def persist(self, key: str, version: int | None = None) -> bool:
-        """Remove the TTL from a key. Returns ``True`` if the key existed."""
+        """Remove the TTL from a key. Returns ``True`` if the key had one."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             if not self._key_present(internal_key):
                 return False
             if self._has_expired(internal_key):
                 self._delete(internal_key)
+                return False
+            if self._expire_info.get(internal_key) is None:
                 return False
             self._expire_info[internal_key] = None
             return True
@@ -949,7 +952,8 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             if current is None:
                 current = _Set()
             before = len(current)
-            current.update(members)
+            # Hash every member first, so an unhashable one raises before the live set changes.
+            current.update(set(members))
             if current:
                 self._native_write(internal_key, current)
             return len(current) - before
@@ -1143,7 +1147,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             current = self._typed_get_hash(internal_key, key)
             if not current:
                 return 0
-            removed = sum(1 for f in fields if f in current)
+            removed = len({f for f in fields if f in current})
             for f in fields:
                 current.pop(f, None)
             if removed > 0:
@@ -1460,7 +1464,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             current = self._typed_get_zset(internal_key, key)
             if not current:
                 return 0
-            removed = sum(1 for m in members if m in current)
+            removed = len({m for m in members if m in current})
             for m in members:
                 current.pop(m, None)
             if removed > 0:
@@ -1476,7 +1480,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_zset(internal_key, key) or _ZSet()
-            current[member] = current.get(member, 0.0) + delta
+            current[member] = _as_incremented_score(current.get(member, 0.0), delta)
             self._native_write(internal_key, current)
             return current[member]
 

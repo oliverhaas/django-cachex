@@ -16,6 +16,7 @@ with real implementations; methods left at the default raise
 :class:`~django_cachex.exceptions.NotSupportedError`.
 """
 
+import hashlib
 from typing import TYPE_CHECKING, Any, Literal
 
 from django.core.cache.backends.base import DEFAULT_TIMEOUT, BaseCache
@@ -30,11 +31,35 @@ CachexSupportLevel = Literal["cachex", "limited"]
 _set = set
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
+    from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Mapping, Sequence
     from datetime import datetime, timedelta
 
     from django_cachex.adapters.pipeline import AsyncPipeline, Pipeline
     from django_cachex.script import ScriptHelpers
+
+
+def _scan_hash(key: str) -> int:
+    """Position of ``key`` in the default :meth:`BaseCachex.scan` order, the same in every process."""
+    digest = hashlib.blake2b(key.encode("utf-8", "surrogatepass"), digest_size=8).digest()
+    return int.from_bytes(digest, "big") >> 1
+
+
+def _scan_page(keys: Iterable[str], cursor: int, count: int) -> tuple[int, list[str]]:
+    """One page of a SCAN over ``keys`` in :func:`_scan_hash` order, starting at ``cursor``.
+
+    The next cursor is the last returned position plus one, so deleting other
+    keys between calls never skips a key. Keys sharing that last position stay
+    on the page, which can then exceed ``count``.
+    """
+    ranked = sorted((position, key) for key in keys if (position := _scan_hash(key)) >= cursor)
+    page: list[str] = []
+    last = -1
+    for position, key in ranked:
+        if len(page) >= count and position != last:
+            return last + 1, sorted(page)
+        page.append(key)
+        last = position
+    return 0, sorted(page)
 
 
 # =============================================================================
@@ -241,20 +266,16 @@ class BaseCachex(BaseCache):
     ) -> tuple[int, list[str]]:
         """Perform a single SCAN iteration using cursor-based pagination.
 
-        ``key_type`` filters client-side via :meth:`type`: backends reaching
+        The cursor is a position in a hash order of :meth:`keys`, so a key that
+        exists for the whole iteration is returned even when other keys are
+        deleted between calls. ``key_type`` filters client-side via :meth:`type`: backends reaching
         this default have no server-side ``TYPE`` filter, and silently
         ignoring the argument would make the admin's type filter a no-op.
         """
-        all_keys = sorted(self.keys(pattern, version=version))
+        keys = self.keys(pattern, version=version)
         if key_type is not None:
-            all_keys = [k for k in all_keys if self.type(k, version=version) == key_type]
-        if count is None:
-            count = 100
-        start_idx = cursor
-        end_idx = start_idx + count
-        paginated_keys = all_keys[start_idx:end_idx]
-        next_cursor = end_idx if end_idx < len(all_keys) else 0
-        return (next_cursor, paginated_keys)
+            keys = [k for k in keys if self.type(k, version=version) == key_type]
+        return _scan_page(keys, cursor, 100 if count is None else count)
 
     def delete_pattern(
         self,

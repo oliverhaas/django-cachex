@@ -6,6 +6,7 @@ parametrized RESP tests do, without a container.
 """
 
 import copy
+import inspect
 import pickle
 import time
 from typing import TYPE_CHECKING
@@ -546,6 +547,29 @@ class TestKeysAndAdmin:
         assert locmem_cache.type("missing") is None
 
 
+def test_persist_without_a_ttl_returns_false(locmem_cache: LocMemCache):
+    locmem_cache.set("plain", 1, timeout=None)
+    locmem_cache.rpush("list", "a")
+    locmem_cache.set("expiring", 1, timeout=60)
+    assert locmem_cache.persist("plain") is False
+    assert locmem_cache.persist("list") is False
+    assert locmem_cache.persist("expiring") is True
+    assert locmem_cache.persist("expiring") is False
+    assert locmem_cache.ttl("expiring") is None
+
+
+def test_scan_returns_remaining_keys_after_earlier_pages_are_deleted(locmem_cache: LocMemCache):
+    for i in range(10):
+        locmem_cache.set(f"k{i}", i)
+    cursor, first = locmem_cache.scan(count=3)
+    locmem_cache.delete_many(first)
+    seen = []
+    while cursor:
+        cursor, keys = locmem_cache.scan(cursor, count=3)
+        seen.extend(keys)
+    assert sorted(seen) == locmem_cache.keys()
+
+
 # =============================================================================
 # Lists
 # =============================================================================
@@ -1033,6 +1057,13 @@ class TestSetOps:
         assert locmem_cache.ttl("k") is None
 
 
+def test_sadd_with_an_unhashable_member_changes_nothing(locmem_cache: LocMemCache):
+    locmem_cache.sadd("k", "a")
+    with pytest.raises(TypeError):
+        locmem_cache.sadd("k", "b", ["unhashable"])
+    assert locmem_cache.smembers("k") == {"a"}
+
+
 # =============================================================================
 # Hashes
 # =============================================================================
@@ -1249,6 +1280,12 @@ class TestHashOps:
         locmem_cache.hset("k", mapping={"a": 1})
         locmem_cache.hset("k", "b", 2)
         assert locmem_cache.ttl("k") is None
+
+
+def test_hdel_counts_a_repeated_field_once(locmem_cache: LocMemCache):
+    locmem_cache.hset("k", mapping={"a": 1, "b": 2})
+    assert locmem_cache.hdel("k", "a", "a") == 1
+    assert locmem_cache.hkeys("k") == ["b"]
 
 
 # =============================================================================
@@ -1615,6 +1652,33 @@ class TestSortedSetOps:
         assert locmem_cache.get("k") is None
 
 
+def test_zrem_counts_a_repeated_member_once(locmem_cache: LocMemCache):
+    locmem_cache.zadd("k", {"a": 1.0, "b": 2.0})
+    assert locmem_cache.zrem("k", "a", "a") == 1
+    assert locmem_cache.zrange("k", 0, -1) == ["b"]
+
+
+@pytest.mark.parametrize("score", [float("nan"), "nan"])
+def test_zadd_rejects_a_nan_score(locmem_cache: LocMemCache, score):
+    locmem_cache.zadd("k", {"a": 1.0})
+    with pytest.raises(ValueError, match="not a valid float"):
+        locmem_cache.zadd("k", {"b": 2.0, "c": score})
+    assert locmem_cache.zrange("k", 0, -1, withscores=True) == [("a", 1.0)]
+
+
+def test_zincrby_rejects_a_nan_increment(locmem_cache: LocMemCache):
+    with pytest.raises(ValueError, match="not a valid float"):
+        locmem_cache.zincrby("k", float("nan"), "a")
+    assert locmem_cache.type("k") is None
+
+
+def test_zincrby_rejects_a_nan_sum(locmem_cache: LocMemCache):
+    locmem_cache.zadd("k", {"a": float("inf")})
+    with pytest.raises(ValueError, match="NaN"):
+        locmem_cache.zincrby("k", float("-inf"), "a")
+    assert locmem_cache.zscore("k", "a") == float("inf")
+
+
 # =============================================================================
 # Version handling
 # =============================================================================
@@ -1807,3 +1871,124 @@ class TestGlobRanges:
         assert pattern.match("_")
         assert pattern.match("z")
         assert not pattern.match("m")
+
+
+# =============================================================================
+# Async twins
+# =============================================================================
+
+
+def _seed_twin_data(cache: LocMemCache) -> None:
+    cache.clear()
+    cache.set("s", 5, timeout=300)
+    cache.rpush("l", "a", "b", "a")
+    cache.sadd("one", "a")
+    cache.sadd("two", "a", "b")
+    cache.hset("h", mapping={"f": 1, "g": 2.5})
+    cache.zadd("z", {"a": 1.0, "b": 2.0, "c": 3.0})
+
+
+def _twin_state(cache: LocMemCache) -> tuple[dict[str, object], dict[str, int | None]]:
+    now = time.time()
+    with cache._lock:
+        values = {key: pickle.loads(value) for key, value in cache._cache.items()}
+        values |= {key: (type(value).__name__, copy.deepcopy(value)) for key, value in cache._collections.items()}
+        ttls = {key: None if expiry is None else round(expiry - now) for key, expiry in cache._expire_info.items()}
+    return values, ttls
+
+
+# One-member sets keep ``spop``/``srandmember`` deterministic.
+_ASYNC_TWIN_CASES = [
+    ("aset", ("s", 7), {"get": True}),
+    ("ahas_key", ("l",), {}),
+    ("aincr", ("s",), {}),
+    ("adecr", ("s", 2), {}),
+    ("aget_many", (["s", "l", "missing"],), {}),
+    ("aincr_version", ("s",), {}),
+    ("adecr_version", ("s",), {}),
+    ("attl", ("s",), {}),
+    ("atype", ("z",), {}),
+    ("apersist", ("s",), {}),
+    ("aexpire", ("l", 100), {}),
+    ("akeys", ("*",), {}),
+    ("ascan", (0,), {"count": 2}),
+    ("aiter_keys", ("*",), {}),
+    ("adelete_pattern", ("*o*",), {}),
+    ("alpush", ("l", "x", "y"), {}),
+    ("arpush", ("l", "x"), {}),
+    ("alpop", ("l",), {"count": 2}),
+    ("arpop", ("l",), {}),
+    ("alrange", ("l", 0, -1), {}),
+    ("allen", ("l",), {}),
+    ("alrem", ("l", 0, "a"), {}),
+    ("altrim", ("l", 0, 1), {}),
+    ("alindex", ("l", 1), {}),
+    ("alset", ("l", 0, "z"), {}),
+    ("alinsert", ("l", "BEFORE", "b", "q"), {}),
+    ("alpos", ("l", "a"), {"count": 0}),
+    ("asadd", ("one", "b", "c"), {}),
+    ("asrem", ("two", "a", "zz"), {}),
+    ("ascard", ("two",), {}),
+    ("asismember", ("one", "a"), {}),
+    ("asmembers", ("two",), {}),
+    ("aspop", ("one",), {}),
+    ("asrandmember", ("one", -3), {}),
+    ("asmismember", ("two", "a", "x"), {}),
+    ("asdiff", (["two", "one"],), {}),
+    ("asinter", (["two", "one"],), {}),
+    ("asunion", (["two", "one"],), {}),
+    ("ahset", ("h", "n", 1), {"mapping": {"m": 2}}),
+    ("ahdel", ("h", "f", "zz"), {}),
+    ("ahget", ("h", "f"), {}),
+    ("ahgetall", ("h",), {}),
+    ("ahlen", ("h",), {}),
+    ("ahkeys", ("h",), {}),
+    ("ahvals", ("h",), {}),
+    ("ahexists", ("h", "g"), {}),
+    ("ahmget", ("h", "f", "zz"), {}),
+    ("ahsetnx", ("h", "new", 1), {}),
+    ("ahincrby", ("h", "f", 2), {}),
+    ("ahincrbyfloat", ("h", "g", 0.5), {}),
+    ("azadd", ("z", {"d": 4.0, "a": 0.5}), {"ch": True}),
+    ("azcard", ("z",), {}),
+    ("azscore", ("z", "b"), {}),
+    ("azrank", ("z", "c"), {}),
+    ("azrevrank", ("z", "c"), {}),
+    ("azrange", ("z", 0, 1), {"withscores": True}),
+    ("azrevrange", ("z", 0, 1), {}),
+    ("azrangebyscore", ("z", 1, 2), {"withscores": True}),
+    ("azrevrangebyscore", ("z", 3, 2), {}),
+    ("azrem", ("z", "a", "zz"), {}),
+    ("azincrby", ("z", 2.5, "a"), {}),
+    ("azcount", ("z", 1, 2), {}),
+    ("azpopmin", ("z",), {"count": 2}),
+    ("azpopmax", ("z",), {}),
+    ("azmscore", ("z", "a", "zz"), {}),
+    ("azremrangebyrank", ("z", 0, 0), {}),
+    ("azremrangebyscore", ("z", 2, 3), {}),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("name", "args", "kwargs"), _ASYNC_TWIN_CASES, ids=[case[0] for case in _ASYNC_TWIN_CASES])
+async def test_async_twin_matches_sync(locmem_cache: LocMemCache, name, args, kwargs):
+    _seed_twin_data(locmem_cache)
+    expected = getattr(locmem_cache, name.removeprefix("a"))(*args, **kwargs)
+    if inspect.isgenerator(expected):
+        expected = list(expected)
+    expected_state = _twin_state(locmem_cache)
+    _seed_twin_data(locmem_cache)
+    call = getattr(locmem_cache, name)(*args, **kwargs)
+    result = [item async for item in call] if inspect.isasyncgen(call) else await call
+    assert result == expected
+    assert _twin_state(locmem_cache) == expected_state
+
+
+def test_async_twin_cases_cover_every_async_method():
+    defined = {
+        name
+        for name, member in vars(LocMemCache).items()
+        if inspect.iscoroutinefunction(member) or inspect.isasyncgenfunction(member)
+    }
+    # ``asemaphore`` builds a new Semaphore per call; test_semaphores.py covers it.
+    assert defined - {"asemaphore"} == {case[0] for case in _ASYNC_TWIN_CASES}
