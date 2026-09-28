@@ -15,26 +15,27 @@ from tests.fixtures.cache import POOL_OPTION_ADAPTERS
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
+pytestmark = pytest.mark.parametrize("topology", ["default"], indirect=True)
 
-@pytest.mark.parametrize("topology", ["default"], indirect=True)
-class TestClientLibraries:
-    def test_set_get_across_images(self, cache: RespCache, resp_images: tuple[str, str]):
-        image, client_library = resp_images
 
-        cache.set("test_key", "hello")
-        assert cache.get("test_key") == "hello", f"image={image}, client_library={client_library}"
+def test_set_get_across_images(cache: RespCache, resp_images: tuple[str, str]):
+    image, client_library = resp_images
 
-        cache.set("int_key", 42)
-        assert cache.get("int_key") == 42, f"image={image}, client_library={client_library}"
+    cache.set("test_key", "hello")
+    assert cache.get("test_key") == "hello", f"image={image}, client_library={client_library}"
 
-    # valkey-glide ignores parser_class and the cluster client picks its own
-    # parser, so both parser cells would run the same thing there.
-    @pytest.mark.parametrize("resp_adapter", sorted(POOL_OPTION_ADAPTERS), indirect=True)
-    def test_native_parser_round_trips_nested_values(self, cache: RespCache, native_parser: bool, client_class: str):
-        """hiredis / libvalkey must decode what the pure-Python parser decodes."""
-        if client_class == "cluster":
-            pytest.skip("cluster rejects parser_class")
-        parser = "native" if native_parser else "python"
+    cache.set("int_key", 42)
+    assert cache.get("int_key") == 42, f"image={image}, client_library={client_library}"
 
-        cache.set("test_key", {"nested": {"data": [1, 2, 3]}})
-        assert cache.get("test_key") == {"nested": {"data": [1, 2, 3]}}, f"parser={parser}"
+
+# valkey-glide ignores parser_class and the cluster client picks its own
+# parser, so both parser cells would run the same thing there.
+@pytest.mark.parametrize("resp_adapter", sorted(POOL_OPTION_ADAPTERS), indirect=True)
+def test_native_parser_round_trips_nested_values(cache: RespCache, native_parser: bool, client_class: str):
+    """hiredis / libvalkey must decode what the pure-Python parser decodes."""
+    if client_class == "cluster":
+        pytest.skip("cluster rejects parser_class")
+    parser = "native" if native_parser else "python"
+
+    cache.set("test_key", {"nested": {"data": [1, 2, 3]}})
+    assert cache.get("test_key") == {"nested": {"data": [1, 2, 3]}}, f"parser={parser}"

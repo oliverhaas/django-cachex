@@ -10,721 +10,740 @@ if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
 
-class TestListOperations:
-    def test_lpush_rpush(self, cache: RespCache):
-        cache.lpush("mylist", "world")
-        cache.lpush("mylist", "hello")
-        cache.rpush("mylist", "!")
+def test_lpush_rpush(cache: RespCache):
+    cache.lpush("mylist", "world")
+    cache.lpush("mylist", "hello")
+    cache.rpush("mylist", "!")
 
-        result = cache.lrange("mylist", 0, -1)
-        assert result == ["hello", "world", "!"]
+    result = cache.lrange("mylist", 0, -1)
+    assert result == ["hello", "world", "!"]
 
-    def test_lpush_multiple(self, cache: RespCache):
-        count = cache.lpush("mylist2", "a", "b", "c")
-        assert count == 3
-        # When pushing multiple, they're pushed in order, so last one ends up at head
-        result = cache.lrange("mylist2", 0, -1)
-        assert result == ["c", "b", "a"]
 
-    def test_rpush_multiple(self, cache: RespCache):
-        count = cache.rpush("mylist3", "a", "b", "c")
-        assert count == 3
-        result = cache.lrange("mylist3", 0, -1)
-        assert result == ["a", "b", "c"]
+def test_lpush_multiple(cache: RespCache):
+    count = cache.lpush("mylist2", "a", "b", "c")
+    assert count == 3
+    # When pushing multiple, they're pushed in order, so last one ends up at head
+    result = cache.lrange("mylist2", 0, -1)
+    assert result == ["c", "b", "a"]
 
-    def test_lpop(self, cache: RespCache):
-        cache.rpush("mylist4", "a", "b", "c")
 
-        result = cache.lpop("mylist4")
-        assert result == "a"
+def test_rpush_multiple(cache: RespCache):
+    count = cache.rpush("mylist3", "a", "b", "c")
+    assert count == 3
+    result = cache.lrange("mylist3", 0, -1)
+    assert result == ["a", "b", "c"]
 
-        result = cache.lpop("mylist4", count=2)
-        assert result == ["b", "c"]
 
-        result = cache.lpop("mylist4")
-        assert result is None
+def test_lpop(cache: RespCache):
+    cache.rpush("mylist4", "a", "b", "c")
 
-    def test_rpop(self, cache: RespCache):
-        cache.rpush("mylist5", "a", "b", "c")
+    result = cache.lpop("mylist4")
+    assert result == "a"
 
-        result = cache.rpop("mylist5")
-        assert result == "c"
+    result = cache.lpop("mylist4", count=2)
+    assert result == ["b", "c"]
 
-        result = cache.rpop("mylist5", count=2)
-        assert result == ["b", "a"]
+    result = cache.lpop("mylist4")
+    assert result is None
 
-        result = cache.rpop("mylist5")
-        assert result is None
 
-    def test_lrange(self, cache: RespCache):
-        cache.rpush("mylist6", "a", "b", "c", "d", "e")
+def test_rpop(cache: RespCache):
+    cache.rpush("mylist5", "a", "b", "c")
 
-        assert cache.lrange("mylist6", 0, -1) == ["a", "b", "c", "d", "e"]
+    result = cache.rpop("mylist5")
+    assert result == "c"
 
-        assert cache.lrange("mylist6", 0, 2) == ["a", "b", "c"]
+    result = cache.rpop("mylist5", count=2)
+    assert result == ["b", "a"]
 
-        assert cache.lrange("mylist6", -2, -1) == ["d", "e"]
+    result = cache.rpop("mylist5")
+    assert result is None
 
-        assert cache.lrange("nonexistent", 0, -1) == []
 
-    def test_lindex(self, cache: RespCache):
-        cache.rpush("mylist7", "a", "b", "c")
+def test_lrange(cache: RespCache):
+    cache.rpush("mylist6", "a", "b", "c", "d", "e")
 
-        assert cache.lindex("mylist7", 0) == "a"
-        assert cache.lindex("mylist7", 1) == "b"
-        assert cache.lindex("mylist7", -1) == "c"
-        assert cache.lindex("mylist7", 100) is None
-        assert cache.lindex("nonexistent", 0) is None
+    assert cache.lrange("mylist6", 0, -1) == ["a", "b", "c", "d", "e"]
 
-    def test_llen(self, cache: RespCache):
-        assert cache.llen("mylist8") == 0
+    assert cache.lrange("mylist6", 0, 2) == ["a", "b", "c"]
 
-        cache.rpush("mylist8", "a", "b", "c")
-        assert cache.llen("mylist8") == 3
+    assert cache.lrange("mylist6", -2, -1) == ["d", "e"]
 
-    def test_lrem(self, cache: RespCache):
-        cache.rpush("mylist9", "a", "b", "a", "c", "a")
+    assert cache.lrange("nonexistent", 0, -1) == []
 
-        # Remove 2 occurrences from head
-        removed = cache.lrem("mylist9", 2, "a")
-        assert removed == 2
-        assert cache.lrange("mylist9", 0, -1) == ["b", "c", "a"]
 
-    def test_lrem_from_tail(self, cache: RespCache):
-        cache.rpush("mylist10", "a", "b", "a", "c", "a")
+def test_lindex(cache: RespCache):
+    cache.rpush("mylist7", "a", "b", "c")
 
-        # Remove 2 occurrences from tail (negative count)
-        removed = cache.lrem("mylist10", -2, "a")
-        assert removed == 2
-        assert cache.lrange("mylist10", 0, -1) == ["a", "b", "c"]
+    assert cache.lindex("mylist7", 0) == "a"
+    assert cache.lindex("mylist7", 1) == "b"
+    assert cache.lindex("mylist7", -1) == "c"
+    assert cache.lindex("mylist7", 100) is None
+    assert cache.lindex("nonexistent", 0) is None
 
-    def test_lrem_all(self, cache: RespCache):
-        cache.rpush("mylist11", "a", "b", "a", "c", "a")
 
-        # Remove all occurrences (count=0)
-        removed = cache.lrem("mylist11", 0, "a")
-        assert removed == 3
-        assert cache.lrange("mylist11", 0, -1) == ["b", "c"]
+def test_llen(cache: RespCache):
+    assert cache.llen("mylist8") == 0
 
-    def test_ltrim(self, cache: RespCache):
-        cache.rpush("mylist12", "a", "b", "c", "d", "e")
+    cache.rpush("mylist8", "a", "b", "c")
+    assert cache.llen("mylist8") == 3
 
-        result = cache.ltrim("mylist12", 1, 3)
-        assert result is True
-        assert cache.lrange("mylist12", 0, -1) == ["b", "c", "d"]
 
-    def test_lset(self, cache: RespCache):
-        cache.rpush("mylist13", "a", "b", "c")
+def test_lrem(cache: RespCache):
+    cache.rpush("mylist9", "a", "b", "a", "c", "a")
 
-        result = cache.lset("mylist13", 1, "B")
-        assert result is True
-        assert cache.lrange("mylist13", 0, -1) == ["a", "B", "c"]
+    # Remove 2 occurrences from head
+    removed = cache.lrem("mylist9", 2, "a")
+    assert removed == 2
+    assert cache.lrange("mylist9", 0, -1) == ["b", "c", "a"]
 
-    def test_linsert(self, cache: RespCache):
-        cache.rpush("mylist14", "a", "c")
 
-        length = cache.linsert("mylist14", "BEFORE", "c", "b")
-        assert length == 3
-        assert cache.lrange("mylist14", 0, -1) == ["a", "b", "c"]
+def test_lrem_from_tail(cache: RespCache):
+    cache.rpush("mylist10", "a", "b", "a", "c", "a")
 
-        length = cache.linsert("mylist14", "AFTER", "c", "d")
-        assert length == 4
-        assert cache.lrange("mylist14", 0, -1) == ["a", "b", "c", "d"]
+    # Remove 2 occurrences from tail (negative count)
+    removed = cache.lrem("mylist10", -2, "a")
+    assert removed == 2
+    assert cache.lrange("mylist10", 0, -1) == ["a", "b", "c"]
 
-        length = cache.linsert("mylist14", "BEFORE", "z", "x")
-        assert length == -1
 
-    def test_list_with_complex_values(self, cache: RespCache):
-        cache.rpush("mylist15", {"name": "Alice"}, {"name": "Bob"})
+def test_lrem_all(cache: RespCache):
+    cache.rpush("mylist11", "a", "b", "a", "c", "a")
 
-        result = cache.lrange("mylist15", 0, -1)
-        assert result == [{"name": "Alice"}, {"name": "Bob"}]
+    # Remove all occurrences (count=0)
+    removed = cache.lrem("mylist11", 0, "a")
+    assert removed == 3
+    assert cache.lrange("mylist11", 0, -1) == ["b", "c"]
 
-        popped = cache.lpop("mylist15")
-        assert popped == {"name": "Alice"}
 
-    def test_list_version_support(self, cache: RespCache):
-        cache.rpush("mylist", "v1_a", "v1_b", version=1)
-        cache.rpush("mylist", "v2_a", version=2)
+def test_ltrim(cache: RespCache):
+    cache.rpush("mylist12", "a", "b", "c", "d", "e")
 
-        assert cache.llen("mylist", version=1) == 2
-        assert cache.llen("mylist", version=2) == 1
+    result = cache.ltrim("mylist12", 1, 3)
+    assert result is True
+    assert cache.lrange("mylist12", 0, -1) == ["b", "c", "d"]
 
-        assert cache.lrange("mylist", 0, -1, version=1) == ["v1_a", "v1_b"]
-        assert cache.lrange("mylist", 0, -1, version=2) == ["v2_a"]
 
-    def test_lpos_basic(self, cache: RespCache):
-        cache.rpush("mylist_lpos", "a", "b", "c", "b", "d")
+def test_lset(cache: RespCache):
+    cache.rpush("mylist13", "a", "b", "c")
 
-        assert cache.lpos("mylist_lpos", "b") == 1
+    result = cache.lset("mylist13", 1, "B")
+    assert result is True
+    assert cache.lrange("mylist13", 0, -1) == ["a", "B", "c"]
 
-        assert cache.lpos("mylist_lpos", "z") is None
 
-    def test_lpos_with_rank(self, cache: RespCache):
-        cache.rpush("mylist_lpos2", "a", "b", "c", "b", "d", "b")
+def test_linsert(cache: RespCache):
+    cache.rpush("mylist14", "a", "c")
 
-        # Find second occurrence (rank=2)
-        assert cache.lpos("mylist_lpos2", "b", rank=2) == 3
+    length = cache.linsert("mylist14", "BEFORE", "c", "b")
+    assert length == 3
+    assert cache.lrange("mylist14", 0, -1) == ["a", "b", "c"]
 
-        # Find from the end (negative rank)
-        assert cache.lpos("mylist_lpos2", "b", rank=-1) == 5
+    length = cache.linsert("mylist14", "AFTER", "c", "d")
+    assert length == 4
+    assert cache.lrange("mylist14", 0, -1) == ["a", "b", "c", "d"]
 
-    def test_lpos_with_count(self, cache: RespCache):
-        cache.rpush("mylist_lpos3", "a", "b", "c", "b", "d", "b")
+    length = cache.linsert("mylist14", "BEFORE", "z", "x")
+    assert length == -1
 
-        result = cache.lpos("mylist_lpos3", "b", count=0)
-        assert result == [1, 3, 5]
 
-        result = cache.lpos("mylist_lpos3", "b", count=2)
-        assert result == [1, 3]
+def test_list_with_complex_values(cache: RespCache):
+    cache.rpush("mylist15", {"name": "Alice"}, {"name": "Bob"})
 
-    def test_lmove_basic(self, cache: RespCache):
-        # Use hash tags {list} to ensure keys are on same cluster slot
-        cache.rpush("{list}src", "a", "b", "c")
-        cache.rpush("{list}dst", "x", "y")
+    result = cache.lrange("mylist15", 0, -1)
+    assert result == [{"name": "Alice"}, {"name": "Bob"}]
 
-        result = cache.lmove("{list}src", "{list}dst", "LEFT", "RIGHT")
-        assert result == "a"
+    popped = cache.lpop("mylist15")
+    assert popped == {"name": "Alice"}
 
-        assert cache.lrange("{list}src", 0, -1) == ["b", "c"]
-        assert cache.lrange("{list}dst", 0, -1) == ["x", "y", "a"]
 
-    def test_lmove_directions(self, cache: RespCache):
-        # Use hash tags {list} to ensure keys are on same cluster slot
-        cache.rpush("{list}src2", "1", "2", "3")
-        cache.rpush("{list}dst2", "a")
+def test_list_version_support(cache: RespCache):
+    cache.rpush("mylist", "v1_a", "v1_b", version=1)
+    cache.rpush("mylist", "v2_a", version=2)
 
-        # RIGHT to LEFT (rpoplpush equivalent)
-        result = cache.lmove("{list}src2", "{list}dst2", "RIGHT", "LEFT")
-        assert result == "3"
-        assert cache.lrange("{list}src2", 0, -1) == ["1", "2"]
-        assert cache.lrange("{list}dst2", 0, -1) == ["3", "a"]
+    assert cache.llen("mylist", version=1) == 2
+    assert cache.llen("mylist", version=2) == 1
 
-    def test_lmove_empty_source(self, cache: RespCache):
-        # Use hash tags {list} to ensure keys are on same cluster slot
-        cache.rpush("{list}dst3", "x")
-
-        result = cache.lmove("{list}empty_src", "{list}dst3", "LEFT", "RIGHT")
-        assert result is None
-        assert cache.lrange("{list}dst3", 0, -1) == ["x"]
+    assert cache.lrange("mylist", 0, -1, version=1) == ["v1_a", "v1_b"]
+    assert cache.lrange("mylist", 0, -1, version=2) == ["v2_a"]
 
-    def test_blpop_immediate(self, cache: RespCache):
-        cache.rpush("blpop_list", "a", "b", "c")
 
-        result = cache.blpop("blpop_list", timeout=1)
-        assert result is not None
-        key, value = result
-        assert key == "blpop_list"
-        assert value == "a"
-        assert cache.lrange("blpop_list", 0, -1) == ["b", "c"]
+def test_lpos_basic(cache: RespCache):
+    cache.rpush("mylist_lpos", "a", "b", "c", "b", "d")
 
-    def test_blpop_timeout(self, cache: RespCache):
-        """Test blpop returns None after timeout on empty list."""
-        result = cache.blpop("blpop_empty", timeout=0.1)
-        assert result is None
+    assert cache.lpos("mylist_lpos", "b") == 1
 
-    def test_blpop_multiple_keys(self, cache: RespCache):
-        # Use hash tags to ensure keys are on same cluster slot
-        cache.rpush("{blpop}list2", "x", "y")
+    assert cache.lpos("mylist_lpos", "z") is None
 
-        result = cache.blpop(["{blpop}list1", "{blpop}list2"], timeout=1)
-        assert result is not None
-        key, value = result
-        assert key == "{blpop}list2"
-        assert value == "x"
-
-    def test_brpop_immediate(self, cache: RespCache):
-        cache.rpush("brpop_list", "a", "b", "c")
-
-        result = cache.brpop("brpop_list", timeout=1)
-        assert result is not None
-        key, value = result
-        assert key == "brpop_list"
-        assert value == "c"
-        assert cache.lrange("brpop_list", 0, -1) == ["a", "b"]
 
-    def test_brpop_timeout(self, cache: RespCache):
-        """Test brpop returns None after timeout on empty list."""
-        result = cache.brpop("brpop_empty", timeout=0.1)
-        assert result is None
-
-    def test_blmove_immediate(self, cache: RespCache):
-        # Use hash tags to ensure keys are on same cluster slot
-        cache.rpush("{blmove}src", "a", "b", "c")
-        cache.rpush("{blmove}dst", "x")
+def test_lpos_with_rank(cache: RespCache):
+    cache.rpush("mylist_lpos2", "a", "b", "c", "b", "d", "b")
 
-        result = cache.blmove("{blmove}src", "{blmove}dst", timeout=1, wherefrom="LEFT", whereto="RIGHT")
-        assert result == "a"
-        assert cache.lrange("{blmove}src", 0, -1) == ["b", "c"]
-        assert cache.lrange("{blmove}dst", 0, -1) == ["x", "a"]
+    # Find second occurrence (rank=2)
+    assert cache.lpos("mylist_lpos2", "b", rank=2) == 3
 
-    def test_blmove_timeout(self, cache: RespCache):
-        """Test blmove returns None after timeout on empty source."""
-        # Use hash tags to ensure keys are on same cluster slot
-        cache.rpush("{blmove_empty}dst", "x")
+    # Find from the end (negative rank)
+    assert cache.lpos("mylist_lpos2", "b", rank=-1) == 5
 
-        result = cache.blmove("{blmove_empty}src", "{blmove_empty}dst", timeout=0.1)
-        assert result is None
 
-    def test_blpop_with_complex_values(self, cache: RespCache):
-        cache.rpush("blpop_complex", {"name": "Alice"}, {"name": "Bob"})
+def test_lpos_with_count(cache: RespCache):
+    cache.rpush("mylist_lpos3", "a", "b", "c", "b", "d", "b")
 
-        result = cache.blpop("blpop_complex", timeout=1)
-        assert result is not None
-        _key, value = result
-        assert value == {"name": "Alice"}
+    result = cache.lpos("mylist_lpos3", "b", count=0)
+    assert result == [1, 3, 5]
 
+    result = cache.lpos("mylist_lpos3", "b", count=2)
+    assert result == [1, 3]
 
-class TestVersionSrcDst:
-    """Tests for version_src/version_dst on lmove and blmove."""
 
-    def test_lmove_version_src_dst(self, cache: RespCache):
-        cache.rpush("{vs}:lsrc", "a", "b", version=1)
-        cache.rpush("{vs}:ldst", "x", version=2)
+def test_lmove_basic(cache: RespCache):
+    # Use hash tags {list} to ensure keys are on same cluster slot
+    cache.rpush("{list}src", "a", "b", "c")
+    cache.rpush("{list}dst", "x", "y")
 
-        result = cache.lmove("{vs}:lsrc", "{vs}:ldst", "LEFT", "RIGHT", version_src=1, version_dst=2)
-        assert result == "a"
-        assert cache.lrange("{vs}:lsrc", 0, -1, version=1) == ["b"]
-        assert cache.lrange("{vs}:ldst", 0, -1, version=2) == ["x", "a"]
+    result = cache.lmove("{list}src", "{list}dst", "LEFT", "RIGHT")
+    assert result == "a"
 
-    def test_blmove_version_src_dst(self, cache: RespCache):
-        cache.rpush("{vs}:blsrc", "a", "b", version=1)
-        cache.rpush("{vs}:bldst", "x", version=2)
+    assert cache.lrange("{list}src", 0, -1) == ["b", "c"]
+    assert cache.lrange("{list}dst", 0, -1) == ["x", "y", "a"]
 
-        result = cache.blmove(
-            "{vs}:blsrc",
-            "{vs}:bldst",
-            timeout=1,
-            wherefrom="LEFT",
-            whereto="RIGHT",
-            version_src=1,
-            version_dst=2,
-        )
-        assert result == "a"
-        assert cache.lrange("{vs}:blsrc", 0, -1, version=1) == ["b"]
-        assert cache.lrange("{vs}:bldst", 0, -1, version=2) == ["x", "a"]
 
+def test_lmove_directions(cache: RespCache):
+    # Use hash tags {list} to ensure keys are on same cluster slot
+    cache.rpush("{list}src2", "1", "2", "3")
+    cache.rpush("{list}dst2", "a")
 
-class TestAsyncListPushPop:
-    """Tests for alpush, arpush, alpop, arpop."""
+    # RIGHT to LEFT (rpoplpush equivalent)
+    result = cache.lmove("{list}src2", "{list}dst2", "RIGHT", "LEFT")
+    assert result == "3"
+    assert cache.lrange("{list}src2", 0, -1) == ["1", "2"]
+    assert cache.lrange("{list}dst2", 0, -1) == ["3", "a"]
 
-    @pytest.mark.asyncio
-    async def test_alpush_arpush(self, cache: RespCache):
-        await cache.alpush("amylist", "world")
-        await cache.alpush("amylist", "hello")
-        await cache.arpush("amylist", "!")
 
-        result = cache.lrange("amylist", 0, -1)
-        assert result == ["hello", "world", "!"]
+def test_lmove_empty_source(cache: RespCache):
+    # Use hash tags {list} to ensure keys are on same cluster slot
+    cache.rpush("{list}dst3", "x")
 
-    @pytest.mark.asyncio
-    async def test_alpush_multiple(self, cache: RespCache):
-        count = await cache.alpush("amylist2", "a", "b", "c")
-        assert count == 3
-        result = cache.lrange("amylist2", 0, -1)
-        assert result == ["c", "b", "a"]
-
-    @pytest.mark.asyncio
-    async def test_arpush_multiple(self, cache: RespCache):
-        count = await cache.arpush("amylist3", "a", "b", "c")
-        assert count == 3
-        result = cache.lrange("amylist3", 0, -1)
-        assert result == ["a", "b", "c"]
-
-    @pytest.mark.asyncio
-    async def test_alpop(self, cache: RespCache):
-        cache.rpush("amylist4", "a", "b", "c")
-
-        result = await cache.alpop("amylist4")
-        assert result == "a"
-
-        result = await cache.alpop("amylist4", count=2)
-        assert result == ["b", "c"]
-
-        result = await cache.alpop("amylist4")
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_arpop(self, cache: RespCache):
-        cache.rpush("amylist5", "a", "b", "c")
-
-        result = await cache.arpop("amylist5")
-        assert result == "c"
+    result = cache.lmove("{list}empty_src", "{list}dst3", "LEFT", "RIGHT")
+    assert result is None
+    assert cache.lrange("{list}dst3", 0, -1) == ["x"]
 
-        result = await cache.arpop("amylist5", count=2)
-        assert result == ["b", "a"]
 
-        result = await cache.arpop("amylist5")
-        assert result is None
+def test_blpop_immediate(cache: RespCache):
+    cache.rpush("blpop_list", "a", "b", "c")
 
+    result = cache.blpop("blpop_list", timeout=1)
+    assert result is not None
+    key, value = result
+    assert key == "blpop_list"
+    assert value == "a"
+    assert cache.lrange("blpop_list", 0, -1) == ["b", "c"]
 
-class TestAsyncListRange:
-    """Tests for alrange, alindex."""
 
-    @pytest.mark.asyncio
-    async def test_alrange(self, cache: RespCache):
-        cache.rpush("amylist6", "a", "b", "c", "d", "e")
+def test_blpop_timeout(cache: RespCache):
+    """Test blpop returns None after timeout on empty list."""
+    result = cache.blpop("blpop_empty", timeout=0.1)
+    assert result is None
 
-        assert await cache.alrange("amylist6", 0, -1) == ["a", "b", "c", "d", "e"]
-        assert await cache.alrange("amylist6", 0, 2) == ["a", "b", "c"]
-        assert await cache.alrange("amylist6", -2, -1) == ["d", "e"]
-        assert await cache.alrange("anonexistent", 0, -1) == []
 
-    @pytest.mark.asyncio
-    async def test_alindex(self, cache: RespCache):
-        cache.rpush("amylist7", "a", "b", "c")
+def test_blpop_multiple_keys(cache: RespCache):
+    # Use hash tags to ensure keys are on same cluster slot
+    cache.rpush("{blpop}list2", "x", "y")
 
-        assert await cache.alindex("amylist7", 0) == "a"
-        assert await cache.alindex("amylist7", 1) == "b"
-        assert await cache.alindex("amylist7", -1) == "c"
-        assert await cache.alindex("amylist7", 100) is None
-        assert await cache.alindex("anonexistent", 0) is None
+    result = cache.blpop(["{blpop}list1", "{blpop}list2"], timeout=1)
+    assert result is not None
+    key, value = result
+    assert key == "{blpop}list2"
+    assert value == "x"
 
 
-class TestAsyncListLength:
-    """Tests for allen."""
+def test_brpop_immediate(cache: RespCache):
+    cache.rpush("brpop_list", "a", "b", "c")
 
-    @pytest.mark.asyncio
-    async def test_allen(self, cache: RespCache):
-        assert await cache.allen("amylist8") == 0
-        cache.rpush("amylist8", "a", "b", "c")
-        assert await cache.allen("amylist8") == 3
+    result = cache.brpop("brpop_list", timeout=1)
+    assert result is not None
+    key, value = result
+    assert key == "brpop_list"
+    assert value == "c"
+    assert cache.lrange("brpop_list", 0, -1) == ["a", "b"]
 
 
-class TestAsyncListModify:
-    """Tests for alrem, altrim, alset, alinsert."""
+def test_brpop_timeout(cache: RespCache):
+    """Test brpop returns None after timeout on empty list."""
+    result = cache.brpop("brpop_empty", timeout=0.1)
+    assert result is None
 
-    @pytest.mark.asyncio
-    async def test_alrem(self, cache: RespCache):
-        cache.rpush("amylist9", "a", "b", "a", "c", "a")
-        removed = await cache.alrem("amylist9", 2, "a")
-        assert removed == 2
-        assert cache.lrange("amylist9", 0, -1) == ["b", "c", "a"]
 
-    @pytest.mark.asyncio
-    async def test_alrem_from_tail(self, cache: RespCache):
-        cache.rpush("amylist10", "a", "b", "a", "c", "a")
-        removed = await cache.alrem("amylist10", -2, "a")
-        assert removed == 2
-        assert cache.lrange("amylist10", 0, -1) == ["a", "b", "c"]
+def test_blmove_immediate(cache: RespCache):
+    # Use hash tags to ensure keys are on same cluster slot
+    cache.rpush("{blmove}src", "a", "b", "c")
+    cache.rpush("{blmove}dst", "x")
 
-    @pytest.mark.asyncio
-    async def test_alrem_all(self, cache: RespCache):
-        cache.rpush("amylist11", "a", "b", "a", "c", "a")
-        removed = await cache.alrem("amylist11", 0, "a")
-        assert removed == 3
-        assert cache.lrange("amylist11", 0, -1) == ["b", "c"]
+    result = cache.blmove("{blmove}src", "{blmove}dst", timeout=1, wherefrom="LEFT", whereto="RIGHT")
+    assert result == "a"
+    assert cache.lrange("{blmove}src", 0, -1) == ["b", "c"]
+    assert cache.lrange("{blmove}dst", 0, -1) == ["x", "a"]
 
-    @pytest.mark.asyncio
-    async def test_altrim(self, cache: RespCache):
-        cache.rpush("amylist12", "a", "b", "c", "d", "e")
-        result = await cache.altrim("amylist12", 1, 3)
-        assert result is True
-        assert cache.lrange("amylist12", 0, -1) == ["b", "c", "d"]
 
-    @pytest.mark.asyncio
-    async def test_alset(self, cache: RespCache):
-        cache.rpush("amylist13", "a", "b", "c")
-        result = await cache.alset("amylist13", 1, "B")
-        assert result is True
-        assert cache.lrange("amylist13", 0, -1) == ["a", "B", "c"]
+def test_blmove_timeout(cache: RespCache):
+    """Test blmove returns None after timeout on empty source."""
+    # Use hash tags to ensure keys are on same cluster slot
+    cache.rpush("{blmove_empty}dst", "x")
 
-    @pytest.mark.asyncio
-    async def test_alinsert(self, cache: RespCache):
-        cache.rpush("amylist14", "a", "c")
+    result = cache.blmove("{blmove_empty}src", "{blmove_empty}dst", timeout=0.1)
+    assert result is None
 
-        length = await cache.alinsert("amylist14", "BEFORE", "c", "b")
-        assert length == 3
-        assert cache.lrange("amylist14", 0, -1) == ["a", "b", "c"]
 
-        length = await cache.alinsert("amylist14", "AFTER", "c", "d")
-        assert length == 4
-        assert cache.lrange("amylist14", 0, -1) == ["a", "b", "c", "d"]
+def test_blpop_with_complex_values(cache: RespCache):
+    cache.rpush("blpop_complex", {"name": "Alice"}, {"name": "Bob"})
 
-        length = await cache.alinsert("amylist14", "BEFORE", "z", "x")
-        assert length == -1
-
+    result = cache.blpop("blpop_complex", timeout=1)
+    assert result is not None
+    _key, value = result
+    assert value == {"name": "Alice"}
 
-class TestAsyncListPos:
-    """Tests for alpos."""
-
-    @pytest.mark.asyncio
-    async def test_alpos_basic(self, cache: RespCache):
-        cache.rpush("amylist_lpos", "a", "b", "c", "b", "d")
-
-        assert await cache.alpos("amylist_lpos", "b") == 1
-        assert await cache.alpos("amylist_lpos", "z") is None
-
-    @pytest.mark.asyncio
-    async def test_alpos_with_rank(self, cache: RespCache):
-        cache.rpush("amylist_lpos2", "a", "b", "c", "b", "d", "b")
 
-        assert await cache.alpos("amylist_lpos2", "b", rank=2) == 3
-        assert await cache.alpos("amylist_lpos2", "b", rank=-1) == 5
+def test_lmove_version_src_dst(cache: RespCache):
+    cache.rpush("{vs}:lsrc", "a", "b", version=1)
+    cache.rpush("{vs}:ldst", "x", version=2)
 
-    @pytest.mark.asyncio
-    async def test_alpos_with_count(self, cache: RespCache):
-        cache.rpush("amylist_lpos3", "a", "b", "c", "b", "d", "b")
+    result = cache.lmove("{vs}:lsrc", "{vs}:ldst", "LEFT", "RIGHT", version_src=1, version_dst=2)
+    assert result == "a"
+    assert cache.lrange("{vs}:lsrc", 0, -1, version=1) == ["b"]
+    assert cache.lrange("{vs}:ldst", 0, -1, version=2) == ["x", "a"]
 
-        result = await cache.alpos("amylist_lpos3", "b", count=0)
-        assert result == [1, 3, 5]
-
-        result = await cache.alpos("amylist_lpos3", "b", count=2)
-        assert result == [1, 3]
-
-
-class TestAsyncListMove:
-    """Tests for almove."""
-
-    @pytest.mark.asyncio
-    async def test_almove_basic(self, cache: RespCache):
-        cache.rpush("{alist}src", "a", "b", "c")
-        cache.rpush("{alist}dst", "x", "y")
-
-        result = await cache.almove("{alist}src", "{alist}dst", "LEFT", "RIGHT")
-        assert result == "a"
-
-        assert cache.lrange("{alist}src", 0, -1) == ["b", "c"]
-        assert cache.lrange("{alist}dst", 0, -1) == ["x", "y", "a"]
-
-    @pytest.mark.asyncio
-    async def test_almove_empty_source(self, cache: RespCache):
-        cache.rpush("{alist}dst3", "x")
-
-        result = await cache.almove("{alist}empty_src", "{alist}dst3", "LEFT", "RIGHT")
-        assert result is None
-
-
-class TestAsyncBlockingOps:
-    """Tests for ablpop, abrpop, ablmove."""
-
-    @pytest.mark.asyncio
-    async def test_ablpop_immediate(self, cache: RespCache):
-        cache.rpush("ablpop_list", "a", "b", "c")
-
-        result = await cache.ablpop("ablpop_list", timeout=1)
-        assert result is not None
-        rkey, value = result
-        assert rkey == "ablpop_list"
-        assert value == "a"
-
-    @pytest.mark.asyncio
-    async def test_ablpop_timeout(self, cache: RespCache):
-        result = await cache.ablpop("ablpop_empty", timeout=0.1)
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_abrpop_immediate(self, cache: RespCache):
-        cache.rpush("abrpop_list", "a", "b", "c")
 
-        result = await cache.abrpop("abrpop_list", timeout=1)
-        assert result is not None
-        rkey, value = result
-        assert rkey == "abrpop_list"
-        assert value == "c"
+def test_blmove_version_src_dst(cache: RespCache):
+    cache.rpush("{vs}:blsrc", "a", "b", version=1)
+    cache.rpush("{vs}:bldst", "x", version=2)
 
-    @pytest.mark.asyncio
-    async def test_abrpop_timeout(self, cache: RespCache):
-        result = await cache.abrpop("abrpop_empty", timeout=0.1)
-        assert result is None
+    result = cache.blmove(
+        "{vs}:blsrc",
+        "{vs}:bldst",
+        timeout=1,
+        wherefrom="LEFT",
+        whereto="RIGHT",
+        version_src=1,
+        version_dst=2,
+    )
+    assert result == "a"
+    assert cache.lrange("{vs}:blsrc", 0, -1, version=1) == ["b"]
+    assert cache.lrange("{vs}:bldst", 0, -1, version=2) == ["x", "a"]
 
-    @pytest.mark.asyncio
-    async def test_ablmove_immediate(self, cache: RespCache):
-        cache.rpush("{ablmove}src", "a", "b", "c")
-        cache.rpush("{ablmove}dst", "x")
 
-        result = await cache.ablmove(
-            "{ablmove}src",
-            "{ablmove}dst",
-            timeout=1,
-            wherefrom="LEFT",
-            whereto="RIGHT",
-        )
-        assert result == "a"
-        assert cache.lrange("{ablmove}src", 0, -1) == ["b", "c"]
-        assert cache.lrange("{ablmove}dst", 0, -1) == ["x", "a"]
+@pytest.mark.asyncio
+async def test_alpush_arpush(cache: RespCache):
+    await cache.alpush("amylist", "world")
+    await cache.alpush("amylist", "hello")
+    await cache.arpush("amylist", "!")
 
-    @pytest.mark.asyncio
-    async def test_ablmove_timeout(self, cache: RespCache):
-        cache.rpush("{ablmove_empty}dst", "x")
+    result = cache.lrange("amylist", 0, -1)
+    assert result == ["hello", "world", "!"]
 
-        result = await cache.ablmove(
-            "{ablmove_empty}src",
-            "{ablmove_empty}dst",
-            timeout=0.1,
-        )
-        assert result is None
 
+@pytest.mark.asyncio
+async def test_alpush_multiple(cache: RespCache):
+    count = await cache.alpush("amylist2", "a", "b", "c")
+    assert count == 3
+    result = cache.lrange("amylist2", 0, -1)
+    assert result == ["c", "b", "a"]
 
-class TestAsyncVersionSrcDst:
-    """Tests for version_src/version_dst on almove and ablmove."""
 
-    @pytest.mark.asyncio
-    async def test_almove_version_src_dst(self, cache: RespCache):
-        cache.rpush("{vs}:alsrc", "a", "b", version=1)
-        cache.rpush("{vs}:aldst", "x", version=2)
+@pytest.mark.asyncio
+async def test_arpush_multiple(cache: RespCache):
+    count = await cache.arpush("amylist3", "a", "b", "c")
+    assert count == 3
+    result = cache.lrange("amylist3", 0, -1)
+    assert result == ["a", "b", "c"]
 
-        result = await cache.almove("{vs}:alsrc", "{vs}:aldst", "LEFT", "RIGHT", version_src=1, version_dst=2)
-        assert result == "a"
-        assert cache.lrange("{vs}:alsrc", 0, -1, version=1) == ["b"]
-        assert cache.lrange("{vs}:aldst", 0, -1, version=2) == ["x", "a"]
 
-    @pytest.mark.asyncio
-    async def test_ablmove_version_src_dst(self, cache: RespCache):
-        cache.rpush("{vs}:ablsrc", "a", "b", version=1)
-        cache.rpush("{vs}:abldst", "x", version=2)
+@pytest.mark.asyncio
+async def test_alpop(cache: RespCache):
+    cache.rpush("amylist4", "a", "b", "c")
 
-        result = await cache.ablmove(
-            "{vs}:ablsrc",
-            "{vs}:abldst",
-            timeout=1,
-            wherefrom="LEFT",
-            whereto="RIGHT",
-            version_src=1,
-            version_dst=2,
-        )
-        assert result == "a"
-        assert cache.lrange("{vs}:ablsrc", 0, -1, version=1) == ["b"]
-        assert cache.lrange("{vs}:abldst", 0, -1, version=2) == ["x", "a"]
+    result = await cache.alpop("amylist4")
+    assert result == "a"
 
-
-class TestAsyncListSerialization:
-    """Tests for serialization of complex values into list operations."""
+    result = await cache.alpop("amylist4", count=2)
+    assert result == ["b", "c"]
 
-    @pytest.mark.asyncio
-    async def test_alist_with_complex_values(self, cache: RespCache):
-        await cache.arpush("amylist15", {"name": "Alice"}, {"name": "Bob"})
+    result = await cache.alpop("amylist4")
+    assert result is None
 
-        result = cache.lrange("amylist15", 0, -1)
-        assert result == [{"name": "Alice"}, {"name": "Bob"}]
-
-        popped = await cache.alpop("amylist15")
-        assert popped == {"name": "Alice"}
-
-
-class TestAsyncListVersioning:
-    """Tests for version parameter on async list operations."""
-
-    @pytest.mark.asyncio
-    async def test_alist_version_support(self, cache: RespCache):
-        await cache.arpush("amylist", "v1_a", "v1_b", version=1)
-        await cache.arpush("amylist", "v2_a", version=2)
-
-        assert cache.llen("amylist", version=1) == 2
-        assert cache.llen("amylist", version=2) == 1
-
-        assert cache.lrange("amylist", 0, -1, version=1) == ["v1_a", "v1_b"]
-        assert cache.lrange("amylist", 0, -1, version=2) == ["v2_a"]
-
-
-class TestAsyncBlockingPopExtra:
-    """Additional ablpop coverage."""
-
-    @pytest.mark.asyncio
-    async def test_ablpop_multiple_keys(self, cache: RespCache):
-        cache.rpush("{ablpop}list2", "x", "y")
-
-        result = await cache.ablpop(["{ablpop}list1", "{ablpop}list2"], timeout=1)
-        assert result is not None
-        key, value = result
-        assert key == "{ablpop}list2"
-        assert value == "x"
-
-    @pytest.mark.asyncio
-    async def test_ablpop_with_complex_values(self, cache: RespCache):
-        cache.rpush("ablpop_complex", {"name": "Alice"}, {"name": "Bob"})
-
-        result = await cache.ablpop("ablpop_complex", timeout=1)
-        assert result is not None
-        _key, value = result
-        assert value == {"name": "Alice"}
-
-
-class TestListEmptyArgumentCalls:
-    """A push with no values answers locally instead of sending an invalid command."""
-
-    def test_lpush(self, cache: RespCache):
-        assert cache.lpush("empty_list") == 0
-        assert cache.has_key("empty_list") is False
-
-    def test_rpush(self, cache: RespCache):
-        assert cache.rpush("empty_list") == 0
-        assert cache.has_key("empty_list") is False
-
-    @pytest.mark.asyncio
-    async def test_alpush(self, cache: RespCache):
-        assert await cache.alpush("aempty_list") == 0
-        assert await cache.ahas_key("aempty_list") is False
-
-    @pytest.mark.asyncio
-    async def test_arpush(self, cache: RespCache):
-        assert await cache.arpush("aempty_list") == 0
-        assert await cache.ahas_key("aempty_list") is False
-
-    def test_push_no_values_leaves_an_existing_list_alone(self, cache: RespCache):
-        cache.rpush("empty_push_existing", "a", "b")
-        cache.expire("empty_push_existing", 100)
-
-        assert cache.lpush("empty_push_existing") == 0
-        assert cache.rpush("empty_push_existing") == 0
-        assert cache.lrange("empty_push_existing", 0, -1) == ["a", "b"]
-        ttl = cache.ttl("empty_push_existing")
-        assert ttl is not None
-        assert 90 <= ttl <= 100
-
-
-class TestListArgumentValidation:
-    """The RESP backends raise the same ``ValueError`` LocMem and Database do, not a driver ``ResponseError``."""
-
-    def test_lpos_rejects_rank_zero(self, cache: RespCache):
-        cache.rpush("lpos_bad", "a")
-        with pytest.raises(ValueError, match="RANK can't be zero"):
-            cache.lpos("lpos_bad", "a", rank=0)
-
-    def test_lpos_rejects_a_negative_count_or_maxlen(self, cache: RespCache):
-        cache.rpush("lpos_bad", "a")
-        with pytest.raises(ValueError, match="COUNT can't be negative"):
-            cache.lpos("lpos_bad", "a", count=-1)
-        with pytest.raises(ValueError, match="MAXLEN can't be negative"):
-            cache.lpos("lpos_bad", "a", maxlen=-1)
-
-    def test_linsert_rejects_an_unknown_position(self, cache: RespCache):
-        cache.rpush("linsert_bad", "a")
-        with pytest.raises(ValueError, match="syntax error"):
-            cache.linsert("linsert_bad", "SIDEWAYS", "a", "b")
-        assert cache.lrange("linsert_bad", 0, -1) == ["a"]
-
-    @pytest.mark.asyncio
-    async def test_alpos_rejects_bad_arguments(self, cache: RespCache):
-        cache.rpush("alpos_bad", "a")
-        with pytest.raises(ValueError, match="RANK can't be zero"):
-            await cache.alpos("alpos_bad", "a", rank=0)
-        with pytest.raises(ValueError, match="COUNT can't be negative"):
-            await cache.alpos("alpos_bad", "a", count=-1)
-        with pytest.raises(ValueError, match="MAXLEN can't be negative"):
-            await cache.alpos("alpos_bad", "a", maxlen=-1)
-
-    @pytest.mark.asyncio
-    async def test_alinsert_rejects_an_unknown_position(self, cache: RespCache):
-        cache.rpush("alinsert_bad", "a")
-        with pytest.raises(ValueError, match="syntax error"):
-            await cache.alinsert("alinsert_bad", "SIDEWAYS", "a", "b")
-        assert cache.lrange("alinsert_bad", 0, -1) == ["a"]
-
-    @pytest.mark.parametrize("method", ["lpop", "rpop"])
-    def test_pop_rejects_a_negative_count(self, cache: RespCache, method: str):
-        cache.rpush("pop_neg", "a")
-        with pytest.raises(ValueError, match="value is out of range, must be positive"):
-            getattr(cache, method)("pop_neg", -1)
-        assert cache.lrange("pop_neg", 0, -1) == ["a"]
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("method", ["alpop", "arpop"])
-    async def test_apop_rejects_a_negative_count(self, cache: RespCache, method: str):
-        cache.rpush("apop_neg", "a")
-        with pytest.raises(ValueError, match="value is out of range, must be positive"):
-            await getattr(cache, method)("apop_neg", -1)
-        assert cache.lrange("apop_neg", 0, -1) == ["a"]
+
+@pytest.mark.asyncio
+async def test_arpop(cache: RespCache):
+    cache.rpush("amylist5", "a", "b", "c")
+
+    result = await cache.arpop("amylist5")
+    assert result == "c"
+
+    result = await cache.arpop("amylist5", count=2)
+    assert result == ["b", "a"]
+
+    result = await cache.arpop("amylist5")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_alrange(cache: RespCache):
+    cache.rpush("amylist6", "a", "b", "c", "d", "e")
+
+    assert await cache.alrange("amylist6", 0, -1) == ["a", "b", "c", "d", "e"]
+    assert await cache.alrange("amylist6", 0, 2) == ["a", "b", "c"]
+    assert await cache.alrange("amylist6", -2, -1) == ["d", "e"]
+    assert await cache.alrange("anonexistent", 0, -1) == []
+
+
+@pytest.mark.asyncio
+async def test_alindex(cache: RespCache):
+    cache.rpush("amylist7", "a", "b", "c")
+
+    assert await cache.alindex("amylist7", 0) == "a"
+    assert await cache.alindex("amylist7", 1) == "b"
+    assert await cache.alindex("amylist7", -1) == "c"
+    assert await cache.alindex("amylist7", 100) is None
+    assert await cache.alindex("anonexistent", 0) is None
+
+
+@pytest.mark.asyncio
+async def test_allen(cache: RespCache):
+    assert await cache.allen("amylist8") == 0
+    cache.rpush("amylist8", "a", "b", "c")
+    assert await cache.allen("amylist8") == 3
+
+
+@pytest.mark.asyncio
+async def test_alrem(cache: RespCache):
+    cache.rpush("amylist9", "a", "b", "a", "c", "a")
+    removed = await cache.alrem("amylist9", 2, "a")
+    assert removed == 2
+    assert cache.lrange("amylist9", 0, -1) == ["b", "c", "a"]
+
+
+@pytest.mark.asyncio
+async def test_alrem_from_tail(cache: RespCache):
+    cache.rpush("amylist10", "a", "b", "a", "c", "a")
+    removed = await cache.alrem("amylist10", -2, "a")
+    assert removed == 2
+    assert cache.lrange("amylist10", 0, -1) == ["a", "b", "c"]
+
+
+@pytest.mark.asyncio
+async def test_alrem_all(cache: RespCache):
+    cache.rpush("amylist11", "a", "b", "a", "c", "a")
+    removed = await cache.alrem("amylist11", 0, "a")
+    assert removed == 3
+    assert cache.lrange("amylist11", 0, -1) == ["b", "c"]
+
+
+@pytest.mark.asyncio
+async def test_altrim(cache: RespCache):
+    cache.rpush("amylist12", "a", "b", "c", "d", "e")
+    result = await cache.altrim("amylist12", 1, 3)
+    assert result is True
+    assert cache.lrange("amylist12", 0, -1) == ["b", "c", "d"]
+
+
+@pytest.mark.asyncio
+async def test_alset(cache: RespCache):
+    cache.rpush("amylist13", "a", "b", "c")
+    result = await cache.alset("amylist13", 1, "B")
+    assert result is True
+    assert cache.lrange("amylist13", 0, -1) == ["a", "B", "c"]
+
+
+@pytest.mark.asyncio
+async def test_alinsert(cache: RespCache):
+    cache.rpush("amylist14", "a", "c")
+
+    length = await cache.alinsert("amylist14", "BEFORE", "c", "b")
+    assert length == 3
+    assert cache.lrange("amylist14", 0, -1) == ["a", "b", "c"]
+
+    length = await cache.alinsert("amylist14", "AFTER", "c", "d")
+    assert length == 4
+    assert cache.lrange("amylist14", 0, -1) == ["a", "b", "c", "d"]
+
+    length = await cache.alinsert("amylist14", "BEFORE", "z", "x")
+    assert length == -1
+
+
+@pytest.mark.asyncio
+async def test_alpos_basic(cache: RespCache):
+    cache.rpush("amylist_lpos", "a", "b", "c", "b", "d")
+
+    assert await cache.alpos("amylist_lpos", "b") == 1
+    assert await cache.alpos("amylist_lpos", "z") is None
+
+
+@pytest.mark.asyncio
+async def test_alpos_with_rank(cache: RespCache):
+    cache.rpush("amylist_lpos2", "a", "b", "c", "b", "d", "b")
+
+    assert await cache.alpos("amylist_lpos2", "b", rank=2) == 3
+    assert await cache.alpos("amylist_lpos2", "b", rank=-1) == 5
+
+
+@pytest.mark.asyncio
+async def test_alpos_with_count(cache: RespCache):
+    cache.rpush("amylist_lpos3", "a", "b", "c", "b", "d", "b")
+
+    result = await cache.alpos("amylist_lpos3", "b", count=0)
+    assert result == [1, 3, 5]
+
+    result = await cache.alpos("amylist_lpos3", "b", count=2)
+    assert result == [1, 3]
+
+
+@pytest.mark.asyncio
+async def test_almove_basic(cache: RespCache):
+    cache.rpush("{alist}src", "a", "b", "c")
+    cache.rpush("{alist}dst", "x", "y")
+
+    result = await cache.almove("{alist}src", "{alist}dst", "LEFT", "RIGHT")
+    assert result == "a"
+
+    assert cache.lrange("{alist}src", 0, -1) == ["b", "c"]
+    assert cache.lrange("{alist}dst", 0, -1) == ["x", "y", "a"]
+
+
+@pytest.mark.asyncio
+async def test_almove_empty_source(cache: RespCache):
+    cache.rpush("{alist}dst3", "x")
+
+    result = await cache.almove("{alist}empty_src", "{alist}dst3", "LEFT", "RIGHT")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_ablpop_immediate(cache: RespCache):
+    cache.rpush("ablpop_list", "a", "b", "c")
+
+    result = await cache.ablpop("ablpop_list", timeout=1)
+    assert result is not None
+    rkey, value = result
+    assert rkey == "ablpop_list"
+    assert value == "a"
+
+
+@pytest.mark.asyncio
+async def test_ablpop_timeout(cache: RespCache):
+    result = await cache.ablpop("ablpop_empty", timeout=0.1)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_abrpop_immediate(cache: RespCache):
+    cache.rpush("abrpop_list", "a", "b", "c")
+
+    result = await cache.abrpop("abrpop_list", timeout=1)
+    assert result is not None
+    rkey, value = result
+    assert rkey == "abrpop_list"
+    assert value == "c"
+
+
+@pytest.mark.asyncio
+async def test_abrpop_timeout(cache: RespCache):
+    result = await cache.abrpop("abrpop_empty", timeout=0.1)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_ablmove_immediate(cache: RespCache):
+    cache.rpush("{ablmove}src", "a", "b", "c")
+    cache.rpush("{ablmove}dst", "x")
+
+    result = await cache.ablmove(
+        "{ablmove}src",
+        "{ablmove}dst",
+        timeout=1,
+        wherefrom="LEFT",
+        whereto="RIGHT",
+    )
+    assert result == "a"
+    assert cache.lrange("{ablmove}src", 0, -1) == ["b", "c"]
+    assert cache.lrange("{ablmove}dst", 0, -1) == ["x", "a"]
+
+
+@pytest.mark.asyncio
+async def test_ablmove_timeout(cache: RespCache):
+    cache.rpush("{ablmove_empty}dst", "x")
+
+    result = await cache.ablmove(
+        "{ablmove_empty}src",
+        "{ablmove_empty}dst",
+        timeout=0.1,
+    )
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_almove_version_src_dst(cache: RespCache):
+    cache.rpush("{vs}:alsrc", "a", "b", version=1)
+    cache.rpush("{vs}:aldst", "x", version=2)
+
+    result = await cache.almove("{vs}:alsrc", "{vs}:aldst", "LEFT", "RIGHT", version_src=1, version_dst=2)
+    assert result == "a"
+    assert cache.lrange("{vs}:alsrc", 0, -1, version=1) == ["b"]
+    assert cache.lrange("{vs}:aldst", 0, -1, version=2) == ["x", "a"]
+
+
+@pytest.mark.asyncio
+async def test_ablmove_version_src_dst(cache: RespCache):
+    cache.rpush("{vs}:ablsrc", "a", "b", version=1)
+    cache.rpush("{vs}:abldst", "x", version=2)
+
+    result = await cache.ablmove(
+        "{vs}:ablsrc",
+        "{vs}:abldst",
+        timeout=1,
+        wherefrom="LEFT",
+        whereto="RIGHT",
+        version_src=1,
+        version_dst=2,
+    )
+    assert result == "a"
+    assert cache.lrange("{vs}:ablsrc", 0, -1, version=1) == ["b"]
+    assert cache.lrange("{vs}:abldst", 0, -1, version=2) == ["x", "a"]
+
+
+@pytest.mark.asyncio
+async def test_alist_with_complex_values(cache: RespCache):
+    await cache.arpush("amylist15", {"name": "Alice"}, {"name": "Bob"})
+
+    result = cache.lrange("amylist15", 0, -1)
+    assert result == [{"name": "Alice"}, {"name": "Bob"}]
+
+    popped = await cache.alpop("amylist15")
+    assert popped == {"name": "Alice"}
+
+
+@pytest.mark.asyncio
+async def test_alist_version_support(cache: RespCache):
+    await cache.arpush("amylist", "v1_a", "v1_b", version=1)
+    await cache.arpush("amylist", "v2_a", version=2)
+
+    assert cache.llen("amylist", version=1) == 2
+    assert cache.llen("amylist", version=2) == 1
+
+    assert cache.lrange("amylist", 0, -1, version=1) == ["v1_a", "v1_b"]
+    assert cache.lrange("amylist", 0, -1, version=2) == ["v2_a"]
+
+
+@pytest.mark.asyncio
+async def test_ablpop_multiple_keys(cache: RespCache):
+    cache.rpush("{ablpop}list2", "x", "y")
+
+    result = await cache.ablpop(["{ablpop}list1", "{ablpop}list2"], timeout=1)
+    assert result is not None
+    key, value = result
+    assert key == "{ablpop}list2"
+    assert value == "x"
+
+
+@pytest.mark.asyncio
+async def test_ablpop_with_complex_values(cache: RespCache):
+    cache.rpush("ablpop_complex", {"name": "Alice"}, {"name": "Bob"})
+
+    result = await cache.ablpop("ablpop_complex", timeout=1)
+    assert result is not None
+    _key, value = result
+    assert value == {"name": "Alice"}
+
+
+# A push with no values answers locally instead of sending an invalid command.
+def test_lpush_no_values(cache: RespCache):
+    assert cache.lpush("empty_list") == 0
+    assert cache.has_key("empty_list") is False
+
+
+def test_rpush_no_values(cache: RespCache):
+    assert cache.rpush("empty_list") == 0
+    assert cache.has_key("empty_list") is False
+
+
+@pytest.mark.asyncio
+async def test_alpush_no_values(cache: RespCache):
+    assert await cache.alpush("aempty_list") == 0
+    assert await cache.ahas_key("aempty_list") is False
+
+
+@pytest.mark.asyncio
+async def test_arpush_no_values(cache: RespCache):
+    assert await cache.arpush("aempty_list") == 0
+    assert await cache.ahas_key("aempty_list") is False
+
+
+def test_push_no_values_leaves_an_existing_list_alone(cache: RespCache):
+    cache.rpush("empty_push_existing", "a", "b")
+    cache.expire("empty_push_existing", 100)
+
+    assert cache.lpush("empty_push_existing") == 0
+    assert cache.rpush("empty_push_existing") == 0
+    assert cache.lrange("empty_push_existing", 0, -1) == ["a", "b"]
+    ttl = cache.ttl("empty_push_existing")
+    assert ttl is not None
+    assert 90 <= ttl <= 100
+
+
+# The RESP backends raise the same ``ValueError`` LocMem and Database do, not a driver ``ResponseError``.
+def test_lpos_rejects_rank_zero(cache: RespCache):
+    cache.rpush("lpos_bad", "a")
+    with pytest.raises(ValueError, match="RANK can't be zero"):
+        cache.lpos("lpos_bad", "a", rank=0)
+
+
+def test_lpos_rejects_a_negative_count_or_maxlen(cache: RespCache):
+    cache.rpush("lpos_bad", "a")
+    with pytest.raises(ValueError, match="COUNT can't be negative"):
+        cache.lpos("lpos_bad", "a", count=-1)
+    with pytest.raises(ValueError, match="MAXLEN can't be negative"):
+        cache.lpos("lpos_bad", "a", maxlen=-1)
+
+
+def test_linsert_rejects_an_unknown_position(cache: RespCache):
+    cache.rpush("linsert_bad", "a")
+    with pytest.raises(ValueError, match="syntax error"):
+        cache.linsert("linsert_bad", "SIDEWAYS", "a", "b")
+    assert cache.lrange("linsert_bad", 0, -1) == ["a"]
+
+
+@pytest.mark.asyncio
+async def test_alpos_rejects_bad_arguments(cache: RespCache):
+    cache.rpush("alpos_bad", "a")
+    with pytest.raises(ValueError, match="RANK can't be zero"):
+        await cache.alpos("alpos_bad", "a", rank=0)
+    with pytest.raises(ValueError, match="COUNT can't be negative"):
+        await cache.alpos("alpos_bad", "a", count=-1)
+    with pytest.raises(ValueError, match="MAXLEN can't be negative"):
+        await cache.alpos("alpos_bad", "a", maxlen=-1)
+
+
+@pytest.mark.asyncio
+async def test_alinsert_rejects_an_unknown_position(cache: RespCache):
+    cache.rpush("alinsert_bad", "a")
+    with pytest.raises(ValueError, match="syntax error"):
+        await cache.alinsert("alinsert_bad", "SIDEWAYS", "a", "b")
+    assert cache.lrange("alinsert_bad", 0, -1) == ["a"]
+
+
+@pytest.mark.parametrize("method", ["lpop", "rpop"])
+def test_pop_rejects_a_negative_count(cache: RespCache, method: str):
+    cache.rpush("pop_neg", "a")
+    with pytest.raises(ValueError, match="value is out of range, must be positive"):
+        getattr(cache, method)("pop_neg", -1)
+    assert cache.lrange("pop_neg", 0, -1) == ["a"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["alpop", "arpop"])
+async def test_apop_rejects_a_negative_count(cache: RespCache, method: str):
+    cache.rpush("apop_neg", "a")
+    with pytest.raises(ValueError, match="value is out of range, must be positive"):
+        await getattr(cache, method)("apop_neg", -1)
+    assert cache.lrange("apop_neg", 0, -1) == ["a"]
 
 
 def test_blpop_does_not_stall_other_commands(cache: RespCache, client_class: str):

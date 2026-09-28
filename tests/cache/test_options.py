@@ -37,33 +37,32 @@ def with_prefix_cache() -> Iterable[RespCache]:
     with_prefix.clear()
 
 
-class TestDjangoRespCacheEscapePrefix:
-    def test_delete_pattern(
-        self,
-        key_prefix_cache: RespCache,
-        with_prefix_cache: RespCache,
-    ):
-        key_prefix_cache.set("a", "1")
-        with_prefix_cache.set("b", "2")
-        key_prefix_cache.delete_pattern("*")
-        assert key_prefix_cache.has_key("a") is False
-        assert with_prefix_cache.get("b") == "2"
+def test_delete_pattern_escapes_prefix(
+    key_prefix_cache: RespCache,
+    with_prefix_cache: RespCache,
+):
+    key_prefix_cache.set("a", "1")
+    with_prefix_cache.set("b", "2")
+    key_prefix_cache.delete_pattern("*")
+    assert key_prefix_cache.has_key("a") is False
+    assert with_prefix_cache.get("b") == "2"
 
-    def test_iter_keys(
-        self,
-        key_prefix_cache: RespCache,
-        with_prefix_cache: RespCache,
-    ):
-        key_prefix_cache.set("a", "1")
-        with_prefix_cache.set("b", "2")
-        assert list(key_prefix_cache.iter_keys("*")) == ["a"]
 
-    def test_keys(self, key_prefix_cache: RespCache, with_prefix_cache: RespCache):
-        key_prefix_cache.set("a", "1")
-        with_prefix_cache.set("b", "2")
-        keys = key_prefix_cache.keys("*")
-        assert "a" in keys
-        assert "b" not in keys
+def test_iter_keys_escapes_prefix(
+    key_prefix_cache: RespCache,
+    with_prefix_cache: RespCache,
+):
+    key_prefix_cache.set("a", "1")
+    with_prefix_cache.set("b", "2")
+    assert list(key_prefix_cache.iter_keys("*")) == ["a"]
+
+
+def test_keys_escapes_prefix(key_prefix_cache: RespCache, with_prefix_cache: RespCache):
+    key_prefix_cache.set("a", "1")
+    with_prefix_cache.set("b", "2")
+    keys = key_prefix_cache.keys("*")
+    assert "a" in keys
+    assert "b" not in keys
 
 
 def test_custom_key_function(cache: RespCache, settings):
@@ -86,111 +85,120 @@ def test_custom_key_function(cache: RespCache, settings):
     assert decoded == {"#1#foo-bc", "#1#foo-bb"}
 
 
-class TestDefaultReverseKey:
-    def test_basic_key_reversal(self):
-        cache = make_cache(key_prefix="myprefix")
-        assert cache.reverse_key(cache.make_key("mykey")) == "mykey"
-
-    def test_key_with_colons(self):
-        cache = make_cache(key_prefix="prefix")
-        assert cache.reverse_key("prefix:1:key:with:colons") == "key:with:colons"
-
-    def test_empty_prefix(self):
-        cache = make_cache()
-        assert cache.reverse_key(":1:mykey") == "mykey"
-        assert cache.reverse_key(cache.make_key("mykey")) == "mykey"
-
-    def test_colon_in_key_prefix(self):
-        cache = make_cache(key_prefix="app:v2")
-        assert cache.make_key("foo") == "app:v2:1:foo"
-        assert cache.reverse_key(cache.make_key("foo")) == "foo"
-        assert cache.reverse_key(cache.make_key("key:with:colons")) == "key:with:colons"
-
-    def test_unmatched_prefix_returned_unchanged(self):
-        # A key made by some other cache must not lose its leading segments.
-        cache = make_cache(key_prefix="myprefix")
-        assert cache.reverse_key("otherprefix:1:mykey") == "otherprefix:1:mykey"
-
-    def test_key_without_layout_returned_unchanged(self):
-        cache = make_cache(key_prefix="myprefix")
-        assert cache.reverse_key("plainkey") == "plainkey"
-        # Prefix matches but there is no version:key remainder.
-        assert cache.reverse_key("myprefix:1") == "myprefix:1"
+def test_basic_key_reversal():
+    cache = make_cache(key_prefix="myprefix")
+    assert cache.reverse_key(cache.make_key("mykey")) == "mykey"
 
 
-class TestDjangoGenericOptions:
-    def test_max_entries_and_cull_frequency_stay_out_of_the_pool(self):
-        cache = make_cache(MAX_ENTRIES=99, CULL_FREQUENCY=7)
-
-        assert cache._max_entries == 99
-        assert cache._cull_frequency == 7
-        assert "MAX_ENTRIES" not in cache._options
-        assert "CULL_FREQUENCY" not in cache._options
-
-        pool_options = cache.adapter._pool_options
-        assert "MAX_ENTRIES" not in pool_options
-        assert "CULL_FREQUENCY" not in pool_options
+def test_reverse_key_with_colons():
+    cache = make_cache(key_prefix="prefix")
+    assert cache.reverse_key("prefix:1:key:with:colons") == "key:with:colons"
 
 
-class TestRejectedOptions:
-    def test_decode_responses_is_rejected_at_construction(self):
-        """Regression: the option reached the pool and every non-int read then failed to deserialize."""
-        with pytest.raises(ImproperlyConfigured, match="decode_responses"):
-            make_cache(decode_responses=True)
-
-    def test_decode_responses_false_is_accepted(self):
-        assert make_cache(decode_responses=False).adapter is not None
-
-    @pytest.mark.parametrize("value", ["true", "1", "yes", "True", "false"])
-    def test_decode_responses_in_the_location_query_is_rejected(self, value: str):
-        """Regression: the drivers merge URL query parameters over the pool kwargs and keep the raw string."""
-        with pytest.raises(ImproperlyConfigured, match="decode_responses in LOCATION"):
-            RedisCache(server=f"redis://a:6379/0?decode_responses={value}", params={})
-
-    def test_decode_responses_in_a_replica_url_is_rejected(self):
-        with pytest.raises(ImproperlyConfigured, match="decode_responses in LOCATION"):
-            RedisCache(server=["redis://a:6379/0", "redis://b:6379/0?decode_responses=1"], params={})
-
-    def test_other_query_parameters_are_left_alone(self):
-        cache = RedisCache(server="redis://a:6379/0?socket_timeout=5", params={})
-        assert cache._servers == ["redis://a:6379/0?socket_timeout=5"]
+def test_reverse_key_empty_prefix():
+    cache = make_cache()
+    assert cache.reverse_key(":1:mykey") == "mykey"
+    assert cache.reverse_key(cache.make_key("mykey")) == "mykey"
 
 
-class TestLocationParsing:
-    @pytest.mark.parametrize(
-        "location",
-        [
-            "redis://a:6379/0;redis://b:6379/0;",
-            "redis://a:6379/0, redis://b:6379/0,",
-            " redis://a:6379/0 ;\nredis://b:6379/0 ",
-        ],
-        ids=["trailing-semicolon", "trailing-comma", "whitespace"],
-    )
-    def test_blank_entries_are_dropped(self, location: str):
-        """Regression: a trailing separator became an empty URL that the driver choked on later."""
-        cache = RedisCache(server=location, params={})
-        assert cache._servers == ["redis://a:6379/0", "redis://b:6379/0"]
+def test_reverse_key_colon_in_key_prefix():
+    cache = make_cache(key_prefix="app:v2")
+    assert cache.make_key("foo") == "app:v2:1:foo"
+    assert cache.reverse_key(cache.make_key("foo")) == "foo"
+    assert cache.reverse_key(cache.make_key("key:with:colons")) == "key:with:colons"
 
-    @pytest.mark.parametrize("location", [";", ", ,", " ; "])
-    def test_only_separators_is_still_rejected(self, location: str):
-        with pytest.raises(ImproperlyConfigured, match="requires a LOCATION"):
-            RedisCache(server=location, params={})
 
-    @pytest.mark.parametrize(
-        "location",
-        [["redis://a:6379/0", ""], ["redis://a:6379/0", " "], [" redis://a:6379/0\n"]],
-        ids=["blank", "whitespace", "padded"],
-    )
-    def test_list_entries_are_stripped_and_blanks_dropped(self, location: list[str]):
-        """Regression: only the string form was cleaned, so a blank list entry reached the driver as a replica URL."""
-        cache = RedisCache(server=location, params={})
-        assert cache._servers == ["redis://a:6379/0"]
+def test_reverse_key_unmatched_prefix_returned_unchanged():
+    # A key made by some other cache must not lose its leading segments.
+    cache = make_cache(key_prefix="myprefix")
+    assert cache.reverse_key("otherprefix:1:mykey") == "otherprefix:1:mykey"
 
-    @pytest.mark.parametrize("location", [[], ["", ""], [" "]], ids=["empty", "blanks", "whitespace"])
-    def test_list_without_a_usable_entry_is_rejected(self, location: list[str]):
-        with pytest.raises(ImproperlyConfigured, match="requires a LOCATION"):
-            RedisCache(server=location, params={})
 
-    def test_non_string_list_entry_is_rejected(self):
-        with pytest.raises(ImproperlyConfigured, match="must be URL strings"):
-            RedisCache(server=["redis://a:6379/0", None], params={})  # type: ignore[list-item]
+def test_reverse_key_without_layout_returned_unchanged():
+    cache = make_cache(key_prefix="myprefix")
+    assert cache.reverse_key("plainkey") == "plainkey"
+    # Prefix matches but there is no version:key remainder.
+    assert cache.reverse_key("myprefix:1") == "myprefix:1"
+
+
+def test_max_entries_and_cull_frequency_stay_out_of_the_pool():
+    cache = make_cache(MAX_ENTRIES=99, CULL_FREQUENCY=7)
+
+    assert cache._max_entries == 99
+    assert cache._cull_frequency == 7
+    assert "MAX_ENTRIES" not in cache._options
+    assert "CULL_FREQUENCY" not in cache._options
+
+    pool_options = cache.adapter._pool_options
+    assert "MAX_ENTRIES" not in pool_options
+    assert "CULL_FREQUENCY" not in pool_options
+
+
+def test_decode_responses_is_rejected_at_construction():
+    """Regression: the option reached the pool and every non-int read then failed to deserialize."""
+    with pytest.raises(ImproperlyConfigured, match="decode_responses"):
+        make_cache(decode_responses=True)
+
+
+def test_decode_responses_false_is_accepted():
+    assert make_cache(decode_responses=False).adapter is not None
+
+
+@pytest.mark.parametrize("value", ["true", "1", "yes", "True", "false"])
+def test_decode_responses_in_the_location_query_is_rejected(value: str):
+    """Regression: the drivers merge URL query parameters over the pool kwargs and keep the raw string."""
+    with pytest.raises(ImproperlyConfigured, match="decode_responses in LOCATION"):
+        RedisCache(server=f"redis://a:6379/0?decode_responses={value}", params={})
+
+
+def test_decode_responses_in_a_replica_url_is_rejected():
+    with pytest.raises(ImproperlyConfigured, match="decode_responses in LOCATION"):
+        RedisCache(server=["redis://a:6379/0", "redis://b:6379/0?decode_responses=1"], params={})
+
+
+def test_other_query_parameters_are_left_alone():
+    cache = RedisCache(server="redis://a:6379/0?socket_timeout=5", params={})
+    assert cache._servers == ["redis://a:6379/0?socket_timeout=5"]
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "redis://a:6379/0;redis://b:6379/0;",
+        "redis://a:6379/0, redis://b:6379/0,",
+        " redis://a:6379/0 ;\nredis://b:6379/0 ",
+    ],
+    ids=["trailing-semicolon", "trailing-comma", "whitespace"],
+)
+def test_location_blank_entries_are_dropped(location: str):
+    """Regression: a trailing separator became an empty URL that the driver choked on later."""
+    cache = RedisCache(server=location, params={})
+    assert cache._servers == ["redis://a:6379/0", "redis://b:6379/0"]
+
+
+@pytest.mark.parametrize("location", [";", ", ,", " ; "])
+def test_location_only_separators_is_still_rejected(location: str):
+    with pytest.raises(ImproperlyConfigured, match="requires a LOCATION"):
+        RedisCache(server=location, params={})
+
+
+@pytest.mark.parametrize(
+    "location",
+    [["redis://a:6379/0", ""], ["redis://a:6379/0", " "], [" redis://a:6379/0\n"]],
+    ids=["blank", "whitespace", "padded"],
+)
+def test_location_list_entries_are_stripped_and_blanks_dropped(location: list[str]):
+    """Regression: only the string form was cleaned, so a blank list entry reached the driver as a replica URL."""
+    cache = RedisCache(server=location, params={})
+    assert cache._servers == ["redis://a:6379/0"]
+
+
+@pytest.mark.parametrize("location", [[], ["", ""], [" "]], ids=["empty", "blanks", "whitespace"])
+def test_location_list_without_a_usable_entry_is_rejected(location: list[str]):
+    with pytest.raises(ImproperlyConfigured, match="requires a LOCATION"):
+        RedisCache(server=location, params={})
+
+
+def test_location_non_string_list_entry_is_rejected():
+    with pytest.raises(ImproperlyConfigured, match="must be URL strings"):
+        RedisCache(server=["redis://a:6379/0", None], params={})  # type: ignore[list-item]

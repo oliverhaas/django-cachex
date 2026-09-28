@@ -51,66 +51,62 @@ def sentinel_cache(
         yield caches["default"]
 
 
-class TestSentinelSetup:
-    """Tests for Sentinel setup with both Redis and Valkey."""
+def test_sentinel_containers_start(
+    sentinel_container: SentinelContainerInfo,
+    resp_images: tuple[str, str],
+):
+    _image, client_library = resp_images
+    assert sentinel_container.host
+    assert sentinel_container.port > 0
+    assert sentinel_container.client_library == client_library
 
-    def test_sentinel_containers_start(
-        self,
-        sentinel_container: SentinelContainerInfo,
-        resp_images: tuple[str, str],
-    ):
-        _image, client_library = resp_images
-        assert sentinel_container.host
-        assert sentinel_container.port > 0
-        assert sentinel_container.client_library == client_library
 
-    def test_sentinel_basic_operations(self, sentinel_cache: RespCache):
-        sentinel_cache.set("sentinel_test_key", "test_value", timeout=60)
-        assert sentinel_cache.get("sentinel_test_key") == "test_value"
+def test_sentinel_basic_operations(sentinel_cache: RespCache):
+    sentinel_cache.set("sentinel_test_key", "test_value", timeout=60)
+    assert sentinel_cache.get("sentinel_test_key") == "test_value"
 
-        data = {"key1": "value1", "key2": "value2", "key3": "value3"}
-        sentinel_cache.set_many(data, timeout=60)
-        assert sentinel_cache.get_many(list(data.keys())) == data
+    data = {"key1": "value1", "key2": "value2", "key3": "value3"}
+    sentinel_cache.set_many(data, timeout=60)
+    assert sentinel_cache.get_many(list(data.keys())) == data
 
-        sentinel_cache.delete("sentinel_test_key")
-        assert sentinel_cache.get("sentinel_test_key") is None
+    sentinel_cache.delete("sentinel_test_key")
+    assert sentinel_cache.get("sentinel_test_key") is None
 
-        sentinel_cache.delete_many(list(data.keys()))
+    sentinel_cache.delete_many(list(data.keys()))
 
-    def test_sentinel_incr_decr(self, sentinel_cache: RespCache):
-        sentinel_cache.set("counter", 10, timeout=60)
 
-        assert sentinel_cache.incr("counter", 5) == 15
-        assert sentinel_cache.decr("counter", 3) == 12
+def test_sentinel_incr_decr(sentinel_cache: RespCache):
+    sentinel_cache.set("counter", 10, timeout=60)
 
-        sentinel_cache.delete("counter")
+    assert sentinel_cache.incr("counter", 5) == 15
+    assert sentinel_cache.decr("counter", 3) == 12
 
-    @pytest.mark.parametrize(
-        "sentinel_cache",
-        [{"sentinel_kwargs": {"socket_timeout": 5.0, "socket_connect_timeout": 5.0}}],
-        indirect=True,
-    )
-    def test_sentinel_kwargs_reach_the_discovery_clients(self, sentinel_cache: RespCache):
-        """``sentinel_kwargs`` configures the clients that talk to Sentinel, not the data path."""
-        adapter = sentinel_cache.adapter
+    sentinel_cache.delete("counter")
 
-        for discovery_client in adapter._sentinel.sentinels:
-            assert discovery_client.connection_pool.connection_kwargs["socket_timeout"] == 5.0
-            assert discovery_client.connection_pool.connection_kwargs["socket_connect_timeout"] == 5.0
 
-        # Discovery still works, and the data path keeps its own timeouts.
-        sentinel_cache.set("sentinel_kwargs_probe", "value", timeout=60)
-        assert sentinel_cache.get("sentinel_kwargs_probe") == "value"
-        sentinel_cache.delete("sentinel_kwargs_probe")
+@pytest.mark.parametrize(
+    "sentinel_cache",
+    [{"sentinel_kwargs": {"socket_timeout": 5.0, "socket_connect_timeout": 5.0}}],
+    indirect=True,
+)
+def test_sentinel_kwargs_reach_the_discovery_clients(sentinel_cache: RespCache):
+    """``sentinel_kwargs`` configures the clients that talk to Sentinel, not the data path."""
+    adapter = sentinel_cache.adapter
+
+    for discovery_client in adapter._sentinel.sentinels:
+        assert discovery_client.connection_pool.connection_kwargs["socket_timeout"] == 5.0
+        assert discovery_client.connection_pool.connection_kwargs["socket_connect_timeout"] == 5.0
+
+    # Discovery still works, and the data path keeps its own timeouts.
+    sentinel_cache.set("sentinel_kwargs_probe", "value", timeout=60)
+    assert sentinel_cache.get("sentinel_kwargs_probe") == "value"
+    sentinel_cache.delete("sentinel_kwargs_probe")
 
 
 @pytest.mark.asyncio
-class TestSentinelAsync:
-    """Async tests for Sentinel setup."""
+async def test_async_operations_with_sentinel(sentinel_cache: RespCache):
+    await sentinel_cache.aset("async_sentinel_test", "async_value", timeout=60)
+    assert await sentinel_cache.aget("async_sentinel_test") == "async_value"
 
-    async def test_async_operations_with_sentinel(self, sentinel_cache: RespCache):
-        await sentinel_cache.aset("async_sentinel_test", "async_value", timeout=60)
-        assert await sentinel_cache.aget("async_sentinel_test") == "async_value"
-
-        await sentinel_cache.adelete("async_sentinel_test")
-        assert await sentinel_cache.aget("async_sentinel_test") is None
+    await sentinel_cache.adelete("async_sentinel_test")
+    assert await sentinel_cache.aget("async_sentinel_test") is None

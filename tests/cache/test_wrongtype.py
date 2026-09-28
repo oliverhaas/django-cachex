@@ -19,38 +19,43 @@ if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
 
-class TestWrongTypeNormalization:
-    def test_get_after_lpush_raises_wrongtype(self, cache: RespCache):
+def test_get_after_lpush_raises_wrongtype(cache: RespCache):
+    cache.lpush("k", "x")
+    with pytest.raises(WrongTypeError):
+        cache.get("k")
+
+
+def test_lpush_on_string_raises_wrongtype(cache: RespCache):
+    cache.set("k", "abc")
+    with pytest.raises(WrongTypeError):
         cache.lpush("k", "x")
-        with pytest.raises(WrongTypeError):
-            cache.get("k")
 
-    def test_lpush_on_string_raises_wrongtype(self, cache: RespCache):
-        cache.set("k", "abc")
-        with pytest.raises(WrongTypeError):
-            cache.lpush("k", "x")
 
-    def test_hset_on_string_raises_wrongtype(self, cache: RespCache):
-        cache.set("k", "abc")
-        with pytest.raises(WrongTypeError):
-            cache.hset("k", "f", "v")
+def test_hset_on_string_raises_wrongtype(cache: RespCache):
+    cache.set("k", "abc")
+    with pytest.raises(WrongTypeError):
+        cache.hset("k", "f", "v")
 
-    def test_sadd_on_string_raises_wrongtype(self, cache: RespCache):
-        cache.set("k", "abc")
-        with pytest.raises(WrongTypeError):
-            cache.sadd("k", "m")
 
-    def test_zadd_on_string_raises_wrongtype(self, cache: RespCache):
-        cache.set("k", "abc")
-        with pytest.raises(WrongTypeError):
-            cache.zadd("k", {"m": 1.0})
+def test_sadd_on_string_raises_wrongtype(cache: RespCache):
+    cache.set("k", "abc")
+    with pytest.raises(WrongTypeError):
+        cache.sadd("k", "m")
 
-    def test_set_overwrites_collection(self, cache: RespCache):
+
+def test_zadd_on_string_raises_wrongtype(cache: RespCache):
+    cache.set("k", "abc")
+    with pytest.raises(WrongTypeError):
+        cache.zadd("k", {"m": 1.0})
+
+
+def test_set_overwrites_collection(cache: RespCache):
+    cache.lpush("k", "x")
+    cache.set("k", "abc")
+    assert cache.get("k") == "abc"
+
+
+def test_wrongtype_is_typeerror_subclass(cache: RespCache):
+    cache.set("k", "abc")
+    with pytest.raises(TypeError):  # WrongTypeError is a TypeError subclass
         cache.lpush("k", "x")
-        cache.set("k", "abc")
-        assert cache.get("k") == "abc"
-
-    def test_wrongtype_is_typeerror_subclass(self, cache: RespCache):
-        cache.set("k", "abc")
-        with pytest.raises(TypeError):  # WrongTypeError is a TypeError subclass
-            cache.lpush("k", "x")

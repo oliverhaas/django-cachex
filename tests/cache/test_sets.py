@@ -10,377 +10,413 @@ if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
 
-class TestSetOperations:
-    def test_sadd(self, cache: RespCache):
-        assert cache.sadd("foo", "bar") == 1
-        assert cache.smembers("foo") == {"bar"}
-
-    def test_scard(self, cache: RespCache):
-        cache.sadd("foo", "bar", "bar2")
-        assert cache.scard("foo") == 2
-
-    def test_sdiff(self, cache: RespCache):
-        cache.sadd("{foo}1", "bar1", "bar2")
-        cache.sadd("{foo}2", "bar2", "bar3")
-        assert cache.sdiff(["{foo}1", "{foo}2"]) == {"bar1"}
-
-    def test_sdiffstore(self, cache: RespCache):
-        cache.sadd("{foo}1", "bar1", "bar2")
-        cache.sadd("{foo}2", "bar2", "bar3")
-        assert cache.sdiffstore("{foo}3", ["{foo}1", "{foo}2"]) == 1
-        assert cache.smembers("{foo}3") == {"bar1"}
-
-    @pytest.mark.parametrize(
-        ("v1", "v2", "version_keys", "expected"),
-        [
-            (2, 2, 2, 1),
-            (1, 2, 2, 0),
-            (2, 1, 2, 2),
-        ],
-    )
-    def test_sdiffstore_versions(
-        self,
-        cache: RespCache,
-        v1: int,
-        v2: int,
-        version_keys: int,
-        expected: int,
-    ):
-        cache.sadd("{foo}1", "bar1", "bar2", version=v1)
-        cache.sadd("{foo}2", "bar2", "bar3", version=v2)
-        assert cache.sdiffstore("{foo}3", ["{foo}1", "{foo}2"], version_keys=version_keys) == expected
-
-    def test_sinter(self, cache: RespCache):
-        cache.sadd("{foo}1", "bar1", "bar2")
-        cache.sadd("{foo}2", "bar2", "bar3")
-        assert cache.sinter(["{foo}1", "{foo}2"]) == {"bar2"}
-
-    def test_sinterstore(self, cache: RespCache):
-        cache.sadd("{foo}1", "bar1", "bar2")
-        cache.sadd("{foo}2", "bar2", "bar3")
-        assert cache.sinterstore("{foo}3", ["{foo}1", "{foo}2"]) == 1
-        assert cache.smembers("{foo}3") == {"bar2"}
-
-    def test_sismember(self, cache: RespCache):
-        cache.sadd("foo", "bar")
-        assert cache.sismember("foo", "bar") is True
-        assert cache.sismember("foo", "bar2") is False
-
-    def test_smove(self, cache: RespCache):
-        cache.sadd("{foo}1", "bar1", "bar2")
-        cache.sadd("{foo}2", "bar2", "bar3")
-        assert cache.smove("{foo}1", "{foo}2", "bar1") is True
-        assert cache.smove("{foo}1", "{foo}2", "bar4") is False
-        assert cache.smembers("{foo}1") == {"bar2"}
-        assert cache.smembers("{foo}2") == {"bar1", "bar2", "bar3"}
-
-    def test_smove_version_src_dst(self, cache: RespCache):
-        cache.sadd("{vs}:ssrc", "a", "b", version=1)
-        cache.sadd("{vs}:sdst", "x", version=2)
-
-        result = cache.smove("{vs}:ssrc", "{vs}:sdst", "a", version_src=1, version_dst=2)
-        assert result is True
-        assert cache.smembers("{vs}:ssrc", version=1) == {"b"}
-        assert cache.smembers("{vs}:sdst", version=2) == {"x", "a"}
-
-    def test_spop_default_count(self, cache: RespCache):
-        cache.sadd("foo", "bar1", "bar2")
-        assert cache.spop("foo") in {"bar1", "bar2"}
-        assert cache.smembers("foo") in [{"bar1"}, {"bar2"}]
-
-    def test_spop_with_count(self, cache: RespCache):
-        cache.sadd("foo", "bar1", "bar2")
-        assert cache.spop("foo", 1) in [{"bar1"}, {"bar2"}]
-        assert cache.smembers("foo") in [{"bar1"}, {"bar2"}]
-
-    def test_srandmember_default_count(self, cache: RespCache):
-        cache.sadd("foo", "bar1", "bar2")
-        assert cache.srandmember("foo") in {"bar1", "bar2"}
-
-    def test_srandmember_with_count(self, cache: RespCache):
-        cache.sadd("foo", "bar1", "bar2")
-        assert cache.srandmember("foo", 1) in [["bar1"], ["bar2"]]
-
-    def test_srem(self, cache: RespCache):
-        cache.sadd("foo", "bar1", "bar2")
-        assert cache.srem("foo", "bar1") == 1
-        assert cache.srem("foo", "bar3") == 0
-
-    def test_sscan(self, cache: RespCache):
-        cache.sadd("foo", "bar1", "bar2")
-        _cursor, items = cache.sscan("foo")
-        assert items == {"bar1", "bar2"}
-
-    def test_sscan_iter(self, cache: RespCache):
-        cache.sadd("foo", "bar1", "bar2")
-        items = cache.sscan_iter("foo")
-        assert set(items) == {"bar1", "bar2"}
-
-    def test_smismember(self, cache: RespCache):
-        cache.sadd("foo", "bar1", "bar2", "bar3")
-        assert cache.smismember("foo", "bar1", "bar2", "xyz") == [True, True, False]
-
-    def test_sunion(self, cache: RespCache):
-        cache.sadd("{foo}1", "bar1", "bar2")
-        cache.sadd("{foo}2", "bar2", "bar3")
-        assert cache.sunion(["{foo}1", "{foo}2"]) == {"bar1", "bar2", "bar3"}
-
-    def test_sunionstore(self, cache: RespCache):
-        cache.sadd("{foo}1", "bar1", "bar2")
-        cache.sadd("{foo}2", "bar2", "bar3")
-        assert cache.sunionstore("{foo}3", ["{foo}1", "{foo}2"]) == 3
-        assert cache.smembers("{foo}3") == {"bar1", "bar2", "bar3"}
+def test_sadd(cache: RespCache):
+    assert cache.sadd("foo", "bar") == 1
+    assert cache.smembers("foo") == {"bar"}
 
 
-class TestSetMemberHashability:
-    """sadd() rejects unhashable members instead of letting readers blow up.
+def test_scard(cache: RespCache):
+    cache.sadd("foo", "bar", "bar2")
+    assert cache.scard("foo") == 2
 
-    Regression: every set reader collapses decoded members into a Python
-    set, so sadd("k", [1, 2]) stored fine and smembers("k") then raised
-    TypeError: unhashable type: 'list', taking the whole key with it.
-    """
 
-    @pytest.mark.parametrize("member", [[1, 2], {"a": 1}, {1, 2}, (1, [2])])
-    def test_sadd_rejects_unhashable_member(self, cache: RespCache, member):
+def test_sdiff(cache: RespCache):
+    cache.sadd("{foo}1", "bar1", "bar2")
+    cache.sadd("{foo}2", "bar2", "bar3")
+    assert cache.sdiff(["{foo}1", "{foo}2"]) == {"bar1"}
+
+
+def test_sdiffstore(cache: RespCache):
+    cache.sadd("{foo}1", "bar1", "bar2")
+    cache.sadd("{foo}2", "bar2", "bar3")
+    assert cache.sdiffstore("{foo}3", ["{foo}1", "{foo}2"]) == 1
+    assert cache.smembers("{foo}3") == {"bar1"}
+
+
+@pytest.mark.parametrize(
+    ("v1", "v2", "version_keys", "expected"),
+    [
+        (2, 2, 2, 1),
+        (1, 2, 2, 0),
+        (2, 1, 2, 2),
+    ],
+)
+def test_sdiffstore_versions(
+    cache: RespCache,
+    v1: int,
+    v2: int,
+    version_keys: int,
+    expected: int,
+):
+    cache.sadd("{foo}1", "bar1", "bar2", version=v1)
+    cache.sadd("{foo}2", "bar2", "bar3", version=v2)
+    assert cache.sdiffstore("{foo}3", ["{foo}1", "{foo}2"], version_keys=version_keys) == expected
+
+
+def test_sinter(cache: RespCache):
+    cache.sadd("{foo}1", "bar1", "bar2")
+    cache.sadd("{foo}2", "bar2", "bar3")
+    assert cache.sinter(["{foo}1", "{foo}2"]) == {"bar2"}
+
+
+def test_sinterstore(cache: RespCache):
+    cache.sadd("{foo}1", "bar1", "bar2")
+    cache.sadd("{foo}2", "bar2", "bar3")
+    assert cache.sinterstore("{foo}3", ["{foo}1", "{foo}2"]) == 1
+    assert cache.smembers("{foo}3") == {"bar2"}
+
+
+def test_sismember(cache: RespCache):
+    cache.sadd("foo", "bar")
+    assert cache.sismember("foo", "bar") is True
+    assert cache.sismember("foo", "bar2") is False
+
+
+def test_smove(cache: RespCache):
+    cache.sadd("{foo}1", "bar1", "bar2")
+    cache.sadd("{foo}2", "bar2", "bar3")
+    assert cache.smove("{foo}1", "{foo}2", "bar1") is True
+    assert cache.smove("{foo}1", "{foo}2", "bar4") is False
+    assert cache.smembers("{foo}1") == {"bar2"}
+    assert cache.smembers("{foo}2") == {"bar1", "bar2", "bar3"}
+
+
+def test_smove_version_src_dst(cache: RespCache):
+    cache.sadd("{vs}:ssrc", "a", "b", version=1)
+    cache.sadd("{vs}:sdst", "x", version=2)
+
+    result = cache.smove("{vs}:ssrc", "{vs}:sdst", "a", version_src=1, version_dst=2)
+    assert result is True
+    assert cache.smembers("{vs}:ssrc", version=1) == {"b"}
+    assert cache.smembers("{vs}:sdst", version=2) == {"x", "a"}
+
+
+def test_spop_default_count(cache: RespCache):
+    cache.sadd("foo", "bar1", "bar2")
+    assert cache.spop("foo") in {"bar1", "bar2"}
+    assert cache.smembers("foo") in [{"bar1"}, {"bar2"}]
+
+
+def test_spop_with_count(cache: RespCache):
+    cache.sadd("foo", "bar1", "bar2")
+    assert cache.spop("foo", 1) in [{"bar1"}, {"bar2"}]
+    assert cache.smembers("foo") in [{"bar1"}, {"bar2"}]
+
+
+def test_srandmember_default_count(cache: RespCache):
+    cache.sadd("foo", "bar1", "bar2")
+    assert cache.srandmember("foo") in {"bar1", "bar2"}
+
+
+def test_srandmember_with_count(cache: RespCache):
+    cache.sadd("foo", "bar1", "bar2")
+    assert cache.srandmember("foo", 1) in [["bar1"], ["bar2"]]
+
+
+def test_srem(cache: RespCache):
+    cache.sadd("foo", "bar1", "bar2")
+    assert cache.srem("foo", "bar1") == 1
+    assert cache.srem("foo", "bar3") == 0
+
+
+def test_sscan(cache: RespCache):
+    cache.sadd("foo", "bar1", "bar2")
+    _cursor, items = cache.sscan("foo")
+    assert items == {"bar1", "bar2"}
+
+
+def test_sscan_iter(cache: RespCache):
+    cache.sadd("foo", "bar1", "bar2")
+    items = cache.sscan_iter("foo")
+    assert set(items) == {"bar1", "bar2"}
+
+
+def test_smismember(cache: RespCache):
+    cache.sadd("foo", "bar1", "bar2", "bar3")
+    assert cache.smismember("foo", "bar1", "bar2", "xyz") == [True, True, False]
+
+
+def test_sunion(cache: RespCache):
+    cache.sadd("{foo}1", "bar1", "bar2")
+    cache.sadd("{foo}2", "bar2", "bar3")
+    assert cache.sunion(["{foo}1", "{foo}2"]) == {"bar1", "bar2", "bar3"}
+
+
+def test_sunionstore(cache: RespCache):
+    cache.sadd("{foo}1", "bar1", "bar2")
+    cache.sadd("{foo}2", "bar2", "bar3")
+    assert cache.sunionstore("{foo}3", ["{foo}1", "{foo}2"]) == 3
+    assert cache.smembers("{foo}3") == {"bar1", "bar2", "bar3"}
+
+
+# Regression: set readers build a Python set, so one unhashable member made smembers() raise for the whole key.
+@pytest.mark.parametrize("member", [[1, 2], {"a": 1}, {1, 2}, (1, [2])])
+def test_sadd_rejects_unhashable_member(cache: RespCache, member):
+    with pytest.raises(TypeError, match="hashable"):
+        cache.sadd("unhashable", member)
+    assert cache.smembers("unhashable") == set()
+
+
+def test_sadd_rejects_the_whole_call_on_one_bad_member(cache: RespCache):
+    with pytest.raises(TypeError, match="hashable"):
+        cache.sadd("partial", "ok", [1, 2])
+    assert cache.smembers("partial") == set()
+
+
+def test_sadd_accepts_hashable_containers(cache: RespCache):
+    cache.sadd("hashable", (1, 2), frozenset({3}), None, 4, 5.5)
+    assert cache.smembers("hashable") == {(1, 2), frozenset({3}), None, 4, 5.5}
+
+
+def test_python_equal_members_collapse_on_read(cache: RespCache):
+    """Documented limitation: 1, True and 1.0 are three server members but one set entry."""
+    assert cache.sadd("equal_members", 1, True, 1.0) == 3
+    assert cache.scard("equal_members") == 3
+    assert cache.smembers("equal_members") == {1}
+
+
+@pytest.mark.asyncio
+async def test_asadd_rejects_unhashable_member(cache: RespCache):
+    with pytest.raises(TypeError, match="hashable"):
+        await cache.asadd("aunhashable", [1, 2])
+    assert cache.smembers("aunhashable") == set()
+
+
+def test_sadd_tuple_member_follows_the_serializer(cache: RespCache, serializers: str | None):
+    # Sentinel configs ignore the ``serializers`` param, so ask the cache which one it got.
+    if isinstance(cache._serializers[0], PickleSerializer):
+        assert cache.sadd("tuple_member", (1, 2)) == 1
+        assert cache.smembers("tuple_member") == {(1, 2)}
+    else:
         with pytest.raises(TypeError, match="hashable"):
-            cache.sadd("unhashable", member)
-        assert cache.smembers("unhashable") == set()
+            cache.sadd("tuple_member", (1, 2))
+        assert cache.smembers("tuple_member") == set()
 
-    def test_sadd_rejects_the_whole_call_on_one_bad_member(self, cache: RespCache):
+
+@pytest.mark.asyncio
+async def test_asadd_tuple_member_follows_the_serializer(cache: RespCache, serializers: str | None):
+    if isinstance(cache._serializers[0], PickleSerializer):
+        assert await cache.asadd("atuple_member", (1, 2)) == 1
+        assert await cache.asmembers("atuple_member") == {(1, 2)}
+    else:
         with pytest.raises(TypeError, match="hashable"):
-            cache.sadd("partial", "ok", [1, 2])
-        assert cache.smembers("partial") == set()
-
-    def test_sadd_accepts_hashable_containers(self, cache: RespCache):
-        cache.sadd("hashable", (1, 2), frozenset({3}), None, 4, 5.5)
-        assert cache.smembers("hashable") == {(1, 2), frozenset({3}), None, 4, 5.5}
-
-    def test_python_equal_members_collapse_on_read(self, cache: RespCache):
-        """Documented limitation: 1, True and 1.0 are three server members but one set entry."""
-        assert cache.sadd("equal_members", 1, True, 1.0) == 3
-        assert cache.scard("equal_members") == 3
-        assert cache.smembers("equal_members") == {1}
-
-    @pytest.mark.asyncio
-    async def test_asadd_rejects_unhashable_member(self, cache: RespCache):
-        with pytest.raises(TypeError, match="hashable"):
-            await cache.asadd("aunhashable", [1, 2])
-        assert cache.smembers("aunhashable") == set()
-
-    def test_sadd_tuple_member_follows_the_serializer(self, cache: RespCache, serializers: str | None):
-        # Sentinel configs ignore the ``serializers`` param, so ask the cache which one it got.
-        if isinstance(cache._serializers[0], PickleSerializer):
-            assert cache.sadd("tuple_member", (1, 2)) == 1
-            assert cache.smembers("tuple_member") == {(1, 2)}
-        else:
-            with pytest.raises(TypeError, match="hashable"):
-                cache.sadd("tuple_member", (1, 2))
-            assert cache.smembers("tuple_member") == set()
-
-    @pytest.mark.asyncio
-    async def test_asadd_tuple_member_follows_the_serializer(self, cache: RespCache, serializers: str | None):
-        if isinstance(cache._serializers[0], PickleSerializer):
-            assert await cache.asadd("atuple_member", (1, 2)) == 1
-            assert await cache.asmembers("atuple_member") == {(1, 2)}
-        else:
-            with pytest.raises(TypeError, match="hashable"):
-                await cache.asadd("atuple_member", (1, 2))
-            assert await cache.asmembers("atuple_member") == set()
+            await cache.asadd("atuple_member", (1, 2))
+        assert await cache.asmembers("atuple_member") == set()
 
 
-class TestAsyncSetOperations:
-    @pytest.mark.asyncio
-    async def test_asadd(self, cache: RespCache):
-        result = await cache.asadd("afoo", "bar")
-        assert result == 1
-        assert cache.smembers("afoo") == {"bar"}
-
-    @pytest.mark.asyncio
-    async def test_asrem(self, cache: RespCache):
-        cache.sadd("afoo", "bar1", "bar2")
-        assert await cache.asrem("afoo", "bar1") == 1
-        assert await cache.asrem("afoo", "bar3") == 0
-
-    @pytest.mark.asyncio
-    async def test_asmembers(self, cache: RespCache):
-        cache.sadd("afoo", "bar1", "bar2")
-        assert await cache.asmembers("afoo") == {"bar1", "bar2"}
-
-    @pytest.mark.asyncio
-    async def test_asismember(self, cache: RespCache):
-        cache.sadd("afoo", "bar")
-        assert await cache.asismember("afoo", "bar") is True
-        assert await cache.asismember("afoo", "bar2") is False
-
-    @pytest.mark.asyncio
-    async def test_ascard(self, cache: RespCache):
-        cache.sadd("afoo", "bar", "bar2")
-        assert await cache.ascard("afoo") == 2
-
-    @pytest.mark.asyncio
-    async def test_asmismember(self, cache: RespCache):
-        cache.sadd("afoo", "bar1", "bar2", "bar3")
-        assert await cache.asmismember("afoo", "bar1", "bar2", "xyz") == [True, True, False]
-
-    @pytest.mark.asyncio
-    async def test_aspop_default_count(self, cache: RespCache):
-        cache.sadd("afoo", "bar1", "bar2")
-        assert await cache.aspop("afoo") in {"bar1", "bar2"}
-
-    @pytest.mark.asyncio
-    async def test_aspop_with_count(self, cache: RespCache):
-        cache.sadd("afoo", "bar1", "bar2")
-        assert await cache.aspop("afoo", 1) in [{"bar1"}, {"bar2"}]
-
-    @pytest.mark.asyncio
-    async def test_asrandmember_default_count(self, cache: RespCache):
-        cache.sadd("afoo", "bar1", "bar2")
-        assert await cache.asrandmember("afoo") in {"bar1", "bar2"}
-
-    @pytest.mark.asyncio
-    async def test_asrandmember_with_count(self, cache: RespCache):
-        cache.sadd("afoo", "bar1", "bar2")
-        assert await cache.asrandmember("afoo", 1) in [["bar1"], ["bar2"]]
-
-    @pytest.mark.asyncio
-    async def test_asmove(self, cache: RespCache):
-        cache.sadd("{afoo}1", "bar1", "bar2")
-        cache.sadd("{afoo}2", "bar2", "bar3")
-        assert await cache.asmove("{afoo}1", "{afoo}2", "bar1") is True
-        assert await cache.asmove("{afoo}1", "{afoo}2", "bar4") is False
-        assert cache.smembers("{afoo}1") == {"bar2"}
-        assert cache.smembers("{afoo}2") == {"bar1", "bar2", "bar3"}
-
-    @pytest.mark.asyncio
-    async def test_asmove_version_src_dst(self, cache: RespCache):
-        cache.sadd("{vs}:assrc", "a", "b", version=1)
-        cache.sadd("{vs}:asdst", "x", version=2)
-
-        result = await cache.asmove("{vs}:assrc", "{vs}:asdst", "a", version_src=1, version_dst=2)
-        assert result is True
-        assert cache.smembers("{vs}:assrc", version=1) == {"b"}
-        assert cache.smembers("{vs}:asdst", version=2) == {"x", "a"}
-
-    @pytest.mark.asyncio
-    async def test_asdiff(self, cache: RespCache):
-        cache.sadd("{asfoo}1", "bar1", "bar2")
-        cache.sadd("{asfoo}2", "bar2", "bar3")
-        assert await cache.asdiff(["{asfoo}1", "{asfoo}2"]) == {"bar1"}
-
-    @pytest.mark.asyncio
-    async def test_asdiffstore(self, cache: RespCache):
-        cache.sadd("{asfoo}1", "bar1", "bar2")
-        cache.sadd("{asfoo}2", "bar2", "bar3")
-        assert await cache.asdiffstore("{asfoo}3", ["{asfoo}1", "{asfoo}2"]) == 1
-        assert cache.smembers("{asfoo}3") == {"bar1"}
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        ("v1", "v2", "version_keys", "expected"),
-        [
-            (2, 2, 2, 1),
-            (1, 2, 2, 0),
-            (2, 1, 2, 2),
-        ],
-    )
-    async def test_asdiffstore_versions(
-        self,
-        cache: RespCache,
-        v1: int,
-        v2: int,
-        version_keys: int,
-        expected: int,
-    ):
-        cache.sadd("{afoo}1", "bar1", "bar2", version=v1)
-        cache.sadd("{afoo}2", "bar2", "bar3", version=v2)
-        assert await cache.asdiffstore("{afoo}3", ["{afoo}1", "{afoo}2"], version_keys=version_keys) == expected
-
-    @pytest.mark.asyncio
-    async def test_asinter(self, cache: RespCache):
-        cache.sadd("{asfoo}1", "bar1", "bar2")
-        cache.sadd("{asfoo}2", "bar2", "bar3")
-        assert await cache.asinter(["{asfoo}1", "{asfoo}2"]) == {"bar2"}
-
-    @pytest.mark.asyncio
-    async def test_asinterstore(self, cache: RespCache):
-        cache.sadd("{asfoo}1", "bar1", "bar2")
-        cache.sadd("{asfoo}2", "bar2", "bar3")
-        assert await cache.asinterstore("{asfoo}3", ["{asfoo}1", "{asfoo}2"]) == 1
-        assert cache.smembers("{asfoo}3") == {"bar2"}
-
-    @pytest.mark.asyncio
-    async def test_asunion(self, cache: RespCache):
-        cache.sadd("{asfoo}1", "bar1", "bar2")
-        cache.sadd("{asfoo}2", "bar2", "bar3")
-        assert await cache.asunion(["{asfoo}1", "{asfoo}2"]) == {"bar1", "bar2", "bar3"}
-
-    @pytest.mark.asyncio
-    async def test_asunionstore(self, cache: RespCache):
-        cache.sadd("{asfoo}1", "bar1", "bar2")
-        cache.sadd("{asfoo}2", "bar2", "bar3")
-        assert await cache.asunionstore("{asfoo}3", ["{asfoo}1", "{asfoo}2"]) == 3
-        assert cache.smembers("{asfoo}3") == {"bar1", "bar2", "bar3"}
-
-    @pytest.mark.asyncio
-    async def test_asscan(self, cache: RespCache):
-        cache.sadd("afoo", "bar1", "bar2")
-        _cursor, items = await cache.asscan("afoo")
-        assert items == {"bar1", "bar2"}
-
-    @pytest.mark.asyncio
-    async def test_asscan_iter(self, cache: RespCache):
-        cache.sadd("afoo", "bar1", "bar2")
-        items = set()
-        async for item in cache.asscan_iter("afoo"):
-            items.add(item)
-        assert items == {"bar1", "bar2"}
+@pytest.mark.asyncio
+async def test_asadd(cache: RespCache):
+    result = await cache.asadd("afoo", "bar")
+    assert result == 1
+    assert cache.smembers("afoo") == {"bar"}
 
 
-class TestSetEmptyArgumentCalls:
-    """A zero-member call answers locally instead of sending an invalid command."""
-
-    def test_sadd(self, cache: RespCache):
-        assert cache.sadd("empty_set") == 0
-        assert cache.has_key("empty_set") is False
-
-    def test_srem(self, cache: RespCache):
-        cache.sadd("empty_set", "a")
-        assert cache.srem("empty_set") == 0
-        assert cache.smembers("empty_set") == {"a"}
-
-    def test_smismember(self, cache: RespCache):
-        cache.sadd("empty_set", "a")
-        assert cache.smismember("empty_set") == []
-
-    @pytest.mark.asyncio
-    async def test_asadd(self, cache: RespCache):
-        assert await cache.asadd("aempty_set") == 0
-        assert await cache.ahas_key("aempty_set") is False
-
-    @pytest.mark.asyncio
-    async def test_asrem(self, cache: RespCache):
-        await cache.asadd("aempty_set", "a")
-        assert await cache.asrem("aempty_set") == 0
-        assert await cache.asmembers("aempty_set") == {"a"}
-
-    @pytest.mark.asyncio
-    async def test_asmismember(self, cache: RespCache):
-        await cache.asadd("aempty_set", "a")
-        assert await cache.asmismember("aempty_set") == []
+@pytest.mark.asyncio
+async def test_asrem(cache: RespCache):
+    cache.sadd("afoo", "bar1", "bar2")
+    assert await cache.asrem("afoo", "bar1") == 1
+    assert await cache.asrem("afoo", "bar3") == 0
 
 
-class TestSetArgumentValidation:
-    """The RESP backends raise the same ``ValueError`` LocMem and Database do, not a driver ``ResponseError``."""
+@pytest.mark.asyncio
+async def test_asmembers(cache: RespCache):
+    cache.sadd("afoo", "bar1", "bar2")
+    assert await cache.asmembers("afoo") == {"bar1", "bar2"}
 
-    def test_spop_rejects_a_negative_count(self, cache: RespCache):
-        cache.sadd("spop_neg", "a")
-        with pytest.raises(ValueError, match="value is out of range, must be positive"):
-            cache.spop("spop_neg", -1)
-        assert cache.smembers("spop_neg") == {"a"}
 
-    @pytest.mark.asyncio
-    async def test_aspop_rejects_a_negative_count(self, cache: RespCache):
-        cache.sadd("aspop_neg", "a")
-        with pytest.raises(ValueError, match="value is out of range, must be positive"):
-            await cache.aspop("aspop_neg", -1)
-        assert cache.smembers("aspop_neg") == {"a"}
+@pytest.mark.asyncio
+async def test_asismember(cache: RespCache):
+    cache.sadd("afoo", "bar")
+    assert await cache.asismember("afoo", "bar") is True
+    assert await cache.asismember("afoo", "bar2") is False
+
+
+@pytest.mark.asyncio
+async def test_ascard(cache: RespCache):
+    cache.sadd("afoo", "bar", "bar2")
+    assert await cache.ascard("afoo") == 2
+
+
+@pytest.mark.asyncio
+async def test_asmismember(cache: RespCache):
+    cache.sadd("afoo", "bar1", "bar2", "bar3")
+    assert await cache.asmismember("afoo", "bar1", "bar2", "xyz") == [True, True, False]
+
+
+@pytest.mark.asyncio
+async def test_aspop_default_count(cache: RespCache):
+    cache.sadd("afoo", "bar1", "bar2")
+    assert await cache.aspop("afoo") in {"bar1", "bar2"}
+
+
+@pytest.mark.asyncio
+async def test_aspop_with_count(cache: RespCache):
+    cache.sadd("afoo", "bar1", "bar2")
+    assert await cache.aspop("afoo", 1) in [{"bar1"}, {"bar2"}]
+
+
+@pytest.mark.asyncio
+async def test_asrandmember_default_count(cache: RespCache):
+    cache.sadd("afoo", "bar1", "bar2")
+    assert await cache.asrandmember("afoo") in {"bar1", "bar2"}
+
+
+@pytest.mark.asyncio
+async def test_asrandmember_with_count(cache: RespCache):
+    cache.sadd("afoo", "bar1", "bar2")
+    assert await cache.asrandmember("afoo", 1) in [["bar1"], ["bar2"]]
+
+
+@pytest.mark.asyncio
+async def test_asmove(cache: RespCache):
+    cache.sadd("{afoo}1", "bar1", "bar2")
+    cache.sadd("{afoo}2", "bar2", "bar3")
+    assert await cache.asmove("{afoo}1", "{afoo}2", "bar1") is True
+    assert await cache.asmove("{afoo}1", "{afoo}2", "bar4") is False
+    assert cache.smembers("{afoo}1") == {"bar2"}
+    assert cache.smembers("{afoo}2") == {"bar1", "bar2", "bar3"}
+
+
+@pytest.mark.asyncio
+async def test_asmove_version_src_dst(cache: RespCache):
+    cache.sadd("{vs}:assrc", "a", "b", version=1)
+    cache.sadd("{vs}:asdst", "x", version=2)
+
+    result = await cache.asmove("{vs}:assrc", "{vs}:asdst", "a", version_src=1, version_dst=2)
+    assert result is True
+    assert cache.smembers("{vs}:assrc", version=1) == {"b"}
+    assert cache.smembers("{vs}:asdst", version=2) == {"x", "a"}
+
+
+@pytest.mark.asyncio
+async def test_asdiff(cache: RespCache):
+    cache.sadd("{asfoo}1", "bar1", "bar2")
+    cache.sadd("{asfoo}2", "bar2", "bar3")
+    assert await cache.asdiff(["{asfoo}1", "{asfoo}2"]) == {"bar1"}
+
+
+@pytest.mark.asyncio
+async def test_asdiffstore(cache: RespCache):
+    cache.sadd("{asfoo}1", "bar1", "bar2")
+    cache.sadd("{asfoo}2", "bar2", "bar3")
+    assert await cache.asdiffstore("{asfoo}3", ["{asfoo}1", "{asfoo}2"]) == 1
+    assert cache.smembers("{asfoo}3") == {"bar1"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("v1", "v2", "version_keys", "expected"),
+    [
+        (2, 2, 2, 1),
+        (1, 2, 2, 0),
+        (2, 1, 2, 2),
+    ],
+)
+async def test_asdiffstore_versions(
+    cache: RespCache,
+    v1: int,
+    v2: int,
+    version_keys: int,
+    expected: int,
+):
+    cache.sadd("{afoo}1", "bar1", "bar2", version=v1)
+    cache.sadd("{afoo}2", "bar2", "bar3", version=v2)
+    assert await cache.asdiffstore("{afoo}3", ["{afoo}1", "{afoo}2"], version_keys=version_keys) == expected
+
+
+@pytest.mark.asyncio
+async def test_asinter(cache: RespCache):
+    cache.sadd("{asfoo}1", "bar1", "bar2")
+    cache.sadd("{asfoo}2", "bar2", "bar3")
+    assert await cache.asinter(["{asfoo}1", "{asfoo}2"]) == {"bar2"}
+
+
+@pytest.mark.asyncio
+async def test_asinterstore(cache: RespCache):
+    cache.sadd("{asfoo}1", "bar1", "bar2")
+    cache.sadd("{asfoo}2", "bar2", "bar3")
+    assert await cache.asinterstore("{asfoo}3", ["{asfoo}1", "{asfoo}2"]) == 1
+    assert cache.smembers("{asfoo}3") == {"bar2"}
+
+
+@pytest.mark.asyncio
+async def test_asunion(cache: RespCache):
+    cache.sadd("{asfoo}1", "bar1", "bar2")
+    cache.sadd("{asfoo}2", "bar2", "bar3")
+    assert await cache.asunion(["{asfoo}1", "{asfoo}2"]) == {"bar1", "bar2", "bar3"}
+
+
+@pytest.mark.asyncio
+async def test_asunionstore(cache: RespCache):
+    cache.sadd("{asfoo}1", "bar1", "bar2")
+    cache.sadd("{asfoo}2", "bar2", "bar3")
+    assert await cache.asunionstore("{asfoo}3", ["{asfoo}1", "{asfoo}2"]) == 3
+    assert cache.smembers("{asfoo}3") == {"bar1", "bar2", "bar3"}
+
+
+@pytest.mark.asyncio
+async def test_asscan(cache: RespCache):
+    cache.sadd("afoo", "bar1", "bar2")
+    _cursor, items = await cache.asscan("afoo")
+    assert items == {"bar1", "bar2"}
+
+
+@pytest.mark.asyncio
+async def test_asscan_iter(cache: RespCache):
+    cache.sadd("afoo", "bar1", "bar2")
+    items = set()
+    async for item in cache.asscan_iter("afoo"):
+        items.add(item)
+    assert items == {"bar1", "bar2"}
+
+
+# A zero-member call answers locally instead of sending an invalid command.
+def test_sadd_no_members_returns_zero(cache: RespCache):
+    assert cache.sadd("empty_set") == 0
+    assert cache.has_key("empty_set") is False
+
+
+def test_srem_no_members_returns_zero(cache: RespCache):
+    cache.sadd("empty_set", "a")
+    assert cache.srem("empty_set") == 0
+    assert cache.smembers("empty_set") == {"a"}
+
+
+def test_smismember_no_members_returns_empty_list(cache: RespCache):
+    cache.sadd("empty_set", "a")
+    assert cache.smismember("empty_set") == []
+
+
+@pytest.mark.asyncio
+async def test_asadd_no_members_returns_zero(cache: RespCache):
+    assert await cache.asadd("aempty_set") == 0
+    assert await cache.ahas_key("aempty_set") is False
+
+
+@pytest.mark.asyncio
+async def test_asrem_no_members_returns_zero(cache: RespCache):
+    await cache.asadd("aempty_set", "a")
+    assert await cache.asrem("aempty_set") == 0
+    assert await cache.asmembers("aempty_set") == {"a"}
+
+
+@pytest.mark.asyncio
+async def test_asmismember_no_members_returns_empty_list(cache: RespCache):
+    await cache.asadd("aempty_set", "a")
+    assert await cache.asmismember("aempty_set") == []
+
+
+# The RESP backends raise the same ValueError LocMem and Database do, not a driver ResponseError.
+def test_spop_rejects_a_negative_count(cache: RespCache):
+    cache.sadd("spop_neg", "a")
+    with pytest.raises(ValueError, match="value is out of range, must be positive"):
+        cache.spop("spop_neg", -1)
+    assert cache.smembers("spop_neg") == {"a"}
+
+
+@pytest.mark.asyncio
+async def test_aspop_rejects_a_negative_count(cache: RespCache):
+    cache.sadd("aspop_neg", "a")
+    with pytest.raises(ValueError, match="value is out of range, must be positive"):
+        await cache.aspop("aspop_neg", -1)
+    assert cache.smembers("aspop_neg") == {"a"}

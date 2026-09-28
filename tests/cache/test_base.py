@@ -60,56 +60,45 @@ UNSUPPORTED_OPERATIONS = [
 ]
 
 
-class TestBaseCachexUnsupported:
-    """Test that BaseCachex raises NotSupportedError for extended operations."""
-
-    @pytest.fixture(autouse=True)
-    def _setup_extensions(self):
-        self.cache = MockExtendedCache()
-
-    @pytest.mark.parametrize(
-        ("operation", "args"),
-        UNSUPPORTED_OPERATIONS,
-        ids=[op for op, _ in UNSUPPORTED_OPERATIONS],
-    )
-    def test_unsupported_operation_raises(self, operation, args):
-        method = getattr(self.cache, operation)
-        with pytest.raises(NotSupportedError):
-            method(*args)
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        ("operation", "args"),
-        [("aclear_all_versions", ()), ("amemory_usage", ("key",)), ("alargest_keys", ())],
-        ids=["aclear_all_versions", "amemory_usage", "alargest_keys"],
-    )
-    async def test_unsupported_async_operation_raises(self, operation, args):
-        with pytest.raises(NotSupportedError, match=operation):
-            await getattr(self.cache, operation)(*args)
+@pytest.fixture
+def bare_cache() -> MockExtendedCache:
+    return MockExtendedCache()
 
 
-class TestBaseCachexSetFlags:
-    """``set``/``aset`` default to ``NotSupportedError`` when any flag is set.
+@pytest.mark.parametrize(
+    ("operation", "args"),
+    UNSUPPORTED_OPERATIONS,
+    ids=[op for op, _ in UNSUPPORTED_OPERATIONS],
+)
+def test_unsupported_operation_raises(bare_cache: MockExtendedCache, operation, args):
+    method = getattr(bare_cache, operation)
+    with pytest.raises(NotSupportedError):
+        method(*args)
 
-    Without flags, the call delegates to ``super().set`` (Django's
-    ``BaseCache``), which raises its own ``NotImplementedError``; only the
-    flag path is the cachex-contract default and is what we cover here.
-    """
 
-    @pytest.fixture(autouse=True)
-    def _setup(self):
-        self.cache = MockExtendedCache()
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "args"),
+    [("aclear_all_versions", ()), ("amemory_usage", ("key",)), ("alargest_keys", ())],
+    ids=["aclear_all_versions", "amemory_usage", "alargest_keys"],
+)
+async def test_unsupported_async_operation_raises(bare_cache: MockExtendedCache, operation, args):
+    with pytest.raises(NotSupportedError, match=operation):
+        await getattr(bare_cache, operation)(*args)
 
-    @pytest.mark.parametrize("flag", ["nx", "xx", "get"])
-    def test_set_with_flag_raises(self, flag: str):
-        with pytest.raises(NotSupportedError):
-            self.cache.set("k", "v", **{flag: True})
 
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("flag", ["nx", "xx", "get"])
-    async def test_aset_with_flag_raises(self, flag: str):
-        with pytest.raises(NotSupportedError):
-            await self.cache.aset("k", "v", **{flag: True})
+# Without flags, set() delegates to Django's BaseCache.set; only the flag path is the cachex default.
+@pytest.mark.parametrize("flag", ["nx", "xx", "get"])
+def test_set_with_flag_raises(bare_cache: MockExtendedCache, flag: str):
+    with pytest.raises(NotSupportedError):
+        bare_cache.set("k", "v", **{flag: True})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flag", ["nx", "xx", "get"])
+async def test_aset_with_flag_raises(bare_cache: MockExtendedCache, flag: str):
+    with pytest.raises(NotSupportedError):
+        await bare_cache.aset("k", "v", **{flag: True})
 
 
 class KeysOnlyCache(BaseCachex):
@@ -130,52 +119,53 @@ class KeysOnlyCache(BaseCachex):
         return list(self._data)
 
 
-class TestBaseCachexType:
-    """``type()``/``atype()`` agree and honor the None-for-missing contract."""
-
-    @pytest.fixture
-    def cache(self) -> KeysOnlyCache:
-        return KeysOnlyCache({"present": "v"})
-
-    def test_present_key_reports_string(self, cache: KeysOnlyCache):
-        assert cache.type("present") == KeyType.STRING
-
-    def test_missing_key_reports_none(self, cache: KeysOnlyCache):
-        assert cache.type("absent") is None
-
-    @pytest.mark.asyncio
-    async def test_atype_matches_type(self, cache: KeysOnlyCache):
-        assert await cache.atype("present") == KeyType.STRING
-        assert await cache.atype("absent") is None
+@pytest.fixture
+def present_key_cache() -> KeysOnlyCache:
+    return KeysOnlyCache({"present": "v"})
 
 
-class TestBaseCachexScan:
-    """``scan()`` paginates ``keys()`` and applies ``key_type`` client-side."""
+def test_type_present_key_reports_string(present_key_cache: KeysOnlyCache):
+    assert present_key_cache.type("present") == KeyType.STRING
 
-    @pytest.fixture
-    def cache(self) -> KeysOnlyCache:
-        return KeysOnlyCache({f"k{i}": i for i in range(5)})
 
-    def test_explicit_count_zero_is_honored(self, cache: KeysOnlyCache):
-        next_cursor, keys = cache.scan(count=0)
-        assert keys == []
-        assert next_cursor == 0
+def test_type_missing_key_reports_none(present_key_cache: KeysOnlyCache):
+    assert present_key_cache.type("absent") is None
 
-    def test_default_count_paginates(self, cache: KeysOnlyCache):
-        next_cursor, keys = cache.scan()
-        assert keys == ["k0", "k1", "k2", "k3", "k4"]
-        assert next_cursor == 0
 
-    def test_cursor_advances(self, cache: KeysOnlyCache):
-        next_cursor, keys = cache.scan(count=2)
-        assert len(keys) == 2
-        assert next_cursor != 0
-        _, rest = cache.scan(next_cursor, count=10)
-        assert sorted(keys + rest) == ["k0", "k1", "k2", "k3", "k4"]
+@pytest.mark.asyncio
+async def test_atype_matches_type(present_key_cache: KeysOnlyCache):
+    assert await present_key_cache.atype("present") == KeyType.STRING
+    assert await present_key_cache.atype("absent") is None
 
-    def test_key_type_filter_is_applied(self, cache: KeysOnlyCache):
-        assert cache.scan(key_type="string")[1] == ["k0", "k1", "k2", "k3", "k4"]
-        assert cache.scan(key_type="hash")[1] == []
+
+@pytest.fixture
+def five_key_cache() -> KeysOnlyCache:
+    return KeysOnlyCache({f"k{i}": i for i in range(5)})
+
+
+def test_scan_explicit_count_zero_is_honored(five_key_cache: KeysOnlyCache):
+    next_cursor, keys = five_key_cache.scan(count=0)
+    assert keys == []
+    assert next_cursor == 0
+
+
+def test_scan_default_count_paginates(five_key_cache: KeysOnlyCache):
+    next_cursor, keys = five_key_cache.scan()
+    assert keys == ["k0", "k1", "k2", "k3", "k4"]
+    assert next_cursor == 0
+
+
+def test_scan_cursor_advances(five_key_cache: KeysOnlyCache):
+    next_cursor, keys = five_key_cache.scan(count=2)
+    assert len(keys) == 2
+    assert next_cursor != 0
+    _, rest = five_key_cache.scan(next_cursor, count=10)
+    assert sorted(keys + rest) == ["k0", "k1", "k2", "k3", "k4"]
+
+
+def test_scan_key_type_filter_is_applied(five_key_cache: KeysOnlyCache):
+    assert five_key_cache.scan(key_type="string")[1] == ["k0", "k1", "k2", "k3", "k4"]
+    assert five_key_cache.scan(key_type="hash")[1] == []
 
 
 def _scan_pages(cache: BaseCachex, cursor: int = 0, count: int = 3) -> list[list[str]]:

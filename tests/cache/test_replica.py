@@ -74,124 +74,122 @@ def wait_for_replication(
     return result
 
 
-class TestReplicaSetup:
-    """Tests for master-replica Redis setup."""
+def test_replica_containers_start(replica_containers: ReplicaSetContainerInfo):
+    assert replica_containers.master_host
+    assert replica_containers.master_port > 0
+    assert len(replica_containers.replica_hosts) == 2
+    assert len(replica_containers.replica_ports) == 2
+    assert all(port > 0 for port in replica_containers.replica_ports)
 
-    def test_replica_containers_start(self, replica_containers: ReplicaSetContainerInfo):
-        assert replica_containers.master_host
-        assert replica_containers.master_port > 0
-        assert len(replica_containers.replica_hosts) == 2
-        assert len(replica_containers.replica_ports) == 2
-        assert all(port > 0 for port in replica_containers.replica_ports)
 
-    def test_write_to_master_read_from_replica(self, replica_cache: RespCache):
-        replica_cache.set("replica_test_key", "test_value", timeout=60)
+def test_write_to_master_read_from_replica(replica_cache: RespCache):
+    replica_cache.set("replica_test_key", "test_value", timeout=60)
 
-        result = wait_for_replication(replica_cache, {"replica_test_key": "test_value"})
-        assert result == {"replica_test_key": "test_value"}, "Replication timed out"
+    result = wait_for_replication(replica_cache, {"replica_test_key": "test_value"})
+    assert result == {"replica_test_key": "test_value"}, "Replication timed out"
 
-        replica_cache.delete("replica_test_key")
+    replica_cache.delete("replica_test_key")
 
-    def test_pool_selection_write_uses_master(self, replica_cache: RespCache):
-        for _ in range(10):
-            assert replica_cache.adapter._get_connection_pool_index(write=True) == 0
 
-    def test_pool_selection_read_uses_replicas(self, replica_cache: RespCache, replica_urls: list[str]):
-        read_indices = set()
+def test_pool_selection_write_uses_master(replica_cache: RespCache):
+    for _ in range(10):
+        assert replica_cache.adapter._get_connection_pool_index(write=True) == 0
+
+
+def test_pool_selection_read_uses_replicas(replica_cache: RespCache, replica_urls: list[str]):
+    read_indices = set()
+    for _ in range(50):
+        read_idx = replica_cache.adapter._get_connection_pool_index(write=False)
+        assert 0 < read_idx < len(replica_urls), (
+            f"Read index {read_idx} should be in replica range [1, {len(replica_urls)})"
+        )
+        read_indices.add(read_idx)
+
+    # Fifty uniform picks hit every replica; a stuck picker would not.
+    expected_indices = set(range(1, len(replica_urls)))
+    assert read_indices == expected_indices, (
+        f"Expected reads to distribute across {expected_indices}, got {read_indices}"
+    )
+
+
+def test_one_pool_per_server_read_from(replica_cache: RespCache, replica_urls: list[str]):
+    """Reads spread over the replicas, and each one that is used gets its own pool."""
+    replica_cache.set("pool_test", "value", timeout=60)
+    assert wait_for_replication(replica_cache, {"pool_test": "value"}) == {"pool_test": "value"}
+
+    for _ in range(20):
+        replica_cache.get("pool_test")
+
+    pools = replica_cache.adapter._pools
+    assert set(pools) == set(range(len(replica_urls))), (
+        f"Expected a pool per server after 20 reads, got indices {sorted(pools)}"
+    )
+    assert len({id(pool) for pool in pools.values()}) == len(replica_urls)
+
+    replica_cache.delete("pool_test")
+
+
+def test_servers_list_configuration(replica_cache: RespCache, replica_urls: list[str]):
+    assert replica_cache.adapter._servers == replica_urls
+    assert len(replica_cache.adapter._servers) == 3
+
+
+def test_set_get_many_with_replicas(replica_cache: RespCache):
+    data = {f"many_key_{i}": f"value_{i}" for i in range(10)}
+    replica_cache.set_many(data, timeout=60)
+
+    # get_many may route through a different pool than get.
+    assert wait_for_replication(replica_cache, data) == data
+
+    replica_cache.delete_many(list(data.keys()))
+
+
+def test_incr_decr_with_replicas(replica_cache: RespCache):
+    """incr and decr always go to the master, and the result replicates."""
+    replica_cache.set("counter", 10, timeout=60)
+    assert wait_for_replication(replica_cache, {"counter": 10}) == {"counter": 10}
+
+    assert replica_cache.incr("counter", 5) == 15
+    assert wait_for_replication(replica_cache, {"counter": 15}) == {"counter": 15}
+
+    assert replica_cache.decr("counter", 3) == 12
+
+    replica_cache.delete("counter")
+
+
+def test_delete_propagates_to_replicas(replica_cache: RespCache, replica_urls: list[str]):
+    replica_cache.set("delete_test", "value", timeout=60)
+    assert wait_for_replication(replica_cache, {"delete_test": "value"}) == {"delete_test": "value"}
+
+    replica_cache.delete("delete_test")
+
+    # Reads pick a replica at random, so polling ``get`` until one miss
+    # says nothing about the other replica. Ask every server directly.
+    made_key = replica_cache.make_key("delete_test")
+    servers = [redis.Redis.from_url(url) for url in replica_urls]
+    try:
         for _ in range(50):
-            read_idx = replica_cache.adapter._get_connection_pool_index(write=False)
-            assert 0 < read_idx < len(replica_urls), (
-                f"Read index {read_idx} should be in replica range [1, {len(replica_urls)})"
-            )
-            read_indices.add(read_idx)
-
-        # Fifty uniform picks hit every replica; a stuck picker would not.
-        expected_indices = set(range(1, len(replica_urls)))
-        assert read_indices == expected_indices, (
-            f"Expected reads to distribute across {expected_indices}, got {read_indices}"
-        )
-
-    def test_one_pool_per_server_read_from(self, replica_cache: RespCache, replica_urls: list[str]):
-        """Reads spread over the replicas, and each one that is used gets its own pool."""
-        replica_cache.set("pool_test", "value", timeout=60)
-        assert wait_for_replication(replica_cache, {"pool_test": "value"}) == {"pool_test": "value"}
-
-        for _ in range(20):
-            replica_cache.get("pool_test")
-
-        pools = replica_cache.adapter._pools
-        assert set(pools) == set(range(len(replica_urls))), (
-            f"Expected a pool per server after 20 reads, got indices {sorted(pools)}"
-        )
-        assert len({id(pool) for pool in pools.values()}) == len(replica_urls)
-
-        replica_cache.delete("pool_test")
-
-    def test_servers_list_configuration(self, replica_cache: RespCache, replica_urls: list[str]):
-        assert replica_cache.adapter._servers == replica_urls
-        assert len(replica_cache.adapter._servers) == 3
-
-
-class TestReplicaDataIntegrity:
-    """Tests for data integrity across master-replica setup."""
-
-    def test_set_get_many_with_replicas(self, replica_cache: RespCache):
-        data = {f"many_key_{i}": f"value_{i}" for i in range(10)}
-        replica_cache.set_many(data, timeout=60)
-
-        # get_many may route through a different pool than get.
-        assert wait_for_replication(replica_cache, data) == data
-
-        replica_cache.delete_many(list(data.keys()))
-
-    def test_incr_decr_with_replicas(self, replica_cache: RespCache):
-        """incr and decr always go to the master, and the result replicates."""
-        replica_cache.set("counter", 10, timeout=60)
-        assert wait_for_replication(replica_cache, {"counter": 10}) == {"counter": 10}
-
-        assert replica_cache.incr("counter", 5) == 15
-        assert wait_for_replication(replica_cache, {"counter": 15}) == {"counter": 15}
-
-        assert replica_cache.decr("counter", 3) == 12
-
-        replica_cache.delete("counter")
-
-    def test_delete_propagates_to_replicas(self, replica_cache: RespCache, replica_urls: list[str]):
-        replica_cache.set("delete_test", "value", timeout=60)
-        assert wait_for_replication(replica_cache, {"delete_test": "value"}) == {"delete_test": "value"}
-
-        replica_cache.delete("delete_test")
-
-        # Reads pick a replica at random, so polling ``get`` until one miss
-        # says nothing about the other replica. Ask every server directly.
-        made_key = replica_cache.make_key("delete_test")
-        servers = [redis.Redis.from_url(url) for url in replica_urls]
-        try:
-            for _ in range(50):
-                if not any(server.exists(made_key) for server in servers):
-                    break
-                time.sleep(0.1)
-            assert [server.exists(made_key) for server in servers] == [0] * len(servers)
-        finally:
-            for server in servers:
-                server.close()
-        assert replica_cache.get("delete_test") is None
+            if not any(server.exists(made_key) for server in servers):
+                break
+            time.sleep(0.1)
+        assert [server.exists(made_key) for server in servers] == [0] * len(servers)
+    finally:
+        for server in servers:
+            server.close()
+    assert replica_cache.get("delete_test") is None
 
 
 @pytest.mark.asyncio
-class TestReplicaAsync:
-    """Async tests for master-replica setup."""
+async def test_async_write_read_with_replicas(replica_cache: RespCache):
+    await replica_cache.aset("async_replica_test", "async_value", timeout=60)
 
-    async def test_async_write_read_with_replicas(self, replica_cache: RespCache):
-        await replica_cache.aset("async_replica_test", "async_value", timeout=60)
+    replicated = False
+    for _ in range(50):
+        if await replica_cache.aget("async_replica_test") == "async_value":
+            replicated = True
+            break
+        await asyncio.sleep(0.1)
 
-        replicated = False
-        for _ in range(50):
-            if await replica_cache.aget("async_replica_test") == "async_value":
-                replicated = True
-                break
-            await asyncio.sleep(0.1)
+    assert replicated, "Async replication timed out"
 
-        assert replicated, "Async replication timed out"
-
-        await replica_cache.adelete("async_replica_test")
+    await replica_cache.adelete("async_replica_test")

@@ -19,247 +19,247 @@ def _is_py_cluster(client_class: str, sentinel_mode: str | bool, resp_adapter: s
     return client_class == "cluster" and not sentinel_mode and resp_adapter in {"redis-py", "valkey-py"}
 
 
-class TestScanOperations:
-    def test_scan_returns_keys(
-        self,
-        cache: RespCache,
-        client_class: str,
-        sentinel_mode: str | bool,
-        resp_adapter: str,
-    ):
-        if _is_py_cluster(client_class, sentinel_mode, resp_adapter):
-            with pytest.raises(NotSupportedError):
-                cache.scan(pattern="scantest_*")
-            return
+def test_scan_returns_keys(
+    cache: RespCache,
+    client_class: str,
+    sentinel_mode: str | bool,
+    resp_adapter: str,
+):
+    if _is_py_cluster(client_class, sentinel_mode, resp_adapter):
+        with pytest.raises(NotSupportedError):
+            cache.scan(pattern="scantest_*")
+        return
 
-        cache.set("scantest_a", 1)
-        cache.set("scantest_b", 2)
+    cache.set("scantest_a", 1)
+    cache.set("scantest_b", 2)
 
-        cursor, keys = cache.scan(pattern="scantest_*")
-        assert isinstance(keys, list)
-        all_keys = set(keys)
-        while cursor != 0:
-            cursor, keys = cache.scan(cursor=cursor, pattern="scantest_*")
-            all_keys.update(keys)
-        assert all_keys == {"scantest_a", "scantest_b"}
-
-    def test_scan_empty(
-        self,
-        cache: RespCache,
-        client_class: str,
-        sentinel_mode: str | bool,
-        resp_adapter: str,
-    ):
-        if _is_py_cluster(client_class, sentinel_mode, resp_adapter):
-            with pytest.raises(NotSupportedError):
-                cache.scan(pattern="nonexistent_pattern_xyz_*")
-            return
-
-        _cursor, keys = cache.scan(pattern="nonexistent_pattern_xyz_*")
-        assert keys == []
+    cursor, keys = cache.scan(pattern="scantest_*")
+    assert isinstance(keys, list)
+    all_keys = set(keys)
+    while cursor != 0:
+        cursor, keys = cache.scan(cursor=cursor, pattern="scantest_*")
+        all_keys.update(keys)
+    assert all_keys == {"scantest_a", "scantest_b"}
 
 
-class TestDecrVersionOperations:
-    def test_decr_version(self, cache: RespCache):
-        # Use hash tag so versioned keys stay in same cluster slot
-        cache.set("{dv}:key", "hello", version=2)
-        new_version = cache.decr_version("{dv}:key", version=2)
+def test_scan_empty(
+    cache: RespCache,
+    client_class: str,
+    sentinel_mode: str | bool,
+    resp_adapter: str,
+):
+    if _is_py_cluster(client_class, sentinel_mode, resp_adapter):
+        with pytest.raises(NotSupportedError):
+            cache.scan(pattern="nonexistent_pattern_xyz_*")
+        return
 
-        assert new_version == 1
-        assert cache.get("{dv}:key", version=2) is None
-        assert cache.get("{dv}:key", version=1) == "hello"
-
-    def test_decr_version_default(self, cache: RespCache):
-        # Set at default version (1), decrement to version 0
-        cache.set("{dv2}:key", "value")
-        new_version = cache.decr_version("{dv2}:key")
-
-        assert new_version == 0
-        assert cache.get("{dv2}:key") is None
-        assert cache.get("{dv2}:key", version=0) == "value"
+    _cursor, keys = cache.scan(pattern="nonexistent_pattern_xyz_*")
+    assert keys == []
 
 
-class TestClearAllVersions:
-    def test_clear_all_versions(self, cache: RespCache):
-        cache.set("cav_key1", "v1", version=1)
-        cache.set("cav_key2", "v2", version=2)
+def test_decr_version(cache: RespCache):
+    # Use hash tag so versioned keys stay in same cluster slot
+    cache.set("{dv}:key", "hello", version=2)
+    new_version = cache.decr_version("{dv}:key", version=2)
 
-        count = cache.clear_all_versions()
-        assert count == 2
-
-        assert cache.get("cav_key1", version=1) is None
-        assert cache.get("cav_key2", version=2) is None
+    assert new_version == 1
+    assert cache.get("{dv}:key", version=2) is None
+    assert cache.get("{dv}:key", version=1) == "hello"
 
 
-class TestFlushDb:
-    def test_flush_db(self, cache: RespCache):
-        cache.set("flush_key", "value")
-        assert cache.get("flush_key") == "value"
+def test_decr_version_default(cache: RespCache):
+    # Set at default version (1), decrement to version 0
+    cache.set("{dv2}:key", "value")
+    new_version = cache.decr_version("{dv2}:key")
 
-        result = cache.flush_db()
-        assert result is True
-        assert cache.get("flush_key") is None
-
-
-class TestAsyncScan:
-    @pytest.mark.asyncio
-    async def test_ascan_returns_keys(
-        self,
-        cache: RespCache,
-        client_class: str,
-        sentinel_mode: str | bool,
-        resp_adapter: str,
-    ):
-        if _is_py_cluster(client_class, sentinel_mode, resp_adapter):
-            with pytest.raises(NotSupportedError):
-                await cache.ascan(pattern="ascantest_*")
-            return
-
-        cache.set("ascantest_a", 1)
-        cache.set("ascantest_b", 2)
-
-        cursor, keys = await cache.ascan(pattern="ascantest_*")
-        assert isinstance(keys, list)
-        all_keys = set(keys)
-        while cursor != 0:
-            cursor, keys = await cache.ascan(cursor=cursor, pattern="ascantest_*")
-            all_keys.update(keys)
-        assert all_keys == {"ascantest_a", "ascantest_b"}
-
-    @pytest.mark.asyncio
-    async def test_ascan_empty(
-        self,
-        cache: RespCache,
-        client_class: str,
-        sentinel_mode: str | bool,
-        resp_adapter: str,
-    ):
-        if _is_py_cluster(client_class, sentinel_mode, resp_adapter):
-            with pytest.raises(NotSupportedError):
-                await cache.ascan(pattern="nonexistent_pattern_xyz_*")
-            return
-
-        _cursor, keys = await cache.ascan(pattern="nonexistent_pattern_xyz_*")
-        assert keys == []
+    assert new_version == 0
+    assert cache.get("{dv2}:key") is None
+    assert cache.get("{dv2}:key", version=0) == "value"
 
 
-class TestAsyncLock:
-    @pytest.fixture(autouse=True)
-    def _skip_cluster(self, client_class: str, sentinel_mode: str | bool):
-        """``RespClusterCache.alock`` raises NotSupportedError; see test_locks.py."""
-        if client_class == "cluster" and not sentinel_mode:
-            pytest.skip("alock is rejected on cluster")
+def test_clear_all_versions(cache: RespCache):
+    cache.set("cav_key1", "v1", version=1)
+    cache.set("cav_key2", "v2", version=2)
 
-    @pytest.mark.asyncio
-    async def test_alock_acquire_and_release(self, cache: RespCache):
-        lock = await cache.alock("alock_resource")
-        acquired = await lock.acquire(blocking=False)
-        assert acquired is True
-        assert cache.has_key("alock_resource") is True
+    count = cache.clear_all_versions()
+    assert count == 2
 
-        await lock.release()
-        assert cache.has_key("alock_resource") is False
-
-    @pytest.mark.asyncio
-    async def test_alock_prevents_double_acquire(self, cache: RespCache):
-        lock1 = await cache.alock("alock_resource2")
-        assert await lock1.acquire(blocking=False) is True
-
-        lock2 = await cache.alock("alock_resource2")
-        assert await lock2.acquire(blocking=False) is False
-
-        await lock1.release()
-
-    @pytest.mark.asyncio
-    async def test_alock_context_manager(self, cache: RespCache):
-        async with await cache.alock("alock_ctx"):
-            assert cache.has_key("alock_ctx") is True
-        assert cache.has_key("alock_ctx") is False
+    assert cache.get("cav_key1", version=1) is None
+    assert cache.get("cav_key2", version=2) is None
 
 
-class TestAsyncDecrVersionOperations:
-    @pytest.mark.asyncio
-    async def test_adecr_version(self, cache: RespCache):
-        cache.set("{adv}:key", "hello", version=2)
-        new_version = await cache.adecr_version("{adv}:key", version=2)
+def test_flush_db(cache: RespCache):
+    cache.set("flush_key", "value")
+    assert cache.get("flush_key") == "value"
 
-        assert new_version == 1
-        assert cache.get("{adv}:key", version=2) is None
-        assert cache.get("{adv}:key", version=1) == "hello"
-
-    @pytest.mark.asyncio
-    async def test_adecr_version_default(self, cache: RespCache):
-        cache.set("{adv2}:key", "value")
-        new_version = await cache.adecr_version("{adv2}:key")
-
-        assert new_version == 0
-        assert cache.get("{adv2}:key") is None
-        assert cache.get("{adv2}:key", version=0) == "value"
+    result = cache.flush_db()
+    assert result is True
+    assert cache.get("flush_key") is None
 
 
-class TestAsyncClearAllVersions:
-    @pytest.mark.asyncio
-    async def test_aclear_all_versions(self, cache: RespCache):
-        cache.set("acav_key1", "v1", version=1)
-        cache.set("acav_key2", "v2", version=2)
+@pytest.mark.asyncio
+async def test_ascan_returns_keys(
+    cache: RespCache,
+    client_class: str,
+    sentinel_mode: str | bool,
+    resp_adapter: str,
+):
+    if _is_py_cluster(client_class, sentinel_mode, resp_adapter):
+        with pytest.raises(NotSupportedError):
+            await cache.ascan(pattern="ascantest_*")
+        return
 
-        count = await cache.aclear_all_versions()
-        assert count == 2
+    cache.set("ascantest_a", 1)
+    cache.set("ascantest_b", 2)
 
-        assert cache.get("acav_key1", version=1) is None
-        assert cache.get("acav_key2", version=2) is None
-
-
-class TestAsyncGetOrSet:
-    @pytest.mark.asyncio
-    async def test_aget_or_set_missing_key(self, cache: RespCache):
-        result = await cache.aget_or_set("agos_key", "default_value")
-        assert result == "default_value"
-        assert cache.get("agos_key") == "default_value"
-
-    @pytest.mark.asyncio
-    async def test_aget_or_set_existing_key(self, cache: RespCache):
-        cache.set("agos_key2", "existing")
-        result = await cache.aget_or_set("agos_key2", "default_value")
-        assert result == "existing"
-
-    @pytest.mark.asyncio
-    async def test_aget_or_set_with_callable(self, cache: RespCache):
-        result = await cache.aget_or_set("agos_key3", lambda: "computed")
-        assert result == "computed"
-        assert cache.get("agos_key3") == "computed"
-
-    @pytest.mark.asyncio
-    async def test_aget_or_set_awaits_an_async_default(self, cache: RespCache):
-        async def compute() -> str:
-            await asyncio.sleep(0)
-            return "awaited"
-
-        class AsyncCallable:
-            async def __call__(self) -> str:
-                return "awaited via __call__"
-
-        assert await cache.aget_or_set("agos_async", compute) == "awaited"
-        assert cache.get("agos_async") == "awaited"
-        assert await cache.aget_or_set("agos_async_call", AsyncCallable()) == "awaited via __call__"
-        assert cache.get("agos_async_call") == "awaited via __call__"
-
-    @pytest.mark.asyncio
-    async def test_aget_or_set_does_not_call_the_default_on_a_hit(self, cache: RespCache):
-        cache.set("agos_hit", "existing")
-
-        async def compute() -> str:
-            raise AssertionError("default computed on a hit")
-
-        assert await cache.aget_or_set("agos_hit", compute) == "existing"
+    cursor, keys = await cache.ascan(pattern="ascantest_*")
+    assert isinstance(keys, list)
+    all_keys = set(keys)
+    while cursor != 0:
+        cursor, keys = await cache.ascan(cursor=cursor, pattern="ascantest_*")
+        all_keys.update(keys)
+    assert all_keys == {"ascantest_a", "ascantest_b"}
 
 
-class TestAsyncFlushDb:
-    @pytest.mark.asyncio
-    async def test_aflush_db(self, cache: RespCache):
-        cache.set("aflush_key", "value")
-        assert cache.get("aflush_key") == "value"
+@pytest.mark.asyncio
+async def test_ascan_empty(
+    cache: RespCache,
+    client_class: str,
+    sentinel_mode: str | bool,
+    resp_adapter: str,
+):
+    if _is_py_cluster(client_class, sentinel_mode, resp_adapter):
+        with pytest.raises(NotSupportedError):
+            await cache.ascan(pattern="nonexistent_pattern_xyz_*")
+        return
 
-        result = await cache.aflush_db()
-        assert result is True
-        assert cache.get("aflush_key") is None
+    _cursor, keys = await cache.ascan(pattern="nonexistent_pattern_xyz_*")
+    assert keys == []
+
+
+@pytest.fixture
+def _skip_cluster(client_class: str, sentinel_mode: str | bool):
+    """``RespClusterCache.alock`` raises NotSupportedError; see test_locks.py."""
+    if client_class == "cluster" and not sentinel_mode:
+        pytest.skip("alock is rejected on cluster")
+
+
+@pytest.mark.usefixtures("_skip_cluster")
+@pytest.mark.asyncio
+async def test_alock_acquire_and_release(cache: RespCache):
+    lock = await cache.alock("alock_resource")
+    acquired = await lock.acquire(blocking=False)
+    assert acquired is True
+    assert cache.has_key("alock_resource") is True
+
+    await lock.release()
+    assert cache.has_key("alock_resource") is False
+
+
+@pytest.mark.usefixtures("_skip_cluster")
+@pytest.mark.asyncio
+async def test_alock_prevents_double_acquire(cache: RespCache):
+    lock1 = await cache.alock("alock_resource2")
+    assert await lock1.acquire(blocking=False) is True
+
+    lock2 = await cache.alock("alock_resource2")
+    assert await lock2.acquire(blocking=False) is False
+
+    await lock1.release()
+
+
+@pytest.mark.usefixtures("_skip_cluster")
+@pytest.mark.asyncio
+async def test_alock_context_manager(cache: RespCache):
+    async with await cache.alock("alock_ctx"):
+        assert cache.has_key("alock_ctx") is True
+    assert cache.has_key("alock_ctx") is False
+
+
+@pytest.mark.asyncio
+async def test_adecr_version(cache: RespCache):
+    cache.set("{adv}:key", "hello", version=2)
+    new_version = await cache.adecr_version("{adv}:key", version=2)
+
+    assert new_version == 1
+    assert cache.get("{adv}:key", version=2) is None
+    assert cache.get("{adv}:key", version=1) == "hello"
+
+
+@pytest.mark.asyncio
+async def test_adecr_version_default(cache: RespCache):
+    cache.set("{adv2}:key", "value")
+    new_version = await cache.adecr_version("{adv2}:key")
+
+    assert new_version == 0
+    assert cache.get("{adv2}:key") is None
+    assert cache.get("{adv2}:key", version=0) == "value"
+
+
+@pytest.mark.asyncio
+async def test_aclear_all_versions(cache: RespCache):
+    cache.set("acav_key1", "v1", version=1)
+    cache.set("acav_key2", "v2", version=2)
+
+    count = await cache.aclear_all_versions()
+    assert count == 2
+
+    assert cache.get("acav_key1", version=1) is None
+    assert cache.get("acav_key2", version=2) is None
+
+
+@pytest.mark.asyncio
+async def test_aget_or_set_missing_key(cache: RespCache):
+    result = await cache.aget_or_set("agos_key", "default_value")
+    assert result == "default_value"
+    assert cache.get("agos_key") == "default_value"
+
+
+@pytest.mark.asyncio
+async def test_aget_or_set_existing_key(cache: RespCache):
+    cache.set("agos_key2", "existing")
+    result = await cache.aget_or_set("agos_key2", "default_value")
+    assert result == "existing"
+
+
+@pytest.mark.asyncio
+async def test_aget_or_set_with_callable(cache: RespCache):
+    result = await cache.aget_or_set("agos_key3", lambda: "computed")
+    assert result == "computed"
+    assert cache.get("agos_key3") == "computed"
+
+
+@pytest.mark.asyncio
+async def test_aget_or_set_awaits_an_async_default(cache: RespCache):
+    async def compute() -> str:
+        await asyncio.sleep(0)
+        return "awaited"
+
+    class AsyncCallable:
+        async def __call__(self) -> str:
+            return "awaited via __call__"
+
+    assert await cache.aget_or_set("agos_async", compute) == "awaited"
+    assert cache.get("agos_async") == "awaited"
+    assert await cache.aget_or_set("agos_async_call", AsyncCallable()) == "awaited via __call__"
+    assert cache.get("agos_async_call") == "awaited via __call__"
+
+
+@pytest.mark.asyncio
+async def test_aget_or_set_does_not_call_the_default_on_a_hit(cache: RespCache):
+    cache.set("agos_hit", "existing")
+
+    async def compute() -> str:
+        raise AssertionError("default computed on a hit")
+
+    assert await cache.aget_or_set("agos_hit", compute) == "existing"
+
+
+@pytest.mark.asyncio
+async def test_aflush_db(cache: RespCache):
+    cache.set("aflush_key", "value")
+    assert cache.get("aflush_key") == "value"
+
+    result = await cache.aflush_db()
+    assert result is True
+    assert cache.get("aflush_key") is None

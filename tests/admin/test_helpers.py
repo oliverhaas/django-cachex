@@ -72,315 +72,321 @@ class _LocMemCache(_FakeCache):
         return self._remaining
 
 
-class TestSetPreservingTtl:
-    """Editing a value in the admin must not change when the key expires."""
-
-    def test_resp_persistent_key_stays_persistent(self):
-        cache = _RespCache(None)
-        _set_preserving_ttl(cache, "k", "v")
-        assert cache.set_timeout is None
-
-    def test_locmem_persistent_key_stays_persistent(self):
-        cache = _LocMemCache(None)
-        _set_preserving_ttl(cache, "k", "v")
-        assert cache.set_timeout is None
-
-    def test_missing_key_gets_the_default_timeout(self):
-        cache = _RespCache(-2)
-        _set_preserving_ttl(cache, "k", "v")
-        assert cache.set_timeout is _DEFAULT
-
-    def test_sub_second_precision_is_restored_via_pexpire(self):
-        cache = _RespCache(1500)
-        _set_preserving_ttl(cache, "k", "v")
-        assert cache.set_timeout == 2
-        assert cache.pexpire_ms == 1500
-
-    def test_whole_second_ttl_needs_no_pexpire(self):
-        cache = _RespCache(3600_000)
-        _set_preserving_ttl(cache, "k", "v")
-        assert cache.set_timeout == 3600
-        assert cache.pexpire_ms is None
-
-    def test_ttl_survives_a_backend_without_pexpire(self):
-        cache = _PttlOnlyCache(3600_500)
-        _set_preserving_ttl(cache, "k", "v")
-        assert cache.set_timeout == 3601
-
-    def test_locmem_seconds_ttl_is_carried_over(self):
-        cache = _LocMemCache(3600)
-        _set_preserving_ttl(cache, "k", "v")
-        assert cache.set_timeout == 3600
-
-    def test_expiring_key_is_not_promoted_to_the_default_timeout(self):
-        # LocMem floors ttl(), so a key with under a second left reads as 0.
-        cache = _LocMemCache(0)
-        _set_preserving_ttl(cache, "k", "v")
-        assert cache.set_timeout == 1
+# Editing a value in the admin must not change when the key expires.
+def test_resp_persistent_key_stays_persistent():
+    cache = _RespCache(None)
+    _set_preserving_ttl(cache, "k", "v")
+    assert cache.set_timeout is None
 
 
-class TestPaginate:
-    def test_empty_collection(self):
-        p = _paginate(0, 1)
-        assert p["page"] == 1
-        assert p["total_pages"] == 1
-        assert p["total"] == 0
-        assert p["has_previous"] is False
-        assert p["has_next"] is False
-        assert p["start_index"] == 0
-        assert p["end_index"] == 0
-
-    def test_exactly_one_page(self):
-        p = _paginate(PAGE_SIZE, 1)
-        assert p["page"] == 1
-        assert p["total_pages"] == 1
-        assert p["has_previous"] is False
-        assert p["has_next"] is False
-        assert p["start_index"] == 0
-        assert p["end_index"] == PAGE_SIZE
-
-    def test_just_over_one_page(self):
-        p = _paginate(PAGE_SIZE + 1, 1)
-        assert p["total_pages"] == 2
-        assert p["has_next"] is True
-        assert p["next_page"] == 2
-        assert p["start_index"] == 0
-        assert p["end_index"] == PAGE_SIZE
-
-    def test_second_page(self):
-        p = _paginate(PAGE_SIZE + 1, 2)
-        assert p["page"] == 2
-        assert p["has_previous"] is True
-        assert p["has_next"] is False
-        assert p["previous_page"] == 1
-        assert p["start_index"] == PAGE_SIZE
-        assert p["end_index"] == PAGE_SIZE + 1
-
-    def test_middle_page(self):
-        total = PAGE_SIZE * 5 + 50
-        p = _paginate(total, 3)
-        assert p["page"] == 3
-        assert p["total_pages"] == 6
-        assert p["has_previous"] is True
-        assert p["has_next"] is True
-        assert p["previous_page"] == 2
-        assert p["next_page"] == 4
-        assert p["start_index"] == PAGE_SIZE * 2
-        assert p["end_index"] == PAGE_SIZE * 3
-
-    def test_page_clamped_to_max(self):
-        p = _paginate(50, 999)
-        assert p["page"] == 1
-        assert p["total_pages"] == 1
-
-    def test_page_clamped_to_min(self):
-        p = _paginate(50, 0)
-        assert p["page"] == 1
-
-    def test_negative_page(self):
-        p = _paginate(200, -5)
-        assert p["page"] == 1
-
-    @pytest.mark.parametrize("total", [1, 50, 99, 100])
-    def test_single_page_sizes(self, total: int):
-        p = _paginate(total, 1)
-        assert p["total_pages"] == 1
-        assert p["has_next"] is False
-        assert p["end_index"] == total
-
-    def test_page_size_constant(self):
-        assert PAGE_SIZE == 100
+def test_locmem_persistent_key_stays_persistent():
+    cache = _LocMemCache(None)
+    _set_preserving_ttl(cache, "k", "v")
+    assert cache.set_timeout is None
 
 
-class TestZsetMemberEditability:
-    """ZADD passes members as dict keys and every edit re-parses the displayed
-    text as JSON first, so a member that reads back as an array or object can be
-    shown but never written back. Such rows must be marked non-editable.
-    """
+def test_missing_key_gets_the_default_timeout():
+    cache = _RespCache(-2)
+    _set_preserving_ttl(cache, "k", "v")
+    assert cache.set_timeout is _DEFAULT
 
-    class _ZsetCache:
-        def __init__(self, members: list[tuple[Any, float]]):
-            self._members = members
 
-        def zcard(self, key: str) -> int:
+def test_sub_second_precision_is_restored_via_pexpire():
+    cache = _RespCache(1500)
+    _set_preserving_ttl(cache, "k", "v")
+    assert cache.set_timeout == 2
+    assert cache.pexpire_ms == 1500
+
+
+def test_whole_second_ttl_needs_no_pexpire():
+    cache = _RespCache(3600_000)
+    _set_preserving_ttl(cache, "k", "v")
+    assert cache.set_timeout == 3600
+    assert cache.pexpire_ms is None
+
+
+def test_ttl_survives_a_backend_without_pexpire():
+    cache = _PttlOnlyCache(3600_500)
+    _set_preserving_ttl(cache, "k", "v")
+    assert cache.set_timeout == 3601
+
+
+def test_locmem_seconds_ttl_is_carried_over():
+    cache = _LocMemCache(3600)
+    _set_preserving_ttl(cache, "k", "v")
+    assert cache.set_timeout == 3600
+
+
+def test_expiring_key_is_not_promoted_to_the_default_timeout():
+    # LocMem floors ttl(), so a key with under a second left reads as 0.
+    cache = _LocMemCache(0)
+    _set_preserving_ttl(cache, "k", "v")
+    assert cache.set_timeout == 1
+
+
+def test_paginate_empty_collection():
+    p = _paginate(0, 1)
+    assert p["page"] == 1
+    assert p["total_pages"] == 1
+    assert p["total"] == 0
+    assert p["has_previous"] is False
+    assert p["has_next"] is False
+    assert p["start_index"] == 0
+    assert p["end_index"] == 0
+
+
+def test_exactly_one_page():
+    p = _paginate(PAGE_SIZE, 1)
+    assert p["page"] == 1
+    assert p["total_pages"] == 1
+    assert p["has_previous"] is False
+    assert p["has_next"] is False
+    assert p["start_index"] == 0
+    assert p["end_index"] == PAGE_SIZE
+
+
+def test_just_over_one_page():
+    p = _paginate(PAGE_SIZE + 1, 1)
+    assert p["total_pages"] == 2
+    assert p["has_next"] is True
+    assert p["next_page"] == 2
+    assert p["start_index"] == 0
+    assert p["end_index"] == PAGE_SIZE
+
+
+def test_second_page():
+    p = _paginate(PAGE_SIZE + 1, 2)
+    assert p["page"] == 2
+    assert p["has_previous"] is True
+    assert p["has_next"] is False
+    assert p["previous_page"] == 1
+    assert p["start_index"] == PAGE_SIZE
+    assert p["end_index"] == PAGE_SIZE + 1
+
+
+def test_middle_page():
+    total = PAGE_SIZE * 5 + 50
+    p = _paginate(total, 3)
+    assert p["page"] == 3
+    assert p["total_pages"] == 6
+    assert p["has_previous"] is True
+    assert p["has_next"] is True
+    assert p["previous_page"] == 2
+    assert p["next_page"] == 4
+    assert p["start_index"] == PAGE_SIZE * 2
+    assert p["end_index"] == PAGE_SIZE * 3
+
+
+def test_page_clamped_to_max():
+    p = _paginate(50, 999)
+    assert p["page"] == 1
+    assert p["total_pages"] == 1
+
+
+def test_page_clamped_to_min():
+    p = _paginate(50, 0)
+    assert p["page"] == 1
+
+
+def test_negative_page():
+    p = _paginate(200, -5)
+    assert p["page"] == 1
+
+
+@pytest.mark.parametrize("total", [1, 50, 99, 100])
+def test_single_page_sizes(total: int):
+    p = _paginate(total, 1)
+    assert p["total_pages"] == 1
+    assert p["has_next"] is False
+    assert p["end_index"] == total
+
+
+def test_page_size_constant():
+    assert PAGE_SIZE == 100
+
+
+class _ZsetCache:
+    def __init__(self, members: list[tuple[Any, float]]):
+        self._members = members
+
+    def zcard(self, key: str) -> int:
+        del key
+        return len(self._members)
+
+    def zrange(self, key: str, start: int, stop: int, *, withscores: bool = False) -> list:
+        del key, withscores
+        return self._members[start : stop + 1]
+
+
+def _editable(member: Any) -> bool:
+    data = _fetch_type_data(_ZsetCache([(member, 1.0)]), "k", KeyType.ZSET)
+    _display, _score, editable = data["members"][0]
+    return editable
+
+
+# Edits re-parse a member as JSON for ZADD's dict keys, so an array or object member can never be written back.
+def test_json_array_member_is_not_editable():
+    assert _editable(["a", "b"]) is False
+
+
+def test_json_object_member_is_not_editable():
+    assert _editable({"a": 1}) is False
+
+
+def test_plain_member_stays_editable():
+    assert _editable("plain") is True
+
+
+def test_resp_cache_offers_everything(test_cache):
+    assert creatable_types(test_cache) == CREATABLE_TYPES
+
+
+def test_locmem_and_database_have_no_streams():
+    from django.core.cache import caches
+
+    with override_settings(
+        CACHES={
+            "default": {"BACKEND": "django_cachex.cache.LocMemCache", "LOCATION": "creatable-locmem"},
+        },
+    ):
+        offered = creatable_types(caches["default"])
+    assert KeyType.STREAM not in offered
+    assert set(offered) == set(CREATABLE_TYPES) - {KeyType.STREAM}
+
+
+def test_tracking_cache_writes_strings_only():
+    from django_cachex.cache.tracking import _TRACKING_REGISTRY, TrackingCache
+
+    location = "tracking:creatable-types"
+    try:
+        cache = TrackingCache(location, {"OPTIONS": {"transport": "unused"}})
+        assert creatable_types(cache) == (KeyType.STRING,)
+    finally:
+        state = _TRACKING_REGISTRY.pop(location, None)
+        if state is not None:
+            state.shutdown()
+
+
+def test_stock_django_backend_creates_nothing():
+    from django.core.cache.backends.locmem import LocMemCache
+
+    cache = LocMemCache("creatable-stock", {})
+    assert creatable_types(cache) == ()
+    assert "does not support adding keys" in unknown_type_message(cache, "string")
+
+
+def test_message_for_an_unsupported_and_an_unknown_type():
+    from django.core.cache import caches
+
+    with override_settings(
+        CACHES={
+            "default": {"BACKEND": "django_cachex.cache.LocMemCache", "LOCATION": "creatable-msg"},
+        },
+    ):
+        cache = caches["default"]
+        assert unknown_type_message(cache, "stream") == "This cache backend does not support stream keys."
+        assert unknown_type_message(cache, "blob") == "Unknown key type 'blob'."
+
+
+def test_get_size_on_unsupported_container_is_quiet(caplog):
+    """TrackingCache lists its transport's containers but cannot size them;
+    that used to log a full traceback per key on every key list."""
+
+    class _StringsOnly:
+        def llen(self, key: str) -> int:
+            raise NotSupportedError("llen", "StringsOnly")
+
+    with caplog.at_level("DEBUG", logger="django_cachex.admin.helpers"):
+        assert get_size(_StringsOnly(), "k", KeyType.LIST) is None
+    assert caplog.records == []
+
+
+# A backend without xrange used to fall through to an empty result, which the template shows as "Stream is empty".
+def test_backend_without_xrange_reports_an_error():
+    class _NoStreams:
+        def xlen(self, key: str) -> int:
             del key
-            return len(self._members)
+            return 0
 
-        def zrange(self, key: str, start: int, stop: int, *, withscores: bool = False) -> list:
-            del key, withscores
-            return self._members[start : stop + 1]
-
-    def _editable(self, member: Any) -> bool:
-        data = _fetch_type_data(self._ZsetCache([(member, 1.0)]), "k", KeyType.ZSET)
-        _display, _score, editable = data["members"][0]
-        return editable
-
-    def test_json_array_member_is_not_editable(self):
-        assert self._editable(["a", "b"]) is False
-
-    def test_json_object_member_is_not_editable(self):
-        assert self._editable({"a": 1}) is False
-
-    def test_plain_member_stays_editable(self):
-        assert self._editable("plain") is True
+    data = _fetch_type_data(_NoStreams(), "k", KeyType.STREAM)
+    assert "not supported" in data["error"]
 
 
-class TestCreatableTypes:
-    """The add flow offers what the backend can write; each of these was found by
-    creating a key of an unsupported type in the example project's admin."""
-
-    def test_resp_cache_offers_everything(self, test_cache):
-        assert creatable_types(test_cache) == CREATABLE_TYPES
-
-    def test_locmem_and_database_have_no_streams(self):
-        from django.core.cache import caches
-
-        with override_settings(
-            CACHES={
-                "default": {"BACKEND": "django_cachex.cache.LocMemCache", "LOCATION": "creatable-locmem"},
-            },
-        ):
-            offered = creatable_types(caches["default"])
-        assert KeyType.STREAM not in offered
-        assert set(offered) == set(CREATABLE_TYPES) - {KeyType.STREAM}
-
-    def test_tracking_cache_writes_strings_only(self):
-        from django_cachex.cache.tracking import _TRACKING_REGISTRY, TrackingCache
-
-        location = "tracking:creatable-types"
-        try:
-            cache = TrackingCache(location, {"OPTIONS": {"transport": "unused"}})
-            assert creatable_types(cache) == (KeyType.STRING,)
-        finally:
-            state = _TRACKING_REGISTRY.pop(location, None)
-            if state is not None:
-                state.shutdown()
-
-    def test_stock_django_backend_creates_nothing(self):
-        from django.core.cache.backends.locmem import LocMemCache
-
-        cache = LocMemCache("creatable-stock", {})
-        assert creatable_types(cache) == ()
-        assert "does not support adding keys" in unknown_type_message(cache, "string")
-
-    def test_message_for_an_unsupported_and_an_unknown_type(self):
-        from django.core.cache import caches
-
-        with override_settings(
-            CACHES={
-                "default": {"BACKEND": "django_cachex.cache.LocMemCache", "LOCATION": "creatable-msg"},
-            },
-        ):
-            cache = caches["default"]
-            assert unknown_type_message(cache, "stream") == "This cache backend does not support stream keys."
-            assert unknown_type_message(cache, "blob") == "Unknown key type 'blob'."
-
-
-class TestGetSizeOnAnUnsupportedContainer:
-    def test_not_supported_is_quiet(self, caplog):
-        """TrackingCache lists its transport's containers but cannot size them;
-        that used to log a full traceback per key on every key list."""
-
-        class _StringsOnly:
-            def llen(self, key: str) -> int:
-                raise NotSupportedError("llen", "StringsOnly")
-
-        with caplog.at_level("DEBUG", logger="django_cachex.admin.helpers"):
-            assert get_size(_StringsOnly(), "k", KeyType.LIST) is None
-        assert caplog.records == []
-
-
-class TestStreamBrowsingUnsupported:
-    """A backend without ``xrange`` used to fall through to an empty result,
-    which the template renders as "Stream is empty" -- a different claim.
-    """
-
-    def test_backend_without_xrange_reports_an_error(self):
-        class _NoStreams:
-            def xlen(self, key: str) -> int:
-                del key
-                return 0
-
-        data = _fetch_type_data(_NoStreams(), "k", KeyType.STREAM)
-        assert "not supported" in data["error"]
-
-
-class TestPaginationTemplateLocalization:
-    """Page numbers go straight back into ``?page=`` and are parsed as ints."""
-
-    @override_settings(USE_THOUSAND_SEPARATOR=True)
-    def test_page_numbers_render_unlocalized(self):
-        html = render_to_string(
-            "admin/django_cachex/key/key_detail_pagination.html",
-            {"type_data": {"pagination": _paginate(200_000, 1234)}},
-        )
-        assert "?page=1235" in html
-        assert "?page=1,235" not in html
-        assert "?page=2000" in html
-        assert "?page=2,000" not in html
-
-
-class TestMaskLocation:
-    """``LOCATION`` reaches the page for anyone holding ``view_cache``, and a
-    RESP URL carries the password in its userinfo field.
-    """
-
-    @pytest.mark.parametrize(
-        ("location", "expected"),
-        [
-            (
-                "redis://user:hunter2@redis.example.test:6379/0",
-                "redis://user:***@redis.example.test:6379/0",
-            ),
-            ("rediss://:hunter2@redis.example.test:6379", "rediss://:***@redis.example.test:6379"),
-            # ``urllib.parse`` splits userinfo on its first colon and its last
-            # ``@``, so a password holding either is masked whole.
-            ("redis://user:pa:ss@h", "redis://user:***@h"),
-            ("redis://:pa:ss@h", "redis://:***@h"),
-            ("redis://user:p@ss@h", "redis://user:***@h"),
-            ("valkey://user@valkey.example.test:6379", "valkey://user@valkey.example.test:6379"),
-            ("redis://redis.example.test:6379/0", "redis://redis.example.test:6379/0"),
-            ("unix:///var/run/redis/redis.sock?db=1", "unix:///var/run/redis/redis.sock?db=1"),
-            ("127.0.0.1:11211", "127.0.0.1:11211"),
-            ("", ""),
-        ],
+# Page numbers go straight back into ?page= and are parsed as ints.
+@override_settings(USE_THOUSAND_SEPARATOR=True)
+def test_page_numbers_render_unlocalized():
+    html = render_to_string(
+        "admin/django_cachex/key/key_detail_pagination.html",
+        {"type_data": {"pagination": _paginate(200_000, 1234)}},
     )
-    def test_string_locations(self, location: str, expected: str):
-        assert mask_location(location) == expected
+    assert "?page=1235" in html
+    assert "?page=1,235" not in html
+    assert "?page=2000" in html
+    assert "?page=2,000" not in html
 
-    def test_every_url_in_a_sequence_is_masked(self):
-        assert mask_location(
-            [
-                "redis://user:hunter2@replica-a.example.test:6379",
-                "redis://user:hunter2@replica-b.example.test:6379",
-            ],
-        ) == ("redis://user:***@replica-a.example.test:6379, redis://user:***@replica-b.example.test:6379")
 
-    def test_non_string_entries_are_rendered(self):
-        """Sentinel lists are ``(host, port)`` pairs, not strings."""
-        assert mask_location([("sentinel.example.test", 26379)]) == "('sentinel.example.test', 26379)"
+# LOCATION reaches the page for anyone holding view_cache, and a RESP URL carries the password in its userinfo.
+@pytest.mark.parametrize(
+    ("location", "expected"),
+    [
+        (
+            "redis://user:hunter2@redis.example.test:6379/0",
+            "redis://user:***@redis.example.test:6379/0",
+        ),
+        ("rediss://:hunter2@redis.example.test:6379", "rediss://:***@redis.example.test:6379"),
+        # ``urllib.parse`` splits userinfo on its first colon and its last
+        # ``@``, so a password holding either is masked whole.
+        ("redis://user:pa:ss@h", "redis://user:***@h"),
+        ("redis://:pa:ss@h", "redis://:***@h"),
+        ("redis://user:p@ss@h", "redis://user:***@h"),
+        ("valkey://user@valkey.example.test:6379", "valkey://user@valkey.example.test:6379"),
+        ("redis://redis.example.test:6379/0", "redis://redis.example.test:6379/0"),
+        ("unix:///var/run/redis/redis.sock?db=1", "unix:///var/run/redis/redis.sock?db=1"),
+        ("127.0.0.1:11211", "127.0.0.1:11211"),
+        ("", ""),
+    ],
+)
+def test_mask_location_string_locations(location: str, expected: str):
+    assert mask_location(location) == expected
 
-    def test_a_url_quoted_inside_a_sentence_is_masked(self):
-        text = "Error 111 connecting to redis://user:hunter2@redis.example.test:6379/0. Connection refused."
-        assert mask_credentials(text) == (
-            "Error 111 connecting to redis://user:***@redis.example.test:6379/0. Connection refused."
-        )
 
-    def test_every_url_in_a_sentence_is_masked(self):
-        text = "redis://a:pw1@one.example.test failed over to redis://b:pw2@two.example.test"
-        masked = mask_credentials(text)
-        assert "pw1" not in masked
-        assert "pw2" not in masked
-
-    @pytest.mark.parametrize(
-        ("text", "expected"),
+def test_every_url_in_a_sequence_is_masked():
+    assert mask_location(
         [
-            ("redis://h:6379/0?password=hunter2", "redis://h:6379/0?password=***"),
-            ("redis://h:6379/0?db=1&password=hunter2&ssl=true", "redis://h:6379/0?db=1&password=***&ssl=true"),
-            ("unix:///run/redis.sock?password=hun:t@er", "unix:///run/redis.sock?password=***"),
-            ("redis://u:pw@h?password=other", "redis://u:***@h?password=***"),
+            "redis://user:hunter2@replica-a.example.test:6379",
+            "redis://user:hunter2@replica-b.example.test:6379",
         ],
+    ) == ("redis://user:***@replica-a.example.test:6379, redis://user:***@replica-b.example.test:6379")
+
+
+def test_mask_location_non_string_entries_are_rendered():
+    """Sentinel lists are ``(host, port)`` pairs, not strings."""
+    assert mask_location([("sentinel.example.test", 26379)]) == "('sentinel.example.test', 26379)"
+
+
+def test_a_url_quoted_inside_a_sentence_is_masked():
+    text = "Error 111 connecting to redis://user:hunter2@redis.example.test:6379/0. Connection refused."
+    assert mask_credentials(text) == (
+        "Error 111 connecting to redis://user:***@redis.example.test:6379/0. Connection refused."
     )
-    def test_query_parameter_password_is_masked(self, text: str, expected: str):
-        """Regression: redis-py reads ``?password=`` too, and it rendered in clear."""
-        assert mask_credentials(text) == expected
+
+
+def test_every_url_in_a_sentence_is_masked():
+    text = "redis://a:pw1@one.example.test failed over to redis://b:pw2@two.example.test"
+    masked = mask_credentials(text)
+    assert "pw1" not in masked
+    assert "pw2" not in masked
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("redis://h:6379/0?password=hunter2", "redis://h:6379/0?password=***"),
+        ("redis://h:6379/0?db=1&password=hunter2&ssl=true", "redis://h:6379/0?db=1&password=***&ssl=true"),
+        ("unix:///run/redis.sock?password=hun:t@er", "unix:///run/redis.sock?password=***"),
+        ("redis://u:pw@h?password=other", "redis://u:***@h?password=***"),
+    ],
+)
+def test_query_parameter_password_is_masked(text: str, expected: str):
+    """Regression: redis-py reads ``?password=`` too, and it rendered in clear."""
+    assert mask_credentials(text) == expected

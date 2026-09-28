@@ -29,67 +29,64 @@ LARGE_DATA = b"Hello, World! " * 50  # 700 bytes
 SMALL_DATA = b"tiny"  # Below min_length
 
 
-class TestCompressorRoundtrip:
-    """Test compress -> decompress roundtrip for all compressors."""
-
-    def test_roundtrip_large_data(self, compressor):
-        compressed = compressor.compress(LARGE_DATA)
-        decompressed = compressor.decompress(compressed)
-        assert decompressed == LARGE_DATA
-
-    def test_roundtrip_binary_data(self, compressor):
-        data = bytes(range(256)) * 4  # 1024 bytes of all byte values
-        compressed = compressor.compress(data)
-        decompressed = compressor.decompress(compressed)
-        assert decompressed == data
-
-    def test_roundtrip_repeated_data(self, compressor):
-        data = b"\x00" * 1000  # Highly compressible
-        compressed = compressor.compress(data)
-        decompressed = compressor.decompress(compressed)
-        assert decompressed == data
-
-    def test_compression_reduces_size(self, compressor):
-        data = b"abcdefghij" * 100  # 1000 bytes, highly compressible
-        compressed = compressor.compress(data)
-        assert len(compressed) < len(data)
+def test_roundtrip_large_data(compressor):
+    compressed = compressor.compress(LARGE_DATA)
+    decompressed = compressor.decompress(compressed)
+    assert decompressed == LARGE_DATA
 
 
-class TestMinLength:
-    """Test min_length behavior: data below threshold is not compressed."""
-
-    def test_small_data_returned_as_is(self, compressor):
-        result = compressor.compress(SMALL_DATA)
-        assert result == SMALL_DATA
-
-    def test_data_at_boundary(self, compressor):
-        data = b"x" * 256  # Exactly at default min_length
-        result = compressor.compress(data)
-        # At boundary, should still be returned as-is (> not >=)
-        assert result == data
-
-    def test_data_above_boundary(self, compressor):
-        data = b"x" * 257  # Just above min_length
-        compressed = compressor.compress(data)
-        # Should be compressed (though result may differ per compressor)
-        decompressed = compressor.decompress(compressed)
-        assert decompressed == data
-
-    def test_custom_min_length(self):
-        comp = ZlibCompressor(min_length=10)
-        assert comp.min_length == 10
-        data = b"x" * 20
-        compressed = comp.compress(data)
-        decompressed = comp.decompress(compressed)
-        assert decompressed == data
+def test_roundtrip_binary_data(compressor):
+    data = bytes(range(256)) * 4  # 1024 bytes of all byte values
+    compressed = compressor.compress(data)
+    decompressed = compressor.decompress(compressed)
+    assert decompressed == data
 
 
-class TestDecompressErrors:
-    """Test that invalid data raises CompressorError."""
+def test_roundtrip_repeated_data(compressor):
+    data = b"\x00" * 1000  # Highly compressible
+    compressed = compressor.compress(data)
+    decompressed = compressor.decompress(compressed)
+    assert decompressed == data
 
-    def test_invalid_data_raises_error(self, compressor):
-        with pytest.raises(CompressorError):
-            compressor.decompress(b"this is not compressed data!!")
+
+def test_compression_reduces_size(compressor):
+    data = b"abcdefghij" * 100  # 1000 bytes, highly compressible
+    compressed = compressor.compress(data)
+    assert len(compressed) < len(data)
+
+
+def test_small_data_returned_as_is(compressor):
+    result = compressor.compress(SMALL_DATA)
+    assert result == SMALL_DATA
+
+
+def test_data_at_boundary(compressor):
+    data = b"x" * 256  # Exactly at default min_length
+    result = compressor.compress(data)
+    # At boundary, should still be returned as-is (> not >=)
+    assert result == data
+
+
+def test_data_above_boundary(compressor):
+    data = b"x" * 257  # Just above min_length
+    compressed = compressor.compress(data)
+    # Should be compressed (though result may differ per compressor)
+    decompressed = compressor.decompress(compressed)
+    assert decompressed == data
+
+
+def test_custom_min_length():
+    comp = ZlibCompressor(min_length=10)
+    assert comp.min_length == 10
+    data = b"x" * 20
+    compressed = comp.compress(data)
+    decompressed = comp.decompress(compressed)
+    assert decompressed == data
+
+
+def test_invalid_data_raises_error(compressor):
+    with pytest.raises(CompressorError):
+        compressor.decompress(b"this is not compressed data!!")
 
 
 def test_decompress_non_bytes_raises_compressor_error(compressor):
@@ -97,13 +94,10 @@ def test_decompress_non_bytes_raises_compressor_error(compressor):
         compressor.decompress(object())
 
 
-class TestCompressionLevel:
-    """Each compressor accepts a `level=` constructor arg."""
-
-    def test_custom_level(self, compressor):
-        cls = type(compressor)
-        custom = cls(level=1)
-        assert custom.level == 1
-        # Roundtrip still works at custom level.
-        data = b"abcdefghij" * 100
-        assert custom.decompress(custom.compress(data)) == data
+def test_custom_level(compressor):
+    cls = type(compressor)
+    custom = cls(level=1)
+    assert custom.level == 1
+    # Roundtrip still works at custom level.
+    data = b"abcdefghij" * 100
+    assert custom.decompress(custom.compress(data)) == data
