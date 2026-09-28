@@ -16,7 +16,7 @@ A drop-in replacement for Django's built-in Redis cache, plus:
 - TTL and pattern helpers (`ttl()`, `expire()`, `keys()`, `delete_pattern()`).
 - Distributed locks: `cache.lock()`.
 - Weighted semaphores: `cache.semaphore()` for budget-based concurrency gating (counting and weighted, in-process and distributed).
-- Lua scripting with automatic key prefixing and value encoding/decoding.
+- Lua scripting via `eval_script()`, with optional hooks for key prefixing and value encoding/decoding.
 - Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with fallback chains for safe migrations.
 - Cache stampede prevention (TTL-based XFetch).
 - `TrackingCache`, a local read cache over a Redis/Valkey alias, invalidated by the server's `CLIENT TRACKING` or bounded by a local TTL.

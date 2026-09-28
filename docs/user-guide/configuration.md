@@ -116,12 +116,13 @@ whole seconds. `pttl()`, `pexpire()`, `expireat()`,
 `pexpireat()`, `expiretime()` and the hash-field expiration family
 (`hexpire()`, `httl()`, `hsetex()`, `hgetex()` and their relatives) raise
 `NotSupportedError`, and so do `lock()`, `pipeline()`, `eval_script()`,
-`get_client()`, `rename()`, `renamenx()`, `slowlog_get()`, `slowlog_len()`,
-`memory_usage()`, `largest_keys()` (and their `a*` twins), the blocking list
-pops, and the cross-key store commands (`lmove()`, `smove()`, `sinterstore()`
-and friends). Streams are not implemented at all.
+`get_client()`, `rename()`, `renamenx()`, `sscan()`, `sscan_iter()`,
+`clear_all_versions()`, `slowlog_get()`, `slowlog_len()`, `memory_usage()`,
+`largest_keys()` (and their `a*` twins), the blocking list pops, and the
+cross-key store commands (`lmove()`, `smove()`, `sinterstore()` and friends).
+Streams are not implemented at all.
 
-What does work on both: the hash, list, set and sorted-set commands, `type()`,
+What does work on both: the other hash, list, set and sorted-set commands, `type()`,
 `touch()`, `info()`, key listing (`keys()`, `iter_keys()`, `scan()`,
 `delete_pattern()`) and the admin. Key patterns use Redis's glob dialect on
 both, and `DatabaseCache` matches case-sensitively on every database vendor.
@@ -634,3 +635,5 @@ CACHES = {
     }
 }
 ```
+
+To also cache ORM query results in this alias, add `"django_cachex.orm"` to `INSTALLED_APPS`, see [ORM Cache](orm-cache.md).

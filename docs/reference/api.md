@@ -585,6 +585,8 @@ async with await cache.apipeline() as pipe:
 
 Single-key commands are available on the pipeline: `get`, `set`, `delete`, `exists`, `incr`, `decr`, `type`, `rename`, `renamenx`, the TTL commands (`ttl`, `pttl`, `expire`, `pexpire`, `expireat`, `pexpireat`, `expiretime`, `persist`), `memory_usage`, `eval_script` and every non-blocking hash, list, set, sorted-set and stream command (`sscan` and the blocking pops `blpop`/`brpop`/`blmove` are not queueable). The multi-key helpers (`set_many`, `get_many`, `delete_many`), the read-modify-write helpers (`get_or_set`, `add`, `touch`, `has_key`), and the scanning helpers (`keys`, `scan`, `delete_pattern`, `clear`) are not: queue their underlying commands instead. Results are returned as a list in the same order as the commands.
 
+On `RedisClusterCache` and `ValkeyClusterCache`, queueing `rename`, `renamenx`, `smove`, `sdiff`, `sinter`, `sunion`, `sdiffstore`, `sinterstore` or `sunionstore` raises the driver's `RedisClusterException` or `ValkeyClusterException`: its cluster pipeline refuses these multi-key commands. Call them on the cache instead, with keys that share a hash tag (see [Cluster](../user-guide/cluster.md#hash-tags)).
+
 The queueing methods take the same signatures and parameter names as the cache
 methods they queue, so a call reads the same either way: `smove(src, dst,
 member)`, `sunionstore(dest, keys)`, `zscore(key, member)`, `zincrby(key,
@@ -618,7 +620,7 @@ A hash field command queued with no fields (`pipe.httl("h")`, `pipe.hexpire("h",
 | `clear()` / `aclear()` | Remove only this cache's keys (`KEY_PREFIX` + `VERSION`). Implemented as `delete_pattern("*")`. |
 | `flush_db()` / `aflush_db()` | `FLUSHDB`: remove **all** keys in the underlying Redis/Valkey database, regardless of prefix. |
 
-`clear()` is safe when multiple apps share a Redis database. Use `flush_db()` only when you really want to flush the whole database and not the configured Django namespace.
+`clear()` deletes every key under this cache's `KEY_PREFIX` and `VERSION`, so apps that share a database keep each other's keys only when each has its own `KEY_PREFIX`: two caches on the default empty prefix both write `:1:*` keys, and `clear()` on either deletes both. Use `flush_db()` only when you want to empty the whole database, not just the configured Django namespace.
 
 ## Settings Reference
 

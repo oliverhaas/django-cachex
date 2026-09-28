@@ -340,21 +340,25 @@ client.publish("channel", "message")
 
 ## Lua Scripts
 
-Execute Lua scripts with automatic key prefixing and value encoding/decoding.
+Execute Lua scripts with `eval_script()`. Keys and args go to the server as
+given: a `pre_hook` such as `keys_only_pre` adds this cache's key prefix and
+version, and the [hooks](#prepost-processing-hooks) also encode and decode values.
 
 ### Basic Usage
 
 ```python
 from django.core.cache import cache
+from django_cachex import keys_only_pre
 
 # Simple script
 result = cache.eval_script("return 42")
 
-# With keys and args
+# With keys and args; keys_only_pre applies the cache's key prefix and version
 count = cache.eval_script(
     "return redis.call('INCR', KEYS[1])",
     keys=["counter"],
     args=[],
+    pre_hook=keys_only_pre,
 )
 ```
 

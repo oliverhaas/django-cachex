@@ -2,9 +2,53 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- valkey-glide: `xread()` and `xreadgroup()`, their async twins and their pipelined forms return `{}` when no entry arrived, as on the redis-py and valkey-py backends, instead of `None`. `if not result` works on every backend; `result is None` no longer matches an empty read.
+- The pipeline adapter protocols changed for anyone maintaining a custom adapter: `execute()` on `RespPipelineProtocol` and `RespAsyncPipelineProtocol` takes a keyword-only `raise_on_error=True`. With `False`, a failed command's error comes back as its result instead of being raised, which `Pipeline` uses to answer `rename()` and `renamenx()` of a missing key the way the cache does.
+
 ### Features
 
 - `django_cachex.orm`, an opt-in ORM cache derived from django-cachalot 2.9.1. With the app in `INSTALLED_APPS`, the results of ORM queries on PostgreSQL and SQLite are cached in a Redis, Valkey or `TrackingCache` alias and invalidated per table by every write. Cachalot's timestamps are replaced by table generations and write leases, kept by Lua scripts on the cache server, so a query that runs while a write commits can no longer store a stale result. Subqueries count with their tables wherever they sit in a query, and `Now()` anywhere keeps a query from being cached. `invalidate()`, `orm_cache_disabled()`, `table_generations()` and the `invalidate_orm_cache` command make up its API. See [ORM Cache](../user-guide/orm-cache.md), and [Migration](../migration.md#from-django-cachalot) for moving from cachalot and for the cachalot settings it drops.
+
+### Improvements
+
+- The admin pages hashes and sets on the RESP backends with a Lua script that walks `HSCAN` or `SSCAN` past the earlier pages, about 10,000 entries per call, and returns only the page. A hash page used to fetch every field name with `HKEYS`, and a set page every member of the pages before it. Stream pages past the middle are read from the tail with `XREVRANGE`, so no page reads more than about half the stream; a page used to read every entry before it.
+
+### Fixes
+
+- valkey-glide: `blpop()`, `brpop()`, `blmove()`, and `xread()` and `xreadgroup()` with `block`, called directly, async or in a pipeline, run on a short-lived client of their own, one connection per call. Glide sends all of a client's commands over one connection, so a blocking call used to stall every other command in the process until it returned. The dedicated client waits for the block plus `request_timeout` (250 ms by default), and a block of `0` is not cut short.
+- `zpopmin()` and `zpopmax()` without `count` raised `ValueError` under `OPTIONS["protocol"] = 3` on the redis-py and valkey-py backends, directly and in a pipeline. The RESP3 reply to a pop without a count is one flat `[member, score]` pair, which was unpacked as a list of pairs.
+- `Pipeline.rename()` of a missing key raises `KeyNotFoundError` from `execute()`, and `Pipeline.renamenx()` of one returns `False`, as `rename()` and `renamenx()` on the cache do; both raised the driver's error.
+- `add()` and `aadd()` with stampede prevention active treat a key whose TTL has entered the stampede buffer as absent and overwrite it, checking and writing in one script call. `get()` already reports such a key as missing, so `add()` used to refuse to fill a key that every reader saw as empty until the buffer ran out.
+- `get_or_set()` and `aget_or_set()` with `stampede_prevention=False` on an alias with stampede prevention enabled stored the value with the stampede buffer added to its TTL; they now pass the override on to `add()`.
+- `RedisClusterCache` and `ValkeyClusterCache` seed node discovery with every `LOCATION` URL, so they connect while the first node is down; only the first URL was used. Credentials, TLS and the other connection options still come from the first URL.
+- `decode_list_post` keeps a nil element, such as a missing key in an `MGET` reply, as `None` instead of raising `TypeError`. Serializers and compressors handed something other than bytes raise `SerializerError` or `CompressorError` naming its type, instead of a `TypeError` from building the message.
+- The default `scan()` that `LocMemCache` and `DatabaseCache` inherit skipped keys when other keys were deleted between pages: its cursor was an offset into the sorted key list, and every deletion before the cursor moved a key past it. The cursor is now a position in a fixed hash order, so a key present for the whole iteration is always returned; keys come in that order, sorted within each page.
+- `LocMemCache` and `DatabaseCache` follow Redis more closely: `persist()` returns `False` for a key without a TTL; `hdel()` and `zrem()` count a field or member named twice once; `zadd()` rejects a NaN score and `zincrby()` a NaN result (`inf` plus `-inf`) with `ValueError`; `zrangebyscore()` and `zrevrangebyscore()` with a negative `start` return `[]` instead of slicing from the end; and `LocMemCache.sadd()` with an unhashable member raises before adding any of the others.
+- `DatabaseCache.sdiff()` and `sinter()` of a single key returned the backend's internal set type, so storing the result with `set()` created a set-typed key instead of a string holding a Python `set`.
+- `DatabaseCache` hash, list, set and sorted-set writes that insert a key into a table over `MAX_ENTRIES` cull outside their row-locked transaction, as Django's `set()` does. Culling inside it held the key's row lock while deleting other rows, so it could deadlock with a concurrent cull.
+- `TrackingCache`: a listener that finished connecting after `shutdown()` stopped its thread no longer installs itself over the replacement listener and clears the local store; it is closed instead. Under `coherence="ttl"`, an instance inherited across a fork rebinds to a fresh state on first use, as it already did under `coherence="tracking"`, instead of keeping the parent's local store.
+- An in-process `Semaphore.acquire()` interrupted while it waits, by `KeyboardInterrupt` or an exception raised from a signal handler such as Celery's soft time limit, leaves the queue. The dead waiter used to stay at its head and block every later `acquire()` of that semaphore.
+- `RespSemaphore.acquire()` and `aacquire()` reject a NaN `timeout` with `ValueError`; it never reached its deadline, so the acquire waited forever. A second interrupt or cancellation landing on the dequeue after an abandoned acquire no longer leaves the instance marked as held, which made its next `acquire()` raise `SemaphoreError`.
+- The admin renders stream entries that have a field named `items`, and the key list's Start and Next links keep a query parameter named `items`. Django's template lookup resolved `.items` to that field or parameter instead of the dict method.
+- The admin hash page no longer strips field names: a field with leading or trailing spaces could not be edited or deleted, and adding one stored it under the stripped name.
+- Renaming a sorted-set member in the admin onto an existing member is refused instead of overwriting that member's score and dropping the old one. On the RESP backends the rename is one script call, refused when the score changed since the page loaded.
+- The admin's Flush database help and confirmation said a cluster flush only reaches the connected primary; `flush_db()` flushes every primary. The confirmation dialogs escape their translated text for JavaScript, so a translation containing a quote no longer breaks the button.
+- The wheel and the sdist ship `LICENSE.django-redis` for the serializer, compressor and exception code derived from django-redis, which is under BSD-3-Clause, and the README and the docs home page say which parts that covers.
+
+### Documentation
+
+- `clear()` was documented as safe when several apps share a database. It deletes every key under this cache's `KEY_PREFIX` and `VERSION`, so apps keep each other's keys only when each has its own `KEY_PREFIX`; its docstring and the API reference now say so.
+- The README, the docs home page and the Lua guide promised automatic key prefixing and value encoding for Lua scripts. `eval_script()` sends keys and args as given unless a `pre_hook` such as `keys_only_pre` prefixes or encodes them, and the guide's example now passes one.
+- The cluster guide and the pipeline reference name the multi-key commands that the redis-py and valkey-py cluster pipelines refuse with their driver's cluster exception: `rename`, `renamenx`, `smove`, `sdiff`, `sinter`, `sunion` and the `store` variants.
+- The configuration guide lists `sscan()`, `sscan_iter()` and `clear_all_versions()` among the methods `LocMemCache` and `DatabaseCache` do not support.
+
+### Tooling
+
+- CI builds the docs with `mkdocs build --strict` on pull requests. The docs workflow only runs on `main` and tags, so a broken link used to surface after merging.
+- CI runs the cache tests against the oldest client libraries `pyproject.toml` allows (redis-py 6.0.0, valkey-py 6.1.0), and over RESP3, which the redis-py and valkey-py backends otherwise never speak in CI.
+- The release workflow runs the ORM cache tests on SQLite with `LocMemCache` and on PostgreSQL with Redis before tagging.
 
 ## 0.10.0 (September 2026)
 
