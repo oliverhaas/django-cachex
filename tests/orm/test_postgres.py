@@ -271,7 +271,7 @@ class PostgresReadTestCase(TestUtilsMixin, TransactionTestCase):
         """
         Checks that queries with a TransactionNow() parameter are not cached.
         """
-        obj = Test.objects.create(datetime="1992-07-02T12:00:00")
+        obj = Test.objects.create(datetime="1992-07-02T12:00:00+00:00")
         qs = Test.objects.filter(datetime__lte=TransactionNow())
         with self.assertRaises(UncachableQuery):
             self.assert_tables(qs, Test)
