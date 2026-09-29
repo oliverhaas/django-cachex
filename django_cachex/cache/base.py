@@ -290,6 +290,10 @@ class BaseCachex(BaseCache):
         """Delete every key under this cache's prefix, across all versions."""
         raise NotSupportedError("clear_all_versions", self.__class__.__name__)
 
+    def flush_db(self) -> bool:
+        """Delete every key in the database (``FLUSHDB``), whatever its prefix."""
+        raise NotSupportedError("flush_db", self.__class__.__name__)
+
     def rename(
         self,
         src: str,
@@ -360,6 +364,10 @@ class BaseCachex(BaseCache):
     async def aclear_all_versions(self, itersize: int | None = None) -> int:
         """Async: delete every key under this cache's prefix, across all versions."""
         raise NotSupportedError("aclear_all_versions", self.__class__.__name__)
+
+    async def aflush_db(self) -> bool:
+        """Async: delete every key in the database (``FLUSHDB``), whatever its prefix."""
+        raise NotSupportedError("aflush_db", self.__class__.__name__)
 
     async def arename(
         self,

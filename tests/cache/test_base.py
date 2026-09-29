@@ -52,6 +52,7 @@ UNSUPPORTED_OPERATIONS = [
     ("zpopmax", ("key",)),
     ("xlen", ("key",)),
     ("clear_all_versions", ()),
+    ("flush_db", ()),
     ("memory_usage", ("key",)),
     ("largest_keys", ()),
     ("info", ()),
@@ -79,8 +80,8 @@ def test_unsupported_operation_raises(bare_cache: MockExtendedCache, operation, 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("operation", "args"),
-    [("aclear_all_versions", ()), ("amemory_usage", ("key",)), ("alargest_keys", ())],
-    ids=["aclear_all_versions", "amemory_usage", "alargest_keys"],
+    [("aclear_all_versions", ()), ("aflush_db", ()), ("amemory_usage", ("key",)), ("alargest_keys", ())],
+    ids=["aclear_all_versions", "aflush_db", "amemory_usage", "alargest_keys"],
 )
 async def test_unsupported_async_operation_raises(bare_cache: MockExtendedCache, operation, args):
     with pytest.raises(NotSupportedError, match=operation):

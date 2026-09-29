@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- `flush_db()` and `aflush_db()` raise `NotSupportedError` on `LocMemCache`, `DatabaseCache` and `TrackingCache`, like `clear_all_versions()`, instead of `AttributeError`.
+
 ## 0.11.0 (September 2026)
 
 ### Breaking changes

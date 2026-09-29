@@ -21,6 +21,7 @@ from django_cachex.admin.views.base import (
     cache_list_url,
     show_help,
 )
+from django_cachex.cache.resp import RespCache
 from django_cachex.exceptions import NotSupportedError
 
 if TYPE_CHECKING:
@@ -30,9 +31,9 @@ if TYPE_CHECKING:
 def supports_danger_zone(cache: Any) -> bool:
     """Report whether ``cache`` implements the destructive admin operations.
 
-    They exist on ``RespCache`` only; every other backend would 500 on the button.
+    ``BaseCachex`` declares both and raises from them; only ``RespCache`` runs them.
     """
-    return hasattr(cache, "clear_all_versions") and hasattr(cache, "flush_db")
+    return isinstance(cache, RespCache)
 
 
 def _handle_danger_zone_post(
