@@ -41,7 +41,7 @@ Only PostgreSQL and SQLite databases are cached.
 
 ## Settings
 
-All settings live in the `CACHEX_ORM` dict, with upper-case keys.
+All settings live in the `CACHEX_ORM` dict, with upper-case keys. An unknown key is the `cachex_orm.W004` warning.
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -80,7 +80,7 @@ A write holds a lease on its tables around the statement under autocommit, or ar
 
 A cached read costs one round trip to the cache and a miss two. A write under autocommit, or the commit of a transaction that wrote, also costs two.
 
-The keys carry the cache alias's `KEY_PREFIX` and `VERSION`, and the database alias as a hash tag. On a cluster, all keys of one database therefore live on one shard. The keys name database aliases, not databases. Projects or environments sharing a cache server need distinct `KEY_PREFIX`es or database numbers, or each serves the results the other read.
+The keys are `orm:{<database alias>}:g:<table key>` for the generation of a table, `orm:{<database alias>}:l:<table key>` for its leases and `orm:{<database alias>}:q:<query key>` for a result, under the cache alias's `KEY_PREFIX` and `VERSION`. The database alias is the hash tag, so on a cluster all keys of one database live on one shard. The keys name database aliases, not databases. Projects or environments sharing a cache server need distinct `KEY_PREFIX`es or database numbers, or each serves the results the other read.
 
 ### Eviction
 
@@ -157,6 +157,23 @@ python manage.py invalidate_orm_cache                    # every table
 python manage.py invalidate_orm_cache shop               # an app's models, many-to-many tables included
 python manage.py invalidate_orm_cache shop.Order --cache default --db default
 ```
+
+## System checks
+
+| ID | Meaning |
+|----|---------|
+| `cachex_orm.W001` | The cache backend cannot hold the ORM cache, so nothing is cached. |
+| `cachex_orm.W002` | None of the databases are PostgreSQL or SQLite. |
+| `cachex_orm.W003` | `DATABASES` is empty. |
+| `cachex_orm.W004` | `CACHEX_ORM` has unknown keys. |
+| `cachex_orm.W005` | A database listed in `DATABASES` has a `TEST["MIRROR"]`, so it looks like a replica. |
+| `cachex_orm.E001` | `DATABASES` names an alias missing from Django's `DATABASES`. |
+| `cachex_orm.E002` | `DATABASES` is neither `"supported_only"` nor a list, tuple or set. |
+| `cachex_orm.E003` | `CACHE` names an alias missing from `CACHES`. |
+| `cachex_orm.E004` | The cache's serializer does not bring query results back unchanged. |
+| `cachex_orm.E005` | The cache could not be loaded. |
+| `cachex_orm.E006` | A database listed in `DATABASES` is neither PostgreSQL nor SQLite. It is not cached. |
+| `cachex_orm.E007` | A table setting is not a list, tuple or set, like `("django_session")` without its comma. The value counts as empty. |
 
 ## Limits
 

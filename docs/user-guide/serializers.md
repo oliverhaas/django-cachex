@@ -24,6 +24,12 @@ CACHES = {
 | `django_cachex.serializers.orjson.OrjsonSerializer` | Rust-backed JSON | `orjson` |
 | `django_cachex.serializers.ormsgpack.OrmsgpackSerializer` | Rust-backed MessagePack | `ormsgpack` |
 
+!!! warning "Pickle runs code on load"
+    Loading a pickle can run any code it names. Anyone who can write to the
+    cache server can therefore run code in every process that reads from it.
+    Restrict write access to the server, or use a JSON or MessagePack
+    serializer.
+
 Install an optional serializer with its extra:
 
 ```console

@@ -114,8 +114,8 @@ database vendor. These methods and their `a*` twins raise `NotSupportedError`:
   hash-field expiration family (`hexpire()`, `httl()`, `hsetex()`, `hgetex()`
   and their relatives)
 - `lock()`, `pipeline()`, `eval_script()` and `get_client()`
-- `rename()`, `renamenx()`, `sscan()`, `sscan_iter()` and
-  `clear_all_versions()`
+- `rename()`, `renamenx()`, `sscan()`, `sscan_iter()`, `clear_all_versions()`
+  and `flush_db()`
 - `slowlog_get()`, `slowlog_len()`, `memory_usage()` and `largest_keys()`
 - the blocking list pops and the cross-key store commands (`lmove()`,
   `smove()`, `sinterstore()` and the like)
@@ -304,6 +304,9 @@ The `stampede_prevention=` keyword overrides the option for one call. It takes
 original write used, because it decides whether the new TTL includes the
 buffer.
 
+A pipelined `get()` skips the early-recompute check. It returns the stored
+value until the key expires, up to `buffer` seconds after its timeout.
+
 !!! warning "Valkey/Redis backends only"
     `LocMemCache` and `DatabaseCache` ignore the option, and passing the
     keyword to them raises `TypeError`. `TrackingCache` follows its
@@ -400,6 +403,11 @@ CACHES = {
     }
 }
 ```
+
+A `LOCATION` list seeds node discovery with every URL, so the cache connects
+while a seed node is down. On `RedisClusterCache` and `ValkeyClusterCache`,
+credentials, TLS and the other connection options come from the first URL.
+A valkey-glide list must agree on them, as [LOCATION](#location) describes.
 
 See [Cluster](cluster.md) for the cluster restrictions.
 

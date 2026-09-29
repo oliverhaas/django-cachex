@@ -55,13 +55,16 @@ The Valkey/Redis backends and `LocMemCache` take all three flags, and `TrackingC
 | `type(key)` | Get the data type of a key |
 | `memory_usage(key, version=None, *, samples=None)` | Bytes the key and its value take on the server, or `None` for a missing key. `samples` sets the `MEMORY USAGE` sample count for containers (`0` = all) |
 | `largest_keys(pattern="*", count=10, version=None, *, samples=None, itersize=None)` | The `count` largest keys matching `pattern` as `(key, bytes)` pairs, largest first. Runs `MEMORY USAGE` on every matching key |
+| `info(section=None)` | Server statistics from `INFO` as a dict. On the Valkey/Redis backends, `section`, such as `"memory"`, returns one section |
+| `slowlog_get(count=10)` | Up to `count` of the newest slow log entries |
+| `slowlog_len()` | Number of entries in the slow log |
 | `lock(key, ...)` | Get a distributed lock, see [Lock Interface](#lock-interface) |
 | `keys(pattern)` | Get keys matching pattern |
 | `iter_keys(pattern)` | Iterate keys matching pattern |
 | `scan(cursor=0, pattern="*", count=None, version=None, key_type=None)` | Single SCAN iteration. `key_type` keeps only keys of that type |
 | `delete_pattern(pattern)` | Delete keys matching pattern |
-| `rename(src, dst)` | Rename a key; raises `KeyNotFoundError` when `src` does not exist |
-| `renamenx(src, dst)` | Rename a key only if `dst` does not exist; `False` when `dst` exists or `src` does not |
+| `rename(src, dst, version=None, version_src=None, version_dst=None)` | Rename a key; raises `KeyNotFoundError` when `src` does not exist. `version_src` and `version_dst` override `version` for one side |
+| `renamenx(src, dst, version=None, version_src=None, version_dst=None)` | Rename a key only if `dst` does not exist; `False` when `dst` exists or `src` does not |
 
 #### Key patterns
 
@@ -358,6 +361,10 @@ finally:
 
 `release()` frees the claim. `extend(additional_seconds)` adds to the remaining lease and returns `False` when the claim was already released or reaped. `LocMemCache` has no lease, so there `extend()` returns whether the claim is held.
 
+On the Valkey/Redis backends, another caller can reclaim the weight of a claim whose lease expired while its holder still works. The holder's `release()` then finds no claim and logs a warning to the `django_cachex.semaphore` logger instead of raising.
+
+The Valkey/Redis backends keep a semaphore in keys that start with `{<key>}:`, where `<key>` carries the `KEY_PREFIX` and `VERSION`. The braces make `<key>` a hash tag, so on a cluster all of them share a slot. `clear()`, `clear_all_versions()`, `keys()` and the admin key browser skip these keys. They go away when the last claim is released with nobody waiting, and a guard TTL expires them when the last holder dies without releasing.
+
 Async code awaits `aacquire()`, `arelease()` and `aextend()`:
 
 ```python
@@ -418,7 +425,7 @@ The redis-py and valkey-py cluster pipelines refuse some multi-key commands, as 
 | `clear_all_versions(itersize=None)` | Delete this cache's keys (`KEY_PREFIX`) in every version and return the number deleted. |
 | `flush_db()` | Run `FLUSHDB`, which deletes every key in the Redis/Valkey database, whatever its prefix. |
 
-The table describes the Valkey/Redis backends. Only they support `clear_all_versions()` and `flush_db()`.
+The table describes the Valkey/Redis backends. Only they support `clear_all_versions()` and `flush_db()`, and the other backends raise `NotSupportedError`. Neither `clear()` nor `clear_all_versions()` deletes [semaphore](#semaphore-interface) state.
 
 On a shared database, `clear()` spares the keys of other caches only when each cache has its own `KEY_PREFIX`. Two caches on the default empty prefix both write `:1:*` keys, so `clear()` on either deletes the keys of both. Use `flush_db()` only to empty the whole database.
 

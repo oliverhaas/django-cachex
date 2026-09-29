@@ -25,6 +25,10 @@ A cluster has these restrictions, which cover the `a*` twins too:
   `sunionstore`. Call these commands on the cache, with hash-tagged keys.
 - On the redis-py and valkey-py cluster backends, `xautoclaim(justid=True)`
   raises `NotSupportedError`. Call `xautoclaim()` without `justid`.
+- On the redis-py and valkey-py cluster backends, `scan()` raises
+  `NotSupportedError`, because cluster `SCAN` returns one cursor per node. Use
+  `iter_keys()` or `keys()`. On `ValkeyGlideClusterCache`, one `scan()` call
+  returns every matching key, with cursor `0`.
 - The [admin](admin.md#browsing-a-cluster-alias) cannot list keys, because
   cluster `SCAN` returns one cursor per node. Its key detail page still opens a
   key by name.

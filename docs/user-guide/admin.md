@@ -44,7 +44,7 @@ In the cache list, a cache's name opens its info page, and its List Keys link op
 
 ![The cache list with each alias's backend and support level](../assets/screenshot-cache-list.png)
 
-The Flush action calls `cache.clear()` on the selected caches. On the Valkey and Redis backends, `clear()` deletes only the keys that match the alias's `KEY_PREFIX` and `VERSION`. To run `FLUSHDB`, use the danger zone on the cache info page.
+The Flush action calls `cache.clear()` on the selected caches. On the Valkey and Redis backends, `clear()` deletes only the keys that match the alias's `KEY_PREFIX` and `VERSION`. To run `FLUSHDB`, use the danger zone on the cache info page. Django's own `RedisCache` runs `FLUSHDB` in `clear()`, so Flush on it empties the whole database.
 
 The admin masks the password of every connection URL it shows as `***`, on pages and in messages.
 

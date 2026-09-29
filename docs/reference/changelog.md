@@ -6,6 +6,13 @@
 
 - `flush_db()` and `aflush_db()` raise `NotSupportedError` on `LocMemCache`, `DatabaseCache` and `TrackingCache`, like `clear_all_versions()`, instead of `AttributeError`.
 
+### Documentation
+
+- The API reference lists `info()`, `slowlog_get()`, `slowlog_len()`, and the `version_src` and `version_dst` arguments of `rename()` and `renamenx()`.
+- The semaphore docs say that `release()` after an expired lease logs a warning, and that the semaphore keys survive `clear()` and `clear_all_versions()`.
+- The docs say that a pipelined `get()` skips the stampede check, that `scan()` raises `NotSupportedError` on the redis-py and valkey-py cluster backends, and which options a cluster `LOCATION` list takes from its first URL.
+- The serializers guide warns that anyone who can write to the cache server can run code through pickle. The admin guide says that Flush on Django's own `RedisCache` runs `FLUSHDB`.
+
 ## 0.11.0 (September 2026)
 
 ### Breaking changes
