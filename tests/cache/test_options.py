@@ -201,4 +201,4 @@ def test_location_list_without_a_usable_entry_is_rejected(location: list[str]):
 
 def test_location_non_string_list_entry_is_rejected():
     with pytest.raises(ImproperlyConfigured, match="must be URL strings"):
-        RedisCache(server=["redis://a:6379/0", None], params={})  # type: ignore[list-item]
+        RedisCache(server=["redis://a:6379/0", None], params={})

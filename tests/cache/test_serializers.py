@@ -14,7 +14,7 @@ from tests.cache.support import make_cache
 try:
     from django_cachex.serializers.orjson import OrjsonSerializer
 except ImportError:
-    OrjsonSerializer = None  # type: ignore[assignment,misc]
+    OrjsonSerializer = None
 
 
 def test_json_basic_roundtrip():

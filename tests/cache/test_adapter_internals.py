@@ -499,7 +499,7 @@ class _PopClient:
 
 
 class _AsyncPopClient(_PopClient):
-    async def lpop(self, key: str, count: int | None = None) -> Any:  # type: ignore[override]
+    async def lpop(self, key: str, count: int | None = None) -> Any:
         return self.reply
 
     arpop = lpop
@@ -610,11 +610,11 @@ class _XPendingClient:
 
 
 class _AsyncXPendingClient(_XPendingClient):
-    async def xpending_range(self, key: str, group: str, **kwargs: Any) -> Any:  # type: ignore[override]
+    async def xpending_range(self, key: str, group: str, **kwargs: Any) -> Any:
         self.range_kwargs = kwargs
         return []
 
-    async def xpending(self, key: str, group: str) -> Any:  # type: ignore[override]
+    async def xpending(self, key: str, group: str) -> Any:
         self.summary_calls += 1
         return {"pending": 0}
 
@@ -746,7 +746,7 @@ class _WrongTypePipeline:
 
 
 class _AsyncWrongTypePipeline(_WrongTypePipeline):
-    async def execute(self, raise_on_error: bool = True) -> Any:  # type: ignore[override]
+    async def execute(self, raise_on_error: bool = True) -> Any:
         raise self._error
 
 
@@ -853,11 +853,11 @@ def test_different_configuration_produces_different_keys(factory: Any):
 
 def test_nested_objects_are_digested():
     outer_a = _Retry(3)
-    outer_a.backoff = _Retry(1)  # type: ignore[attr-defined]
+    outer_a.backoff = _Retry(1)
     outer_b = _Retry(3)
-    outer_b.backoff = _Retry(1)  # type: ignore[attr-defined]
+    outer_b.backoff = _Retry(1)
     outer_c = _Retry(3)
-    outer_c.backoff = _Retry(2)  # type: ignore[attr-defined]
+    outer_c.backoff = _Retry(2)
 
     assert _options_key({"retry": outer_a}) == _options_key({"retry": outer_b})
     assert _options_key({"retry": outer_a}) != _options_key({"retry": outer_c})
@@ -871,7 +871,7 @@ def test_key_stays_hashable_for_container_options():
 
 def test_self_referencing_value_does_not_recurse_forever():
     looped = _Retry(3)
-    looped.self_ref = looped  # type: ignore[attr-defined]
+    looped.self_ref = looped
 
     key = _options_key({"retry": looped})
     assert {key: "pool"}[key] == "pool"
@@ -1352,19 +1352,19 @@ class _TypeClient:
 
 
 class _AsyncTypeClient(_TypeClient):
-    async def type(self, key: str) -> str:  # type: ignore[override]
+    async def type(self, key: str) -> str:
         return super().type(key)
 
 
 def _type_adapter(client: Any) -> ValkeyPyAdapter:
     adapter = ValkeyPyAdapter.__new__(ValkeyPyAdapter)
-    adapter.get_client = lambda key=None, *, write=False: client  # type: ignore[method-assign]
+    adapter.get_client = lambda key=None, *, write=False: client
 
     async def get_async_client(key: Any = None, *, write: bool = False) -> Any:
         del key, write
         return client
 
-    adapter.get_async_client = get_async_client  # type: ignore[method-assign]
+    adapter.get_async_client = get_async_client
     return adapter
 
 
@@ -1418,10 +1418,10 @@ class _ScriptClient:
 
 
 class _AsyncScriptClient(_ScriptClient):
-    async def evalsha(self, sha: str, numkeys: int, *keys_and_args: Any) -> Any:  # type: ignore[override]
+    async def evalsha(self, sha: str, numkeys: int, *keys_and_args: Any) -> Any:
         return super().evalsha(sha, numkeys, *keys_and_args)
 
-    async def script_load(self, script: str) -> str:  # type: ignore[override]
+    async def script_load(self, script: str) -> str:
         return super().script_load(script)
 
 

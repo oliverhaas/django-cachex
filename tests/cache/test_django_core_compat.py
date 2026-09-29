@@ -174,7 +174,7 @@ def test_get_many_behavior(
     keys = ["many_1", "many_2", "many_3", "many_missing"]
 
     django_result = django_core_cache.get_many(keys)
-    cachex_result = cachex_cache.get_many(keys)  # type: ignore[arg-type]
+    cachex_result = cachex_cache.get_many(keys)
 
     assert django_result == cachex_result
     assert django_result == {"many_1": "v1", "many_2": "v2", "many_3": "v3"}
@@ -199,7 +199,7 @@ def test_set_many_behavior(
     for key in data:
         django_core_cache.delete(key)
 
-    cachex_cache.set_many(data)  # type: ignore[arg-type]
+    cachex_cache.set_many(data)
 
     for key, expected in data.items():
         assert cachex_cache.get(key) == expected

@@ -54,7 +54,7 @@ def db_cache(db) -> Iterator[DatabaseCache]:
     with override_settings(CACHES=DATABASE_CACHES):
         cache = caches["db"]
         cache.clear()
-        yield cache  # type: ignore[misc]
+        yield cache
 
 
 @pytest.fixture
@@ -64,7 +64,7 @@ def small_db_cache(db) -> Iterator[DatabaseCache]:
     with override_settings(CACHES=SMALL_DATABASE_CACHES):
         cache = caches["db_small"]
         cache.clear()
-        yield cache  # type: ignore[misc]
+        yield cache
 
 
 def test_set_nx_new_key_writes(db_cache: DatabaseCache):

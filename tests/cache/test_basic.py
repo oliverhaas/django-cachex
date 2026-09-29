@@ -251,14 +251,14 @@ def test_delete_many_already_deleted(cache: RespCache):
 
 def test_delete_many_with_generator(cache: RespCache):
     cache.set_many({"gen1": 1, "gen2": 2, "gen3": 3})
-    result = cache.delete_many(k for k in ["gen1", "gen2"])  # type: ignore[arg-type]
+    result = cache.delete_many(k for k in ["gen1", "gen2"])
     assert bool(result) is True
     remaining = cache.get_many(["gen1", "gen2", "gen3"])
     assert remaining == {"gen3": 3}
 
 
 def test_delete_many_empty_generator(cache: RespCache):
-    result = cache.delete_many(k for k in cast("list[str]", []))  # type: ignore[arg-type]
+    result = cache.delete_many(k for k in cast("list[str]", []))
     assert bool(result) is False
 
 
@@ -496,7 +496,7 @@ async def test_adelete_many_already_deleted(cache: RespCache):
 @pytest.mark.asyncio
 async def test_adelete_many_with_generator(cache: RespCache):
     await cache.aset_many({"agen1": 1, "agen2": 2, "agen3": 3})
-    result = await cache.adelete_many(k for k in ["agen1", "agen2"])  # type: ignore[arg-type]
+    result = await cache.adelete_many(k for k in ["agen1", "agen2"])
     assert bool(result) is True
     remaining = await cache.aget_many(["agen1", "agen2", "agen3"])
     assert remaining == {"agen3": 3}
@@ -504,7 +504,7 @@ async def test_adelete_many_with_generator(cache: RespCache):
 
 @pytest.mark.asyncio
 async def test_adelete_many_empty_generator(cache: RespCache):
-    result = await cache.adelete_many(k for k in cast("list[str]", []))  # type: ignore[arg-type]
+    result = await cache.adelete_many(k for k in cast("list[str]", []))
     assert bool(result) is False
 
 

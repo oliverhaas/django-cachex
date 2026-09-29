@@ -69,10 +69,10 @@ def test_adapter_class(cache: RespCache):
     from django_cachex.adapters import RedisPyClusterAdapter, RedisPySentinelAdapter
     from django_cachex.adapters.redis_py import _RedisPyMixin
 
-    assert issubclass(  # type: ignore[attr-defined]
+    assert issubclass(
         cache._adapter_class,
         (RedisPyAdapter, RedisPyClusterAdapter, RedisPySentinelAdapter),
-    ) or issubclass(cache._adapter_class, _RedisPyMixin)  # type: ignore[attr-defined]
+    ) or issubclass(cache._adapter_class, _RedisPyMixin)
     assert isinstance(cache.adapter, cache._adapter_class)
 
 

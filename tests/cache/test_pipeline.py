@@ -1698,7 +1698,7 @@ def test_xread_resp2_reply_still_decodes(cache: RespCache):
 
 
 def _last_decoder(pipe: Pipeline) -> Callable:
-    return pipe._decoders[-1]  # type: ignore[return-value]
+    return pipe._decoders[-1]
 
 
 # A nil entry (Redis 6 XCLAIM after XDEL, RESP3 empty reply) decodes like the direct path.

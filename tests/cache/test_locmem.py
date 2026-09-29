@@ -36,7 +36,7 @@ def locmem_cache() -> Iterator[LocMemCache]:
     with override_settings(CACHES=LOCMEM_CACHES):
         cache = caches["locmem"]
         cache.clear()
-        yield cache  # type: ignore[misc]
+        yield cache
 
 
 # =============================================================================
