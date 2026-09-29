@@ -1,37 +1,25 @@
 # Benchmarks
 
-Reference numbers for adapter, serializer and compressor combinations,
-measured with the workloads in [`benchmarks/`][bench-src]. Its README has
-the full methodology. Results shift from run to run, so trust the ordering
-more than the exact values.
+Numbers from the [`benchmarks/`][bench-src] harness. They shift from run to
+run, so trust the ordering more than the exact values.
 
 [bench-src]: https://github.com/oliverhaas/django-cachex/tree/main/benchmarks
 
-## Run environment
+## Setup
 
 - AMD Ryzen 9 5950X (16C/32T) · 32 GiB RAM · Ubuntu 24.04 · Linux 6.17
-- CPython 3.14.2 (GIL build)
-- Django 6.0
+- CPython 3.14.2 (GIL build), Django 6.0
 - Redis 8 / Valkey 8 in local Docker, paired natively per adapter
   (`redis-py` → redis, `valkey-py` / `valkey-glide` → valkey, `django (builtin)` → redis)
 
-## What the workload does
-
-- The sync, async and request-cycle benchmarks run the same seven phases:
-  `get`, `get-miss`, `set`, `mget`, `mset`, `incr` and `delete`. A phase
-  makes 1,000 calls, or 100 calls of 10 keys for `mget` and `mset`. The
-  throughput columns show calls per second. Each phase has 10 timed runs
-  after a warmup pass.
-- The ASGI benchmark starts `granian` with 4 workers and drives 100
-  concurrent `httpx` clients for 20 s against a view that makes 6 cache
-  calls. It samples server RSS and `connected_clients` every 5 s.
-- The compressor micro benchmark skips the cache and times `compress` and
-  `decompress` on a 14 KiB pickle of queryset-shaped data.
+Each column from `get` to `delete` is a phase of 1,000 calls, or 100 calls of
+10 keys for `mget` and `mset`. Throughput is in calls per second. A phase has
+10 timed runs after a warmup pass. The cached value pickles to ~150 B, except
+in the compressor benchmarks.
 
 ## Sync direct
 
-Cache calls such as `cache.get(...)` against the configured backend, with
-no Django request and no asyncio.
+Cache calls such as `cache.get(...)`, with no Django request and no asyncio.
 
 | Adapter | get | get-miss | set | mget | mset | incr | delete | py-mem KiB |
 |---------|----:|---------:|----:|-----:|-----:|-----:|-------:|-----------:|
@@ -56,8 +44,8 @@ The `valkey-py+libvalkey` adapter with each serializer.
 
 ## Compressors (macro)
 
-End-to-end cache calls through `valkey-py+libvalkey` with `pickle`, on a
-14 KiB queryset-shaped payload.
+Cache calls through `valkey-py+libvalkey` with `pickle`, on a 14 KiB
+queryset-shaped payload.
 
 | Compressor | get | get-miss | set | mget | mset | incr | delete | srv-mem KiB |
 |------------|----:|---------:|----:|-----:|-----:|-----:|-------:|------------:|
@@ -98,11 +86,9 @@ sync direct is Django's per-request overhead.
 
 ## Async serial
 
-One awaited call at a time, such as `await cache.aget(...)`, with no
-`gather`. The gap to sync direct is asyncio loop overhead. The redis-py and
-valkey-py backends use the drivers' native async clients (`redis.asyncio`,
-`valkey.asyncio`). Django's built-in `RedisCache` has no native async path,
-so it also pays for `sync_to_async`.
+One awaited call at a time, such as `await cache.aget(...)`. The gap to sync
+direct is asyncio loop overhead. Django's built-in `RedisCache` has no native
+async path, so it also pays for `sync_to_async`.
 
 | Adapter | get | get-miss | set | mget | mset | incr | delete |
 |---------|----:|---------:|----:|-----:|-----:|-----:|-------:|
@@ -115,7 +101,8 @@ so it also pays for `sync_to_async`.
 
 ## Async concurrent (50 in flight)
 
-`asyncio.gather` of 50 calls at a time.
+`asyncio.gather` of 50 calls at a time. Connection counts stay flat between
+phases on every adapter (`Δ = 0`).
 
 | Adapter | get | get-miss | set | mget | mset | incr | delete | conns peak |
 |---------|----:|---------:|----:|-----:|-----:|-----:|-------:|-----------:|
@@ -126,13 +113,12 @@ so it also pays for `sync_to_async`.
 | valkey-glide        |  9,903 | 12,208 |  9,770 | 1,949 | 2,541 | 11,950 | 2,588 | 109 |
 | django (builtin)    |  2,007 |  2,170 |  2,058 |   208 |   206 |  1,058 |   991 | 107 |
 
-Connection counts stay flat between phases on every adapter (`Δ = 0`).
-This benchmark is also the connection-leak smoke test.
-
 ## ASGI full-stack
 
-Granian (4 workers) and httpx (100 concurrent clients, 20 s) against a view
-that makes six async cache calls per request.
+`granian` (4 workers) and `httpx` (100 concurrent clients, 20 s) against a
+view that makes six async cache calls per request. The harness samples server
+RSS and `connected_clients` every 5 s. The req/s column is noisy, so read it
+in rough buckets (~600, ~400, ~200).
 
 | Adapter | req/s | avg ms | p99 ms | RSS peak (MiB) | conns peak | conns settled |
 |---------|------:|-------:|-------:|---------------:|-----------:|--------------:|
@@ -143,26 +129,18 @@ that makes six async cache calls per request.
 | valkey-glide        | 324 | 306.0 | 1,681.9 | 438 | 115 | 115 |
 | django (builtin)    | 200 | 494.0 | 2,421.7 | 523 | 316 | 316 |
 
-req/s is noisy from run to run on this benchmark. Read it in rough buckets
-(~600, ~400, ~200), not as exact ranks.
-
 ## Reproducing
 
-The benchmarks in [`benchmarks/`][bench-src] start their own Redis and
-Valkey containers with `testcontainers`. A Docker daemon is the only host
-requirement:
+The harness starts its own Redis and Valkey containers, so a Docker daemon is
+the only host requirement:
 
 ```console
 uv run pytest benchmarks/ -c benchmarks/pytest.ini
-```
 
-To run a single slice:
-
-```console
+# A single slice
 uv run pytest benchmarks/test_throughput.py::test_adapters_sync \
   -c benchmarks/pytest.ini
 ```
 
-`benchmarks/README.md` lists the slices and the knobs (`N_OPS`, `K_RUNS`,
-`WARMUP_KEYS`, `MGET_BATCH`). It also covers running with simulated network
-latency to reproduce upstream connection-leak claims.
+`benchmarks/README.md` lists the slices, the knobs (`N_OPS`, `K_RUNS`,
+`WARMUP_KEYS`, `MGET_BATCH`) and the full methodology.

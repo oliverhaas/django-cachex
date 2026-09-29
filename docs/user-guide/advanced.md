@@ -1,168 +1,60 @@
 # Advanced Usage
 
-## Serializer
-
-The default serializer is `PickleSerializer` with `pickle.DEFAULT_PROTOCOL`.
-To use another one, name it in the `serializer` option:
-
-```python
-CACHES = {
-    "default": {
-        "BACKEND": "django_cachex.cache.ValkeyCache",
-        "LOCATION": "valkey://127.0.0.1:6379/1",
-        "OPTIONS": {
-            "serializer": "django_cachex.serializers.json.JsonSerializer",
-        },
-    }
-}
-```
-
-cachex instantiates a dotted path with no arguments. To set a constructor
-option such as the pickle protocol, pass an instance:
-
-```python
-from django_cachex.serializers.pickle import PickleSerializer
-
-"OPTIONS": {
-    "serializer": PickleSerializer(protocol=5),
-}
-```
-
-See [Serializers](serializers.md#constructor-options) for the options each serializer takes.
-
-## TTL Operations
-
-### Get TTL
-
-```python
-from django.core.cache import cache
-
-cache.set("foo", "value", timeout=25)
-cache.ttl("foo")  # Returns 25
-cache.ttl("missing")  # Returns -2 (key doesn't exist)
-```
-
-`ttl()` returns the seconds until expiry, `None` for a key without expiry (set
-with `timeout=None`), and `-2` for a missing or expired key.
-
-### Get TTL in Milliseconds
-
-```python
-cache.set("foo", "value", timeout=25)
-cache.pttl("foo")  # Returns 25000
-```
-
-## Expire & Persist
-
-### Set Expiration
-
-```python
-cache.set("foo", "bar", timeout=22)
-cache.expire("foo", timeout=5)
-cache.ttl("foo")  # Returns 5
-```
-
-### Set Expiration in Milliseconds
-
-```python
-cache.set("foo", "bar", timeout=22)
-cache.pexpire("foo", timeout=5500)
-cache.pttl("foo")  # Returns 5500
-```
-
-### Expire at Specific Time
+## TTL and Expiry
 
 ```python
 from datetime import datetime, timedelta
 
-cache.set("foo", "bar", timeout=22)
-cache.expireat("foo", datetime.now() + timedelta(hours=1))
-cache.ttl("foo")  # Returns ~3600
-```
-
-### Expire at Specific Time in Milliseconds
-
-```python
-cache.set("foo", "bar", timeout=22)
-cache.pexpireat("foo", datetime.now() + timedelta(milliseconds=900, hours=1))
-cache.pttl("foo")  # Returns ~3600900
-```
-
-### Remove Expiration
-
-```python
-cache.set("foo", "bar", timeout=22)
-cache.persist("foo")
-cache.ttl("foo")  # Returns None (no expiration)
-```
-
-## Locks
-
-`lock()` returns a distributed lock with the `threading.Lock` interface:
-
-```python
 from django.core.cache import cache
 
+cache.set("foo", "bar", timeout=25)
+cache.ttl("foo")  # 25
+cache.pttl("foo")  # 25000
+cache.ttl("missing")  # -2 (key doesn't exist)
+
+cache.expire("foo", timeout=5)  # ttl() returns 5
+cache.pexpire("foo", timeout=5500)  # pttl() returns 5500
+cache.expireat("foo", datetime.now() + timedelta(hours=1))  # ttl() returns ~3600
+cache.pexpireat("foo", datetime.now() + timedelta(milliseconds=900, hours=1))  # pttl() returns ~3600900
+cache.persist("foo")  # ttl() returns None (no expiration)
+```
+
+`ttl()` returns the seconds until expiry, `None` for a key without expiry (set with `timeout=None`), and `-2` for a missing or expired key.
+
+## Atomic Operations and Locks
+
+```python
+cache.set("key", "value1", nx=True)  # True
+cache.set("key", "value2", nx=True)  # False, the key keeps "value1"
+
+cache.set("counter", 0)
+cache.incr("counter")  # 1
+cache.incr("counter", delta=5)  # 6
+cache.decr("counter")  # 5
+
+# lock() returns a distributed lock with the threading.Lock interface
 with cache.lock("somekey"):
     do_some_thing()
 ```
 
+[Lock Interface](../reference/api.md#lock-interface) lists the lock options.
+
 ## Bulk Operations
 
-### Search Keys
-
 ```python
-from django.core.cache import cache
-
 # Get all matching keys (not recommended for large datasets)
-cache.keys("foo_*")  # Returns ["foo_1", "foo_2"]
-```
+cache.keys("foo_*")  # ["foo_1", "foo_2"]
 
-### Iterate Keys
-
-For large datasets, iterate with server-side cursors:
-
-```python
-# Returns a generator
+# For large datasets, iterate with server-side cursors
 for key in cache.iter_keys("foo_*"):
     print(key)
-```
 
-### Delete by Pattern
-
-```python
 cache.delete_pattern("foo_*")
-```
-
-When many keys match, a larger `itersize` needs fewer round trips:
-
-```python
+# When many keys match, a larger itersize needs fewer round trips
 cache.delete_pattern("foo_*", itersize=100_000)
 ```
 
-The pattern is a case-sensitive Redis glob on every backend. An empty pattern
-matches only the empty key, so `delete_pattern("")` deletes at most one key.
-`"*"` deletes every key under the cache's prefix and version. See
-[Key patterns](../reference/api.md#key-patterns).
-
-## Atomic Operations
-
-### SETNX (Set if Not Exists)
-
-```python
-cache.set("key", "value1", nx=True)  # Returns True
-cache.set("key", "value2", nx=True)  # Returns False
-cache.get("key")  # Returns "value1"
-```
-
-### Increment/Decrement
-
-```python
-cache.set("counter", 0)
-cache.incr("counter")  # Returns 1
-cache.incr("counter", delta=5)  # Returns 6
-cache.decr("counter")  # Returns 5
-```
+The pattern is a case-sensitive Redis glob on every backend. `"*"` matches every key under the cache's prefix and version. See [Key patterns](../reference/api.md#key-patterns).
 
 ## Data Structures
 
@@ -203,11 +95,9 @@ cache.hlen("user:1")  # 3
 cache.hvals("user:1")  # ["Alice", "alice@example.com", 0.5]
 ```
 
-#### Field Expiration
+### Hash Field Expiration
 
-Hash fields can have their own TTL. This needs Redis 7.4+ or Valkey 9.0+, and
-`hsetex` and `hgetex` need Redis 8.0+ or Valkey 9.0+. An older server raises
-`NotSupportedError`.
+Hash fields can have their own TTL on Redis 7.4+ or Valkey 9.0+. `hsetex` and `hgetex` need Redis 8.0+ or Valkey 9.0+. An older server raises `NotSupportedError`.
 
 ```python
 from datetime import datetime, timedelta
@@ -238,11 +128,7 @@ cache.hgetex("session:42", "token", persist=True)  # ["ghi"], TTL removed
 cache.hpersist("session:42", "csrf")  # [1]
 ```
 
-Rewriting a field with `hset`, or with `hsetex` without `keepttl=True`, clears
-that field's TTL. `hsetex()` treats `timeout` the way `set()` does. The default
-uses the backend's `TIMEOUT`, `None` means no expiry, and `timeout=0` deletes
-the fields immediately. Stampede prevention pads key-level timeouts only and
-sends field TTLs as given.
+Rewriting a field with `hset`, or with `hsetex` without `keepttl=True`, clears that field's TTL. `hsetex()` treats `timeout` the way `set()` does. The default uses the backend's `TIMEOUT`, `None` means no expiry, and `timeout=0` deletes the fields immediately.
 
 ### Sorted Sets
 
@@ -324,7 +210,7 @@ cache.lmove("source", "dest", "LEFT", "RIGHT")  # LPOP source, RPUSH dest
 
 ## Raw Client Access
 
-`get_client()` returns the underlying valkey-py or redis-py client:
+`get_client()` returns the underlying client. Its type depends on the backend, as [Raw Client Access](../reference/api.md#raw-client-access) lists.
 
 ```python
 client = cache.get_client()
@@ -333,42 +219,10 @@ client.publish("channel", "message")
 
 ## Lua Scripts
 
-`eval_script()` runs a Lua script and sends its keys and args as given. A
-`pre_hook` such as `keys_only_pre` adds the cache's key prefix and version, and
-the [hooks](#prepost-processing-hooks) also encode and decode values.
-
-### Basic Usage
+`eval_script()` runs a Lua script and sends its keys and args as given. A `pre_hook` transforms the keys and args before the script runs, and a `post_hook` transforms the result. `keys_only_pre`, for example, adds the cache's key prefix and version. With `post_hook=None`, the default, the result comes back unchanged. `aeval_script()` is the async twin. [Lua Script Methods](../reference/api.md#lua-script-methods) covers `EVALSHA` and the hook signatures.
 
 ```python
 from django.core.cache import cache
-from django_cachex import keys_only_pre
-
-# Simple script
-result = cache.eval_script("return 42")
-
-# With keys and args; keys_only_pre applies the cache's key prefix and version
-count = cache.eval_script(
-    "return redis.call('INCR', KEYS[1])",
-    keys=["counter"],
-    args=[],
-    pre_hook=keys_only_pre,
-)
-```
-
-`eval_script()` sends the script's SHA-1 digest with `EVALSHA`. After a
-`NOSCRIPT` reply, it loads the script with `SCRIPT LOAD` and retries. Each
-server receives the full source once per script, and later calls send only the
-40-byte digest. A pipeline sends the full source with `EVAL`, because it cannot
-retry a `NOSCRIPT` reply.
-
-### Pre/Post Processing Hooks
-
-`pre_hook` transforms the keys and args before the script runs, and
-`post_hook` transforms the result.
-
-#### Built-in Helpers
-
-```python
 from django_cachex import (
     Encoded,  # Marks an ARGV entry for encoded_pre
     encoded_pre,  # Prefix keys, encode only the args wrapped in Encoded(...)
@@ -377,16 +231,38 @@ from django_cachex import (
     decode_single_post,  # Decode a single returned value
     decode_list_post,  # Decode a list of returned values
 )
+
+# keys_only_pre applies the cache's key prefix and version
+count = cache.eval_script(
+    """
+    local current = redis.call('INCR', KEYS[1])
+    if current == 1 then
+        redis.call('EXPIRE', KEYS[1], ARGV[1])
+    end
+    return current
+    """,
+    keys=["user:123:requests"],
+    args=[60],
+    pre_hook=keys_only_pre,
+)
+
+# full_encode_pre serializes every arg, decode_single_post decodes the result
+old_session = cache.eval_script(
+    """
+    local old = redis.call('GET', KEYS[1])
+    redis.call('SET', KEYS[1], ARGV[1])
+    return old
+    """,
+    keys=["session:abc"],
+    args=[{"user_id": 123, "permissions": ["read", "write"]}],
+    pre_hook=full_encode_pre,
+    post_hook=decode_single_post,
+)
 ```
 
-With `post_hook=None`, the default, the result comes back unchanged.
+### Mixed Values and Scalars
 
-#### Mixed Values and Scalars
-
-A script's ARGV often mixes two kinds of arguments. Values that a later `get()`
-reads back must go through the serializer and compressor. Scalars that Lua
-consumes with `tonumber` or a string compare must not. Wrap the values in
-`Encoded` and use `encoded_pre`:
+Values that a later `get()` reads back must go through the serializer and compressor. Scalars that Lua consumes with `tonumber` or a string compare must not. Wrap the values in `Encoded`, at any ARGV position, and use `encoded_pre`:
 
 ```python
 from django_cachex import Encoded, encoded_pre
@@ -407,53 +283,6 @@ cache.eval_script(
     keys=["session:abc"],
     args=[Encoded({"user_id": 123}), 300, "1"],
     pre_hook=encoded_pre,
-)
-```
-
-`Encoded` works at any position, for example in a variadic tail such as
-`[str(score), "0", *map(Encoded, members)]` or in alternating field/value pairs
-such as `[field, Encoded(value), ...]`. With nothing wrapped, `encoded_pre` behaves
-like `keys_only_pre`, and with everything wrapped, like `full_encode_pre`.
-
-An `Encoded` in `args` that no `pre_hook` unwraps raises `TypeError` before
-anything reaches the server. So do an `Encoded` in `keys` and
-`Encoded(Encoded(...))`.
-
-#### Key Prefixing
-
-```python
-from django_cachex import keys_only_pre
-
-count = cache.eval_script(
-    """
-    local current = redis.call('INCR', KEYS[1])
-    if current == 1 then
-        redis.call('EXPIRE', KEYS[1], ARGV[1])
-    end
-    return current
-    """,
-    keys=["user:123:requests"],
-    args=[60],
-    pre_hook=keys_only_pre,
-)
-```
-
-#### Encoding Values
-
-```python
-from django_cachex import full_encode_pre, decode_single_post
-
-# Works with any serializable Python object
-old_session = cache.eval_script(
-    """
-    local old = redis.call('GET', KEYS[1])
-    redis.call('SET', KEYS[1], ARGV[1])
-    return old
-    """,
-    keys=["session:abc"],
-    args=[{"user_id": 123, "permissions": ["read", "write"]}],
-    pre_hook=full_encode_pre,
-    post_hook=decode_single_post,
 )
 ```
 
@@ -491,8 +320,6 @@ result = cache.eval_script(
 
 ### Pipeline Support
 
-Scripts can be queued in pipelines:
-
 ```python
 from django_cachex import keys_only_pre
 
@@ -504,25 +331,4 @@ pipe.eval_script(
     pre_hook=keys_only_pre,
 )
 results = pipe.execute()  # [True, 1]
-```
-
-### Async Support
-
-Use `aeval_script()` for async execution:
-
-```python
-from django_cachex import keys_only_pre
-
-count = await cache.aeval_script(
-    """
-    local current = redis.call('INCR', KEYS[1])
-    if current == 1 then
-        redis.call('EXPIRE', KEYS[1], ARGV[1])
-    end
-    return current
-    """,
-    keys=["user:123:requests"],
-    args=[60],
-    pre_hook=keys_only_pre,
-)
 ```

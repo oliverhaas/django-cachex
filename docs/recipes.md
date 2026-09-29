@@ -2,24 +2,13 @@
 
 ## Session Storage
 
-Store Django sessions in Valkey or Redis:
+Store Django sessions on a dedicated Valkey or Redis alias:
 
 ```python
 # settings.py
 SESSION_ENGINE = "django.contrib.sessions.backends.cache"
-SESSION_CACHE_ALIAS = "default"
+SESSION_CACHE_ALIAS = "sessions"
 
-CACHES = {
-    "default": {
-        "BACKEND": "django_cachex.cache.ValkeyCache",
-        "LOCATION": "valkey://127.0.0.1:6379/0",
-    }
-}
-```
-
-To give sessions their own alias and a longer TTL:
-
-```python
 CACHES = {
     "default": {
         "BACKEND": "django_cachex.cache.ValkeyCache",
@@ -28,11 +17,8 @@ CACHES = {
     "sessions": {
         "BACKEND": "django_cachex.cache.ValkeyCache",
         "LOCATION": "valkey://127.0.0.1:6379/1",
-        "TIMEOUT": 86400 * 14,  # 2 weeks
     },
 }
-
-SESSION_CACHE_ALIAS = "sessions"
 ```
 
 ## Rate Limiting
@@ -67,25 +53,9 @@ def is_rate_limited(user_id: str, limit: int = 100, window: int = 60) -> bool:
 
 ## Cache Invalidation Patterns
 
-### Pattern-based deletion
+To delete every key that matches a pattern, call `cache.delete_pattern("user:*")`.
 
-Delete every key that matches a pattern:
-
-```python
-from django.core.cache import cache
-
-# Delete all user-related cache entries
-cache.delete_pattern("user:*")
-
-# Delete all cached API responses
-cache.delete_pattern("api:*:response")
-```
-
-### Versioned cache keys
-
-Invalidate a group of keys by incrementing a version counter. The counter is
-created with `add()` before the increment. It has `timeout=None`, so it cannot
-expire while the data keys it namespaces are alive:
+To invalidate a group of keys, increment a version counter in their names:
 
 ```python
 from django.core.cache import cache
@@ -119,26 +89,15 @@ def get_user_data(user_id: int) -> dict:
     return data
 ```
 
-On the Valkey and Redis backends, `incr()` on a missing key creates it at
-`delta`. Without the `add()`, the first invalidation would leave the counter at
-`1`, the value a missing key reads as, and the stale `v1` data would still be
-served. On `LocMemCache` and `DatabaseCache`, `incr()` on a missing key raises
-`ValueError`. With the counter created at `1` first, the increment moves it to
-`2` on every backend.
+The counter has `timeout=None`, so it cannot expire while its data keys are alive. `add()` creates it at `1` before `incr()`. Without `add()`, `incr()` on the Valkey and Redis backends creates the missing counter at `delta`. The version then stays `1`, and the stale `v1` data stays live. `LocMemCache` and `DatabaseCache` raise `ValueError` instead.
 
 ## Distributed Locking
 
-A lock keeps a critical section from running concurrently. `lease` is the TTL
-of the held lock, so the lock is released if the holder crashes. `timeout` is
-the longest time `acquire()` waits:
+A lock keeps a critical section from running concurrently. `lease` is the TTL of the held lock, so a crashed holder's lock expires. `timeout` is the longest time `acquire()` waits:
 
 ```python
 from django.core.cache import cache
 
-with cache.lock("process-payments", lease=30):
-    process_pending_payments()
-
-# Or bound the wait for the lock:
 lock = cache.lock("process-payments", lease=30, timeout=5)
 if lock.acquire():
     try:
@@ -147,55 +106,36 @@ if lock.acquire():
         lock.release()
 ```
 
-On the redis-py and valkey-py backends, `cache.lock()` returns a wrapper around
-the driver's lock. Its `acquire()` takes the driver's `blocking_timeout`
-argument, and its failures raise `django_cachex.lock.LockError` with the
-driver's error as `__cause__`. `timeout` on `cache.lock()` works on every
-backend with locks.
+The lock also works as a context manager. [Lock Interface](reference/api.md#lock-interface) covers the backend differences in `acquire()` and the lock errors.
 
 ## Gate Memory-Heavy Work With a Weighted Semaphore
 
-A weighted semaphore shares a budget, such as a worker's memory, between tasks of different sizes. Each caller declares its weight and blocks while the budget has no room for it. Admission is FIFO. A waiting large task holds back the smaller tasks queued behind it, even when their weight would fit, so they cannot starve it.
+A weighted semaphore shares a budget, such as a worker's memory, between tasks of different sizes. Each caller declares its weight and blocks while the budget has no room for it. Admission is FIFO, so a waiting large task holds back the smaller tasks queued behind it, even when they would fit.
 
 ```python
 from django.core.cache import cache
-
-# 500 MB budget across all callers. This task uses ~100 MB.
-with cache.semaphore("memory-pool", weight=100, capacity=500, lease=300):
-    convert_huge_image(...)
-```
-
-To bound the wait in `acquire()`, pass `timeout`:
-
-```python
 from django_cachex import SemaphoreTimeoutError
 
 try:
+    # 500 MB budget across all callers. This task uses ~100 MB.
     with cache.semaphore(
         "memory-pool",
         weight=100,
         capacity=500,
         lease=300,
-        timeout=10,
-    ):
-        convert(...)
+        timeout=10,  # longest wait in acquire()
+    ) as sem:
+        convert_huge_image(...)
 except SemaphoreTimeoutError:
     # Defer to a retry or fall back to a smaller pipeline.
     ...
 ```
 
-For async tasks, use `cache.asemaphore`:
-
-```python
-async with await cache.asemaphore("memory-pool", weight=100, capacity=500, lease=300):
-    await convert_async(...)
-```
-
-On the RESP backends, `lease` is required. It is the TTL of the held claim, so if a worker crashes mid-task, the next acquirer reclaims the budget after the lease expires. For a task that can run longer than its lease, call `sem.extend(seconds)`.
+On the Valkey and Redis backends, `lease` is required. It is the TTL of the held claim, so a crashed worker's weight returns to the budget when the lease expires. Call `sem.extend(seconds)` for a task that can run longer than its lease. Async tasks use `async with await cache.asemaphore(...)`.
 
 ## Development Without a Server
 
-For local development without a server, use `LocMemCache`:
+Use `django_cachex.cache.LocMemCache`:
 
 ```python
 # settings_dev.py
@@ -207,13 +147,7 @@ CACHES = {
 }
 ```
 
-`django_cachex.cache.LocMemCache` extends Django's built-in `LocMemCache`
-with the hash, list, set and sorted-set commands (`hset`, `lpush`, `zadd` and
-the rest), the `ttl()` / `expire()` / `persist()` helpers, and admin support.
-It has no streams, locks, pipelines or Lua.
-[Local backends](user-guide/configuration.md#local-backends) lists what it
-supports.
+It extends Django's `LocMemCache` with the hash, list, set and sorted-set commands, the TTL helpers and admin support. It has no streams, locks, pipelines or Lua. [Local backends](user-guide/configuration.md#local-backends) lists what it supports.
 
 !!! tip "For testing"
-    django-cachex runs its test suite with [testcontainers](https://testcontainers.com/).
-    Use it in your tests for accurate server behavior.
+    Use [testcontainers](https://testcontainers.com/) in your tests for accurate server behavior.

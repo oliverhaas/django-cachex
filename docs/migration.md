@@ -16,7 +16,7 @@
 All Django cache options work unchanged. Two behaviors differ on the Valkey and Redis backends:
 
 - `incr()` and `decr()` on a missing key start it from 0, like Redis `INCRBY`, where Django's `RedisCache` raises `ValueError`. Code that relies on the `ValueError` to detect an expired counter must check `has_key()` first. django-cachex's `LocMemCache` and `DatabaseCache` keep Django's behavior.
-- `clear()` deletes only this alias's keys, with a pattern delete over `KEY_PREFIX` and `VERSION`, not the whole database. `flush_db()` is the `FLUSHDB` equivalent.
+- `clear()` deletes only this alias's keys, by pattern over `KEY_PREFIX` and `VERSION`, not the whole database. `flush_db()` runs `FLUSHDB`.
 
 ## From django-valkey
 
@@ -31,22 +31,20 @@ All Django cache options work unchanged. Two behaviors differ on the Valkey and 
 
 | django-valkey | django-cachex |
 |--------------|---------------|
-| `CLIENT_CLASS` | Removed. Use the backend class for the topology. |
-| `SERIALIZER` | `serializer` (lowercase) |
-| `COMPRESSOR` | `compressor` (lowercase) |
+| `CLIENT_CLASS` | Removed. Use the backend class for the topology, such as `RedisSentinelCache` or `ValkeySentinelCache` for Sentinel. |
+| `SERIALIZER` | `serializer` |
+| `COMPRESSOR` | `compressor` |
 | `CONNECTION_POOL_CLASS` | `pool_class` |
 | `CONNECTION_POOL_KWARGS` | Flat keys in `OPTIONS`, forwarded to the pool's `from_url()` |
 | `PARSER_CLASS` | `parser_class` |
 | `SENTINELS` / `SENTINEL_KWARGS` | `sentinels` / `sentinel_kwargs` |
 | `get_valkey_connection()` | `cache.get_client(write=True)` |
-| `cache.lock(key, timeout=30)` | `cache.lock(key, lease=30)`, see [Locks](#locks) |
+| `cache.lock(key, timeout=30)` | `cache.lock(key, lease=30)`, see [Differences](#differences-from-django-redis-and-django-valkey) |
 | `django_valkey.serializers.json.JSONSerializer` | `django_cachex.serializers.json.JsonSerializer` |
 | `django_valkey.serializers.msgpack.MSGPackSerializer` | `django_cachex.serializers.msgpack.MsgpackSerializer` |
 | `django_valkey.compressors.zstd.ZStdCompressor` | `django_cachex.compressors.zstd.ZstdCompressor` |
 
-Import paths change from `django_valkey.*` to `django_cachex.*`, with the class names above. An uppercase key left in `OPTIONS` is forwarded to the driver's `from_url()` as is and fails at connect time with a `TypeError`.
-
-For Sentinel, use `django_cachex.cache.RedisSentinelCache` or `ValkeySentinelCache` instead of `CLIENT_CLASS`.
+Import paths change from `django_valkey.*` to `django_cachex.*`, with the class names above.
 
 ## From django-redis
 
@@ -61,61 +59,30 @@ For Sentinel, use `django_cachex.cache.RedisSentinelCache` or `ValkeySentinelCac
 
 | django-redis | django-cachex |
 |-------------|---------------|
-| `CLIENT_CLASS` | Removed. Use the backend class for the topology. |
-| `SERIALIZER` | `serializer` (lowercase) |
-| `COMPRESSOR` | `compressor` (lowercase) |
+| `CLIENT_CLASS` | Removed. Use the backend class for the topology, such as `RedisSentinelCache` for Sentinel. |
+| `SERIALIZER` | `serializer` |
+| `COMPRESSOR` | `compressor` |
 | `CONNECTION_POOL_CLASS` | `pool_class` |
 | `CONNECTION_POOL_KWARGS` | Flat keys in `OPTIONS`, forwarded to the pool's `from_url()` |
 | `PARSER_CLASS` | `parser_class` |
 | `SENTINELS` / `SENTINEL_KWARGS` | `sentinels` / `sentinel_kwargs` |
 | `get_redis_connection()` | `cache.get_client(write=True)` |
-| `cache.lock(key, timeout=30)` | `cache.lock(key, lease=30)`, see [Locks](#locks) |
+| `cache.lock(key, timeout=30)` | `cache.lock(key, lease=30)`, see [Differences](#differences-from-django-redis-and-django-valkey) |
 | `django_redis.serializers.json.JSONSerializer` | `django_cachex.serializers.json.JsonSerializer` |
 | `django_redis.serializers.msgpack.MSGPackSerializer` | `django_cachex.serializers.msgpack.MsgpackSerializer` |
 | `django_redis.compressors.zstd.ZStdCompressor` | `django_cachex.compressors.zstd.ZstdCompressor` |
 
-Import paths change from `django_redis.*` to `django_cachex.*`, with the class names above. A path-swapped `"django_cachex.serializers.json.JSONSerializer"` raises `ImportError` at `caches[alias]`. An uppercase key left in `OPTIONS` is forwarded to the driver's `from_url()` as is and fails at connect time with a `TypeError`.
-
-For Sentinel, use `django_cachex.cache.RedisSentinelCache` instead of `CLIENT_CLASS`.
+Import paths change from `django_redis.*` to `django_cachex.*`, with the class names above.
 
 ## Differences from django-redis and django-valkey
 
-- `incr()` and `decr()` on a missing key start it from 0, like Redis `INCRBY`, instead of raising `ValueError`.
-- `clear()` is a pattern delete over this alias's `KEY_PREFIX` and `VERSION`, not `FLUSHDB`. Call `flush_db()` for `FLUSHDB`.
+- `incr()`, `decr()` and `clear()` differ in the same way as from [Django's built-in backend](#from-djangos-built-in-cache-backend).
 - `ttl()` returns `-2` for a missing key and `None` for a key without expiry.
-
-### Locks
-
-The `timeout` argument of `cache.lock()` keeps its name but changes its meaning. In django-redis and django-valkey, `timeout=30` is the TTL of the held lock, forwarded to the driver's `client.lock(timeout=...)`. In django-cachex, the lock TTL is `lease`, and the keyword-only `timeout` is how long `acquire()` waits at most before giving up. A mechanically migrated `cache.lock(key, timeout=30)` waits up to 30 seconds to acquire and then holds the lock with no TTL. A crashed holder then blocks every peer until the key is deleted by hand. Rename the argument:
-
-```python
-# django-redis / django-valkey
-with cache.lock("job", timeout=30):
-    ...
-
-# django-cachex
-with cache.lock("job", lease=30):
-    ...
-```
-
-## New Features
-
-Compared with Django's built-in backend, django-cachex adds data structures, TTL and pattern helpers, locks, semaphores, pipelines and scripting. django-redis and django-valkey have TTL and pattern helpers and `cache.lock()`. Compared with them, django-cachex adds:
-
-- Valkey and Redis in one package, with redis-py, valkey-py and valkey-glide behind one API.
-- Serializer and compressor fallback chains, to migrate between formats.
-- Pipelines through `cache.pipeline()` and `cache.apipeline()`, with key prefixing and serialization applied.
-- Weighted semaphores with `cache.semaphore()`.
-- Hash-field TTL (`hexpire()`, `hsetex()`, `hgetex()` and relatives).
-- Lua scripting with key-prefixing and encoding hooks (`eval_script()`).
-- Stampede prevention (`OPTIONS["stampede_prevention"]`).
-- An ORM query cache, `django_cachex.orm`, see [ORM Cache](user-guide/orm-cache.md).
+- `cache.lock()` takes the lock's TTL as `lease`, and its keyword-only `timeout` caps how long `acquire()` waits. An unchanged `cache.lock(key, timeout=30)` therefore holds the lock without a TTL. A crashed holder then blocks every peer until someone deletes the key by hand.
 
 ## From django-cachalot
 
-The [ORM cache](user-guide/orm-cache.md) started as a copy of django-cachalot 2.9.1, so most of its settings and functions carry over under new names. Invalidation works differently: results are stored under table generations instead of timestamps, and writes take leases.
-
-Replace the app and uninstall cachalot, because running both patches the ORM twice:
+The [ORM cache](user-guide/orm-cache.md) is derived from django-cachalot 2.9.1. Replace the app and uninstall cachalot, because running both patches the ORM twice:
 
 ```python
 # Before
@@ -145,14 +112,14 @@ CACHEX_ORM = {
 |-----------------|---------------|
 | `CACHALOT_ENABLED`, `CACHALOT_CACHE`, `CACHALOT_DATABASES`, `CACHALOT_ONLY_CACHABLE_TABLES`, `CACHALOT_ADDITIONAL_TABLES`, `CACHALOT_FINAL_SQL_CHECK` | The same key without the prefix |
 | `CACHALOT_UNCACHABLE_TABLES` | `UNCACHABLE_TABLES`. `django_migrations` is never cached, so it can be left out. |
-| `CACHALOT_TIMEOUT` | `TIMEOUT`. The default is the cache's default timeout, not `None`. Either way, a write leaves its tables' results in the cache until they expire or are evicted (see [Eviction](user-guide/orm-cache.md#eviction)). |
+| `CACHALOT_TIMEOUT` | `TIMEOUT`, which defaults to the cache's default timeout, not `None` |
 | `CACHALOT_ONLY_CACHABLE_APPS`, `CACHALOT_UNCACHABLE_APPS` | Removed. List the apps' tables, many-to-many tables included, in `ONLY_CACHABLE_TABLES` or `UNCACHABLE_TABLES`. |
 | `CACHALOT_CACHE_RANDOM`, `CACHALOT_CACHE_ITERATORS`, `CACHALOT_INVALIDATE_RAW` | Removed. Random queries and the results of `iterator()` are never cached, and raw SQL writes always invalidate. |
-| `CACHALOT_QUERY_KEYGEN`, `CACHALOT_TABLE_KEYGEN` | Removed. The keys go through the cache alias's `KEY_FUNCTION`, which can tell tenants apart. Table generations then differ per tenant too, so a write to a table the tenants share invalidates only the writing tenant's results. List shared tables in `UNCACHABLE_TABLES`. |
+| `CACHALOT_QUERY_KEYGEN`, `CACHALOT_TABLE_KEYGEN` | Removed. Keys go through the cache alias's `KEY_FUNCTION`. If it tells tenants apart, a write to a table they share invalidates only the writing tenant's results, so list shared tables in `UNCACHABLE_TABLES`. |
 | `CACHALOT_USE_UNSUPPORTED_DATABASE`, `CACHALOT_ADDITIONAL_SUPPORTED_DATABASES` | Removed. Only PostgreSQL and SQLite are cached. |
 | | `LEASE_TIMEOUT` has no cachalot counterpart (see [Failures](user-guide/orm-cache.md#failures)). |
 
-`CACHE` must name a django-cachex Redis or Valkey backend, or a `TrackingCache` over one. Its serializer must keep Python types, as the default pickle serializer does. Other backends cache nothing (`cachex_orm.W001`), apart from `LocMemCache` for tests and single processes. See [Caches and databases](user-guide/orm-cache.md#caches-and-databases).
+`CACHE` must name a django-cachex Redis or Valkey backend, or a `TrackingCache` over one. Its serializer must keep Python types, as the default pickle serializer does. Other backends cache nothing, apart from `LocMemCache` for tests and single processes (see [Caches and databases](user-guide/orm-cache.md#caches-and-databases)).
 
 ### API
 
@@ -161,14 +128,14 @@ Import from `django_cachex.orm.api` instead of `cachalot.api`:
 | django-cachalot | django-cachex |
 |-----------------|---------------|
 | `invalidate()` | `invalidate()`, with the same arguments |
-| `cachalot_disabled(all_queries=False)` | `orm_cache_disabled()`, without the `all_queries` argument, which cachalot 2.9.1 ignored. |
-| `get_last_invalidation(*tables_or_models, cache_alias=None, db_alias=None)` | `table_generations(*tables_or_models, db_alias="default")`, returning generations instead of a timestamp and needing at least one table, see [table_generations()](user-guide/orm-cache.md#table_generations) |
-| `manage.py invalidate_cachalot` | `manage.py invalidate_orm_cache`, with the same arguments and options. An app label also covers the app's many-to-many tables, and an app without models invalidates nothing instead of every table. |
-| `cachalot.signals.post_invalidation` | Removed. Cache values derived from tables under their [table_generations()](user-guide/orm-cache.md#table_generations) instead. |
-| `cachalot.*` system checks | `cachex_orm.*`, see [System checks](user-guide/orm-cache.md#system-checks) |
+| `cachalot_disabled(all_queries=False)` | `orm_cache_disabled()`, without `all_queries`, which cachalot 2.9.1 ignored |
+| `get_last_invalidation(*tables_or_models, cache_alias=None, db_alias=None)` | [`table_generations(*tables_or_models, db_alias="default")`](user-guide/orm-cache.md#table_generations), returning generations instead of a timestamp and needing at least one table |
+| `manage.py invalidate_cachalot` | `manage.py invalidate_orm_cache`, with the same arguments and options |
+| `cachalot.signals.post_invalidation` | Removed. Cache values derived from tables under their `table_generations()` instead. |
+| `cachalot.*` system checks | `cachex_orm.*` |
 | The `get_last_invalidation` template tag, the Jinja2 extension and the Django Debug Toolbar panel | Removed |
 
-A value cached under `get_last_invalidation()` is cached under the generations instead. They are `None` when a value computed now must not be cached:
+Cache values under the generations instead of `get_last_invalidation()`. They are `None` when a value computed now must not be cached:
 
 ```python
 # Before
@@ -188,22 +155,19 @@ def order_totals():
 
 ### Behavior differences
 
-- Unlike with cachalot, a query that runs while a write commits cannot leave a stale result behind. While a write holds its lease, queries on its tables are neither served from the cache nor stored in it (see [How invalidation works](user-guide/orm-cache.md#how-invalidation-works)).
-- Writes need the cache. A write that cannot take its lease raises `InvalidationError`, a `DatabaseError`, before its statement or `COMMIT` runs, unless `ENABLED` is off (see [Failures](user-guide/orm-cache.md#failures)).
-- Subqueries nested in expressions, in the ordering or in `FilteredRelation` conditions count with their tables. `Now()` anywhere in a query keeps it from being cached. Cachalot looked at the top level of filters and annotations only. Queries calling `Random()`, `UUID4()`, `UUID7()` or `RandomUUID()` are never cached, like those ordered by `"?"`.
-- Raw SQL is searched for whole table names, in any case. Cachalot found `shop_order` inside `shop_orderline`, which invalidated more than needed, and missed names with uppercase letters, which left stale results. It also missed the tables of an `extra()` select that `values()` hides and the ordering uses.
-- Only PostgreSQL and SQLite are cached. Cachalot also covered MySQL, and listing a MySQL alias in `DATABASES` is the error `cachex_orm.E006`. `"supported_only"` also leaves out replicas, the aliases with a `TEST["MIRROR"]`.
-- The results of `iterator()` are not cached. Cachalot read them into memory in full and cached them by default.
+- Writes need the cache. A write that cannot take its lease raises `InvalidationError`, a `DatabaseError`, unless `ENABLED` is off (see [Failures](user-guide/orm-cache.md#failures)).
+- While a write commits, queries on its tables run against the database and leave no stale result behind (see [How invalidation works](user-guide/orm-cache.md#how-invalidation-works)).
+- Subqueries count with their tables wherever they sit, and `Now()` anywhere in a query keeps it from being cached.
+- A MySQL alias in `DATABASES` is the error `cachex_orm.E006`, and `"supported_only"` leaves out replicas, the aliases with a `TEST["MIRROR"]`.
 - With psycopg2 instead of psycopg 3, queries with JSON, binary or range parameters are not cached.
-- `migrate` invalidates only when it applied a migration, and then the many-to-many tables too. Cachalot invalidated every model after each `migrate` and left out the many-to-many tables.
-- Query parameters are keyed by their type and whole value. Cachalot keyed them by `str()`, which psycopg 3 shortens for long JSON and binary values. Two queries differing only in such a value could share a result under cachalot, as could `Value(1)` and `Value("1")`.
+- A `migrate` that applied nothing invalidates nothing. Cachalot invalidated every model after each `migrate`.
 
 ### Rolling out
 
-Cachalot and the ORM cache keep separate keys, so while both run, the writes of one do not invalidate what the other cached. A deployment that stops every process before starting the new ones can switch in one go. A rolling deployment takes three steps:
+Cachalot and the ORM cache keep separate keys, so while both run, the writes of one do not invalidate what the other cached. A deployment that stops every process first can switch in one go. A rolling deployment takes three steps:
 
-1. Set `CACHALOT_ENABLED = False` and deploy. After every process runs with it, nothing is served from cachalot's cache, and its processes still invalidate it.
-2. Replace cachalot with `django_cachex.orm`, with `"ENABLED": False` in `CACHEX_ORM`, and deploy. Nothing is served from either cache.
+1. Set `CACHALOT_ENABLED = False` and deploy.
+2. After every process runs with it, replace cachalot with `django_cachex.orm`, with `"ENABLED": False` in `CACHEX_ORM`, and deploy.
 3. After the last cachalot process stops, set `"ENABLED": True` and deploy.
 
 Cachalot stored its entries without expiry by default. If they live in a cache of their own, clear it. Otherwise they stay until the server evicts them, which it never does under a `volatile-*` or `noeviction` policy.
