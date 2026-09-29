@@ -463,23 +463,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Connection URL Formats">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#database-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Database Selection
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -487,17 +470,6 @@
     <span class="md-ellipsis">
       
         Basic Usage
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#raw-client-access" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Raw Client Access
       
     </span>
   </a>
@@ -1117,23 +1089,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Connection URL Formats">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#database-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Database Selection
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -1141,17 +1096,6 @@
     <span class="md-ellipsis">
       
         Basic Usage
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#raw-client-access" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Raw Client Access
       
     </span>
   </a>
@@ -1188,7 +1132,7 @@
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">}</span>
 </span></code></pre></div>
 <h2 id="backend-classes">Backend Classes<a class="headerlink" href="#backend-classes" title="Permanent link">&para;</a></h2>
-<p>All backends live in <code>django_cachex.cache</code>. The valkey-py and redis-py backends are the default. The <a href="../../user-guide/configuration/#backend-classes">configuration reference</a> has the full table.</p>
+<p>All backends live in <code>django_cachex.cache</code>. The <a href="../../user-guide/configuration/#backend-classes">configuration reference</a> has the details.</p>
 <table>
 <thead>
 <tr>
@@ -1199,7 +1143,7 @@
 <tbody>
 <tr>
 <td><code>ValkeyCache</code> / <code>RedisCache</code></td>
-<td>Standard connection (valkey-py / redis-py)</td>
+<td>Standalone (valkey-py / redis-py)</td>
 </tr>
 <tr>
 <td><code>ValkeySentinelCache</code> / <code>RedisSentinelCache</code></td>
@@ -1210,20 +1154,12 @@
 <td>Cluster sharding (valkey-py / redis-py)</td>
 </tr>
 <tr>
-<td><code>ValkeyGlideCache</code></td>
-<td>Standard connection through valkey-glide (<code>valkey-glide</code> extra, experimental)</td>
+<td><code>ValkeyGlideCache</code> / <code>ValkeyGlideClusterCache</code></td>
+<td>Standalone / cluster through valkey-glide (<code>valkey-glide</code> extra, experimental)</td>
 </tr>
 <tr>
-<td><code>ValkeyGlideClusterCache</code></td>
-<td>Cluster sharding through valkey-glide (same extra, experimental)</td>
-</tr>
-<tr>
-<td><code>LocMemCache</code></td>
-<td>Drop-in replacement for Django's <code>LocMemCache</code></td>
-</tr>
-<tr>
-<td><code>DatabaseCache</code></td>
-<td>Drop-in replacement for Django's <code>DatabaseCache</code></td>
+<td><code>LocMemCache</code> / <code>DatabaseCache</code></td>
+<td>Drop-in replacements for Django's backends of the same name</td>
 </tr>
 <tr>
 <td><code>TrackingCache</code></td>
@@ -1231,8 +1167,7 @@
 </tr>
 </tbody>
 </table>
-<p>Valkey and Redis are protocol-compatible, so either backend works with either server.
-Prefer Valkey, which remains fully open source.</p>
+<p>Valkey and Redis are protocol-compatible, so either backend works with either server.</p>
 <h2 id="connection-url-formats">Connection URL Formats<a class="headerlink" href="#connection-url-formats" title="Permanent link">&para;</a></h2>
 <p><code>LOCATION</code> uses the valkey-py and redis-py URL notation:</p>
 <table>
@@ -1265,7 +1200,6 @@ Prefer Valkey, which remains fully open source.</p>
 </tr>
 </tbody>
 </table>
-<h3 id="database-selection">Database Selection<a class="headerlink" href="#database-selection" title="Permanent link">&para;</a></h3>
 <p>Set the database number in the query string (<code>valkey://localhost?db=0</code>) or, on every scheme except <code>unix://</code>, in the path (<code>valkey://localhost/0</code>).</p>
 <h2 id="basic-usage">Basic Usage<a class="headerlink" href="#basic-usage" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
@@ -1281,11 +1215,10 @@ Prefer Valkey, which remains fully open source.</p>
 </span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="c1"># Async versions (standard Django methods)</span>
 </span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aget</span><span class="p">(</span><span class="s2">"key"</span><span class="p">)</span>
 </span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="k">await</span> <span class="n">cache</span><span class="o">.</span><span class="n">aset</span><span class="p">(</span><span class="s2">"key"</span><span class="p">,</span> <span class="s2">"value"</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">300</span><span class="p">)</span>
-</span></code></pre></div>
-<h2 id="raw-client-access">Raw Client Access<a class="headerlink" href="#raw-client-access" title="Permanent link">&para;</a></h2>
-<p>For commands the cache does not wrap, use the driver client from <code>cache.get_client()</code>:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">client</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get_client</span><span class="p">()</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">client</span><span class="o">.</span><span class="n">publish</span><span class="p">(</span><span class="s2">"channel"</span><span class="p">,</span> <span class="s2">"message"</span><span class="p">)</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="c1"># The driver client, for commands the cache does not wrap</span>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="n">client</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get_client</span><span class="p">()</span>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="n">client</span><span class="o">.</span><span class="n">publish</span><span class="p">(</span><span class="s2">"channel"</span><span class="p">,</span> <span class="s2">"message"</span><span class="p">)</span>
 </span></code></pre></div>
 
 

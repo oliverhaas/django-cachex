@@ -1123,7 +1123,7 @@
 
 
 <h1 id="trackingcache">TrackingCache<a class="headerlink" href="#trackingcache" title="Permanent link">&para;</a></h1>
-<p><code>TrackingCache</code> keeps local copies of the values it reads from another alias in <code>CACHES</code>, the transport. Reads check the in-process store first, and writes go to the transport and evict the local copy. A listener thread per process receives the server's <code>CLIENT TRACKING</code> invalidations, so a write from any client evicts the local copies in every process. While the listener is disconnected, nothing is cached locally.</p>
+<p><code>TrackingCache</code> keeps local copies of the values it reads from another alias in <code>CACHES</code>, the transport. Reads check the in-process store first, and writes go to the transport and evict the local copy. A listener thread per process receives the server's <code>CLIENT TRACKING</code> invalidations, so a write from any client evicts the local copies in every process.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="s2">"redis"</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        <span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.RedisCache"</span><span class="p">,</span>
@@ -1150,20 +1150,20 @@
 <ul>
 <li>A write from another client evicts the local copy one network round trip after the server applies it.</li>
 <li>A local copy expires with the key's TTL on the server, and <code>local_timeout</code> shortens that further.</li>
-<li><code>FLUSHDB</code>, <code>FLUSHALL</code>, <code>clear()</code> and a lost listener connection empty the local store. Until the listener reconnects, every read goes to the transport.</li>
-<li>The listener pings the server every <code>health_check_interval</code> seconds. On a Sentinel transport it also checks that the primary has not moved. A failed check empties the local store. A stale copy is thus served for at most <code>health_check_interval + poll_timeout</code> seconds, plus 5 seconds for the ping reply.</li>
+<li><code>FLUSHDB</code>, <code>FLUSHALL</code>, <code>clear()</code> and a lost listener connection empty the local store. While the listener is disconnected, every read goes to the transport.</li>
+<li>The listener pings the server every <code>health_check_interval</code> seconds. On a Sentinel transport it also checks that the primary has not moved. A failed check empties the local store. <code>TrackingCache</code> thus serves a stale copy for at most <code>health_check_interval + poll_timeout</code> seconds, plus 5 seconds for the ping reply.</li>
 <li>The transport's stampede prevention also applies to local hits.</li>
 </ul>
-<p>With <code>"coherence": "ttl"</code>, no listener runs and a write from another client stays invisible until the local copy expires, so <code>local_timeout</code> is required. This mode needs no extra connection and works with every transport, cluster and valkey-glide included.</p>
+<p>With <code>"coherence": "ttl"</code>, no listener runs and a write from another client stays invisible until the local copy expires, so this mode requires <code>local_timeout</code>. This mode needs no extra connection and works with every transport, cluster and valkey-glide included.</p>
 <h2 id="tracked-prefixes">Tracked prefixes<a class="headerlink" href="#tracked-prefixes" title="Permanent link">&para;</a></h2>
-<p>The server sends invalidations per key prefix. With Django's default <code>KEY_FUNCTION</code>, <code>TrackingCache</code> tracks the transport's <code>KEY_PREFIX</code> followed by a colon. With a custom <code>KEY_FUNCTION</code>, it tracks every key in the database. <code>OPTIONS["prefixes"]</code> overrides both. The prefixes must not overlap, and a key outside all of them raises <code>ImproperlyConfigured</code>.</p>
+<p>The server sends invalidations per key prefix. With Django's default <code>KEY_FUNCTION</code>, <code>TrackingCache</code> tracks the transport's <code>KEY_PREFIX</code> followed by a colon. With a custom <code>KEY_FUNCTION</code>, it tracks every key in the database. <code>OPTIONS["prefixes"]</code> overrides both. The prefixes must not overlap and must cover every key.</p>
 <h2 id="supported-operations">Supported operations<a class="headerlink" href="#supported-operations" title="Permanent link">&para;</a></h2>
 <p><code>TrackingCache</code> supports the standard Django cache API and the <code>nx</code>, <code>xx</code> and <code>get</code> flags of <code>set()</code>. It passes <code>keys</code>, <code>iter_keys</code>, <code>scan</code>, <code>ttl</code>, <code>pttl</code>, <code>type</code>, <code>expire</code>, <code>persist</code>, <code>delete_pattern</code>, <code>memory_usage</code>, <code>largest_keys</code>, <code>slowlog_get</code> and <code>slowlog_len</code> to the transport, and each has its async twin. <code>delete_pattern()</code>, <code>incr_version()</code> and <code>decr_version()</code> also evict the matching local copies. Other methods, such as the hash, list, set, sorted-set and stream commands, <code>lock()</code> and <code>pipeline()</code>, raise <code>NotSupportedError</code>; call them on the transport alias.</p>
 <p><code>info()</code> adds a <code>tracking</code> section with the listener state, the store size and the hit, miss, invalidation and flush counters. The admin lists a <code>TrackingCache</code> alias as limited, without key browsing. Browse its keys through the transport alias.</p>
 <h2 id="operation">Operation<a class="headerlink" href="#operation" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Tracking coherence needs a redis-py or valkey-py transport, standalone or Sentinel. A cluster or valkey-glide transport raises <code>ImproperlyConfigured</code> on first use.</li>
-<li>Each process opens one extra RESP3 connection for the listener, outside the transport's pool. The first cache operation opens it, and a failed connect is retried in the background.</li>
+<li>Tracking coherence needs a redis-py or valkey-py transport, standalone or Sentinel.</li>
+<li>Each process opens one extra RESP3 connection for the listener, outside the transport's pool. The first cache operation opens it, and the listener thread retries a failed connect in the background.</li>
 <li>Aliases with the same <code>LOCATION</code> (by default the transport alias) share one local store and listener, and must have the same <code>OPTIONS</code>.</li>
 <li><code>close()</code> leaves the listener running between requests, and <code>shutdown()</code> stops it.</li>
 <li>A local miss costs one pipelined <code>GET</code> and <code>PTTL</code>. <code>get_many()</code> fetches all missing keys in one pipeline.</li>

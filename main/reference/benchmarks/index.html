@@ -945,21 +945,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#run-environment" class="md-nav__link">
+  <a href="#setup" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Run environment
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#what-the-workload-does" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What the workload does
+        Setup
       
     </span>
   </a>
@@ -1136,21 +1125,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#run-environment" class="md-nav__link">
+  <a href="#setup" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Run environment
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#what-the-workload-does" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What the workload does
+        Setup
       
     </span>
   </a>
@@ -1277,34 +1255,21 @@
 
 
 <h1 id="benchmarks">Benchmarks<a class="headerlink" href="#benchmarks" title="Permanent link">&para;</a></h1>
-<p>Reference numbers for adapter, serializer and compressor combinations,
-measured with the workloads in <a href="https://github.com/oliverhaas/django-cachex/tree/main/benchmarks"><code>benchmarks/</code></a>. Its README has
-the full methodology. Results shift from run to run, so trust the ordering
-more than the exact values.</p>
-<h2 id="run-environment">Run environment<a class="headerlink" href="#run-environment" title="Permanent link">&para;</a></h2>
+<p>Numbers from the <a href="https://github.com/oliverhaas/django-cachex/tree/main/benchmarks"><code>benchmarks/</code></a> harness. They shift from run to
+run, so trust the ordering more than the exact values.</p>
+<h2 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h2>
 <ul>
 <li>AMD Ryzen 9 5950X (16C/32T) · 32 GiB RAM · Ubuntu 24.04 · Linux 6.17</li>
-<li>CPython 3.14.2 (GIL build)</li>
-<li>Django 6.0</li>
+<li>CPython 3.14.2 (GIL build), Django 6.0</li>
 <li>Redis 8 / Valkey 8 in local Docker, paired natively per adapter
   (<code>redis-py</code> → redis, <code>valkey-py</code> / <code>valkey-glide</code> → valkey, <code>django (builtin)</code> → redis)</li>
 </ul>
-<h2 id="what-the-workload-does">What the workload does<a class="headerlink" href="#what-the-workload-does" title="Permanent link">&para;</a></h2>
-<ul>
-<li>The sync, async and request-cycle benchmarks run the same seven phases:
-  <code>get</code>, <code>get-miss</code>, <code>set</code>, <code>mget</code>, <code>mset</code>, <code>incr</code> and <code>delete</code>. A phase
-  makes 1,000 calls, or 100 calls of 10 keys for <code>mget</code> and <code>mset</code>. The
-  throughput columns show calls per second. Each phase has 10 timed runs
-  after a warmup pass.</li>
-<li>The ASGI benchmark starts <code>granian</code> with 4 workers and drives 100
-  concurrent <code>httpx</code> clients for 20 s against a view that makes 6 cache
-  calls. It samples server RSS and <code>connected_clients</code> every 5 s.</li>
-<li>The compressor micro benchmark skips the cache and times <code>compress</code> and
-  <code>decompress</code> on a 14 KiB pickle of queryset-shaped data.</li>
-</ul>
+<p>Each column from <code>get</code> to <code>delete</code> is a phase of 1,000 calls, or 100 calls of
+10 keys for <code>mget</code> and <code>mset</code>. Throughput is in calls per second. A phase has
+10 timed runs after a warmup pass. The cached value pickles to ~150 B, except
+in the compressor benchmarks.</p>
 <h2 id="sync-direct">Sync direct<a class="headerlink" href="#sync-direct" title="Permanent link">&para;</a></h2>
-<p>Cache calls such as <code>cache.get(...)</code> against the configured backend, with
-no Django request and no asyncio.</p>
+<p>Cache calls such as <code>cache.get(...)</code>, with no Django request and no asyncio.</p>
 <table>
 <thead>
 <tr>
@@ -1457,8 +1422,8 @@ no Django request and no asyncio.</p>
 </tbody>
 </table>
 <h2 id="compressors-macro">Compressors (macro)<a class="headerlink" href="#compressors-macro" title="Permanent link">&para;</a></h2>
-<p>End-to-end cache calls through <code>valkey-py+libvalkey</code> with <code>pickle</code>, on a
-14 KiB queryset-shaped payload.</p>
+<p>Cache calls through <code>valkey-py+libvalkey</code> with <code>pickle</code>, on a 14 KiB
+queryset-shaped payload.</p>
 <table>
 <thead>
 <tr>
@@ -1668,11 +1633,9 @@ sync direct is Django's per-request overhead.</p>
 </tbody>
 </table>
 <h2 id="async-serial">Async serial<a class="headerlink" href="#async-serial" title="Permanent link">&para;</a></h2>
-<p>One awaited call at a time, such as <code>await cache.aget(...)</code>, with no
-<code>gather</code>. The gap to sync direct is asyncio loop overhead. The redis-py and
-valkey-py backends use the drivers' native async clients (<code>redis.asyncio</code>,
-<code>valkey.asyncio</code>). Django's built-in <code>RedisCache</code> has no native async path,
-so it also pays for <code>sync_to_async</code>.</p>
+<p>One awaited call at a time, such as <code>await cache.aget(...)</code>. The gap to sync
+direct is asyncio loop overhead. Django's built-in <code>RedisCache</code> has no native
+async path, so it also pays for <code>sync_to_async</code>.</p>
 <table>
 <thead>
 <tr>
@@ -1750,7 +1713,8 @@ so it also pays for <code>sync_to_async</code>.</p>
 </tbody>
 </table>
 <h2 id="async-concurrent-50-in-flight">Async concurrent (50 in flight)<a class="headerlink" href="#async-concurrent-50-in-flight" title="Permanent link">&para;</a></h2>
-<p><code>asyncio.gather</code> of 50 calls at a time.</p>
+<p><code>asyncio.gather</code> of 50 calls at a time. Connection counts stay flat between
+phases on every adapter (<code>Δ = 0</code>).</p>
 <table>
 <thead>
 <tr>
@@ -1834,11 +1798,11 @@ so it also pays for <code>sync_to_async</code>.</p>
 </tr>
 </tbody>
 </table>
-<p>Connection counts stay flat between phases on every adapter (<code>Δ = 0</code>).
-This benchmark is also the connection-leak smoke test.</p>
 <h2 id="asgi-full-stack">ASGI full-stack<a class="headerlink" href="#asgi-full-stack" title="Permanent link">&para;</a></h2>
-<p>Granian (4 workers) and httpx (100 concurrent clients, 20 s) against a view
-that makes six async cache calls per request.</p>
+<p><code>granian</code> (4 workers) and <code>httpx</code> (100 concurrent clients, 20 s) against a
+view that makes six async cache calls per request. The harness samples server
+RSS and <code>connected_clients</code> every 5 s. The req/s column is noisy, so read it
+in rough buckets (~600, ~400, ~200).</p>
 <table>
 <thead>
 <tr>
@@ -1908,21 +1872,17 @@ that makes six async cache calls per request.</p>
 </tr>
 </tbody>
 </table>
-<p>req/s is noisy from run to run on this benchmark. Read it in rough buckets
-(~600, ~400, ~200), not as exact ranks.</p>
 <h2 id="reproducing">Reproducing<a class="headerlink" href="#reproducing" title="Permanent link">&para;</a></h2>
-<p>The benchmarks in <a href="https://github.com/oliverhaas/django-cachex/tree/main/benchmarks"><code>benchmarks/</code></a> start their own Redis and
-Valkey containers with <code>testcontainers</code>. A Docker daemon is the only host
-requirement:</p>
+<p>The harness starts its own Redis and Valkey containers, so a Docker daemon is
+the only host requirement:</p>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="go">uv run pytest benchmarks/ -c benchmarks/pytest.ini</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="gp"># </span>A<span class="w"> </span>single<span class="w"> </span>slice
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="go">uv run pytest benchmarks/test_throughput.py::test_adapters_sync \</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="go">  -c benchmarks/pytest.ini</span>
 </span></code></pre></div>
-<p>To run a single slice:</p>
-<div class="language-console highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="go">uv run pytest benchmarks/test_throughput.py::test_adapters_sync \</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="go">  -c benchmarks/pytest.ini</span>
-</span></code></pre></div>
-<p><code>benchmarks/README.md</code> lists the slices and the knobs (<code>N_OPS</code>, <code>K_RUNS</code>,
-<code>WARMUP_KEYS</code>, <code>MGET_BATCH</code>). It also covers running with simulated network
-latency to reproduce upstream connection-leak claims.</p>
+<p><code>benchmarks/README.md</code> lists the slices, the knobs (<code>N_OPS</code>, <code>K_RUNS</code>,
+<code>WARMUP_KEYS</code>, <code>MGET_BATCH</code>) and the full methodology.</p>
 
 
 
