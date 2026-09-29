@@ -392,7 +392,7 @@ def _sample_phase(
     fn()
     elapsed = time.perf_counter() - start
     if name in BATCH_PHASES:
-        elapsed *= MGET_BATCH  # normalize batch ops to per-key
+        elapsed *= MGET_BATCH  # the phase made N_OPS // MGET_BATCH calls; report calls per second
     result.phases[name].seconds_per_run.append(elapsed)
     sample = _server_connections(info_client)
     if sample is not None:
