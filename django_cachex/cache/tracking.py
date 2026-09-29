@@ -322,7 +322,7 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         """Return this process's shared state for the LOCATION, creating it after a fork.
 
         A forked child inherits the registry and the instances bound to it but
-        none of the parent's threads, and its copy of the store may already be
+        none of the parent's threads, and its copy of the store can already be
         stale, so a state from another pid is replaced rather than revived.
         """
         shared_options = self._shared_options
@@ -499,7 +499,7 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         try:
             thread.start()
         except BaseException:
-            # Nothing may look connected without a thread to keep it so.
+            # Nothing must look connected without a thread to keep it so.
             state.on_disconnect()
             if listener is not None:
                 listener.close()
@@ -564,7 +564,7 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
     # -- Fetching --
 
     def _fetch(self, made_keys: list[str], *, roll: bool = True) -> dict[str, Any]:
-        """GET + PTTL each key on the transport; store what may be kept.
+        """GET + PTTL each key on the transport; store what can be kept.
 
         ``roll=False`` skips the XFetch roll, for a read-back of a value just written.
         """
@@ -700,7 +700,7 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         if callable(default):
             default = default()
         if self._stampede is not None:
-            # The miss may be an early-recompute signal for a key that still
+            # The miss can be an early-recompute signal for a key that still
             # exists, which add (NX) would leave untouched.
             self.set(key, default, timeout=timeout, version=version)
         else:

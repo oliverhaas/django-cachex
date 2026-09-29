@@ -182,7 +182,7 @@ class Pipeline:
         return [None if item == -1 else item for item in value]
 
     def _decode_single_or_list(self, value: bytes | list[bytes | None] | None) -> Any:
-        """Decode value that may be single item, list, or None (lpop/rpop with count)."""
+        """Decode a value that can be a single item, a list or None (lpop/rpop with count)."""
         if value is None:
             return None
         if isinstance(value, list):

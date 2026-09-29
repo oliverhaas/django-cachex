@@ -52,7 +52,7 @@ class SemaphoreTimeoutError(SemaphoreError):
 
 
 def _caller_stacklevel() -> int:
-    """``stacklevel`` for a warning that should point at the first non-package frame."""
+    """``stacklevel`` that points a warning at the first non-package frame."""
     # A constant can't serve both entry points: ``cache.semaphore(...)`` sits
     # one frame deeper than a direct ``Semaphore(...)``.
     frame: FrameType | None = sys._getframe(1)
@@ -118,7 +118,7 @@ class _SemaphoreRegistry:
                 with state.lock:
                     state.capacity = capacity
                     if capacity > old_capacity:
-                        # A parked waiter may now fit; without this it waits
+                        # A parked waiter can now fit; without this it waits
                         # out its timeout for an unrelated release.
                         _notify_next(state)
         if old_capacity is not None:
@@ -195,7 +195,7 @@ class _Waiter:
             return True
 
     def wake(self) -> bool:
-        """Wake this waiter; False means it is unwakeable and should be dropped."""
+        """Wake this waiter; False means it is unwakeable and must be dropped."""
         if self.event is not None:
             self.event.set()
             return True
@@ -632,7 +632,7 @@ class RespSemaphore:
 
         def _dequeue_token() -> None:
             # Best-effort queue cleanup on any non-success exit; suppress
-            # because we may already be unwinding.
+            # because another exception can already be propagating.
             with contextlib.suppress(Exception):
                 self._adapter.eval(DEQUEUE_LUA, 1, self._queue_key, token)
 
@@ -761,7 +761,7 @@ class RespSemaphore:
         async def _dequeue_token() -> None:
             # Best-effort cleanup of our queue entry on any non-success exit
             # (timeout raise, cancellation, other failure). Suppress because
-            # we may already be unwinding for a different reason.
+            # another exception can already be propagating.
             with contextlib.suppress(Exception):
                 await self._adapter.aeval(DEQUEUE_LUA, 1, self._queue_key, token)
 

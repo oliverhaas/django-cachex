@@ -733,7 +733,7 @@ class RespCache(BaseCachex):
         :class:`~django_cachex.cache.locmem.LocMemCache` keeps that
         behaviour; the RESP path delegates straight to ``INCRBY``, which
         autovivifies a missing key at 0 and returns ``delta``. Counters
-        that may not exist yet therefore need no priming here, but code
+        that do not exist yet therefore need no priming here, but code
         that relies on the ``ValueError`` to detect an expired counter
         must check :meth:`has_key` first, and must not assume the two
         backends agree.
@@ -768,7 +768,7 @@ class RespCache(BaseCachex):
             if callable(default):
                 default = default()
             if self.adapter.resolve_stampede(stampede_prevention):
-                # Stampede may return "miss" for a key that still physically exists.
+                # Stampede can return "miss" for a key that still physically exists.
                 # Use set() (unconditional write) instead of add() (NX) so the
                 # recomputed value actually overwrites the stale key.
                 self.set(key, default, timeout=timeout, version=version, stampede_prevention=stampede_prevention)
@@ -1444,7 +1444,7 @@ class RespCache(BaseCachex):
         """Async factory for :meth:`semaphore`.
 
         ``async def`` for parity with :meth:`alock` (whose async-client
-        construction may require ``await`` on some adapters). The semaphore
+        construction requires ``await`` on some adapters). The semaphore
         itself constructs synchronously; this method exists so callers can use
         ``async with await cache.asemaphore(...) as sem:`` in async views.
         """

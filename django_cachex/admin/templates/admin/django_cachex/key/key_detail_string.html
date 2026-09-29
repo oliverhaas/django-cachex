@@ -5,7 +5,7 @@
     {% if not value_is_editable %}
     <div class="warningnote">
         <strong>{% trans "Complex object detected." %}</strong>
-        {% trans "This value cannot be safely edited because it is not JSON-serializable. It may contain Python objects like datetime, bytes, or custom classes." %}
+        {% trans "This value cannot be safely edited because it is not JSON-serializable. It can contain Python objects like datetime, bytes, or custom classes." %}
     </div>
     {% endif %}
     <form method="post" id="key-form">

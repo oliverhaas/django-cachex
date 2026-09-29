@@ -66,7 +66,7 @@ class _RespPipelineCommandsProtocol(Protocol):
 
     def reset(self) -> None: ...
     # ``execute_command`` is a raw-command passthrough (used for EVAL etc.);
-    # args may be any wire-encodable value, so the typing stays open.
+    # args can be any wire-encodable value, so the typing stays open.
     def execute_command(self, *args: Any) -> Any: ...
 
     # -------------------------------------------------------------------------

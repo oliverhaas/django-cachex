@@ -191,7 +191,7 @@ class _TableFinder:
     def __init__(self, db_alias: str) -> None:
         self.db_alias = db_alias
         self.tables: set[str] = set()
-        # Raw SQL conditions may name any table, unquoted: look for all of
+        # Raw SQL conditions can name any table, unquoted: look for all of
         # them in the final SQL.
         self.raw_sql = False
         self.check_final_sql = orm_settings.FINAL_SQL_CHECK
@@ -274,7 +274,7 @@ def _get_tables(db_alias: str, query: Query, compiler: SQLCompiler | None = None
         final_sql = getattr(compiler, _GENERATED_SQL, None)
         if final_sql is None:
             final_sql = query.get_compiler(db_alias).as_sql()[0].lower()
-        # The ORM quotes the tables it names, raw SQL may not.
+        # The ORM quotes the tables it names; raw SQL does not have to.
         tables |= _get_tables_from_sql(connections[db_alias], final_sql, enable_quote=not finder.raw_sql)
     if not are_all_cachable(tables):
         raise UncachableQuery

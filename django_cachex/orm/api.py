@@ -76,7 +76,7 @@ def invalidate(
                 _invalidation_failed(e, db, db_tables)
         connection = connections[db]
         if db in orm_settings.DATABASES and transaction.in_transaction(connection):
-            # The transaction may still write to the tables: its commit bumps them again.
+            # The transaction can still write to the tables: its commit bumps them again.
             transaction.mark_written(connection, db_tables)
 
 

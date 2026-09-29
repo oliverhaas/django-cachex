@@ -45,7 +45,7 @@ class StampedeConfig:
 
 
 def should_recompute(ttl: int, config: StampedeConfig) -> bool:
-    """Return True when the caller should recompute the value early.
+    """Return True when the caller must recompute the value early.
 
     ``ttl`` is a live remaining TTL in seconds. Every adapter call site
     already gates on ``ttl > 0``, so the ``ttl <= 0`` handling below is

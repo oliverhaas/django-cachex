@@ -161,7 +161,7 @@
 }
 
 /* The admin's fieldset.monospace rule covers textareas only, but the hash field
-   name and the zset score sit next to one and should read the same. */
+   name and the zset score sit next to one and must read the same. */
 fieldset.monospace input.cachex-value-input {
     font-family: var(--font-family-monospace);
 }

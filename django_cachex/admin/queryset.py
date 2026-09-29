@@ -616,7 +616,7 @@ class KeyAdminMixin:
             return KeyQuerySet([], cache_name)
 
         try:
-            # SCAN's COUNT is a hint; Redis may return fewer matching keys
+            # SCAN's COUNT is a hint; Redis can return fewer matching keys
             # per call.  Loop up to 5 times, but stop early once we have at
             # least half the requested count (avoids showing ~2x items when a
             # late batch pushes us way over).

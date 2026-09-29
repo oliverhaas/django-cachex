@@ -127,7 +127,7 @@ class Key(models.Model):
         """Create a primary key from cache name and key name.
 
         The cache name is percent-encoded so a ``:`` in it can't be confused
-        with the separator; key names may contain ``:`` freely because
+        with the separator; key names can contain ``:`` freely because
         ``parse_pk`` splits on the first separator only.
         """
         return f"{quote(cache_name, safe='')}:{key_name}"

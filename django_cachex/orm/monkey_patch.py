@@ -39,7 +39,7 @@ WRITE_COMPILERS = (SQLInsertCompiler, SQLUpdateCompiler, SQLDeleteCompiler)
 # Other result types return cursors or row counts, which are not cached.
 _CACHED_RESULT_TYPES = frozenset({MULTI, SINGLE})
 
-# Raw SQL that may change data or schema, matched on the lowercased SQL. A
+# Raw SQL that can change data or schema, matched on the lowercased SQL. A
 # statement that only reads but matches costs an invalidation, nothing more.
 SQL_DATA_CHANGE_RE = re.compile(
     r"\b(?:insert|update|delete|truncate|alter|create|drop|refresh)\b|\b(?:replace|merge)\s+into\b",
@@ -60,7 +60,7 @@ _NOTHING: frozenset[str] = frozenset()
 
 
 def _execute(execute: Callable[[], Any]) -> tuple[Any, bool]:
-    """Run the query; return its result, materialized unless iterator() streams it, and whether it may be cached."""
+    """Run the query; return its result, materialized unless iterator() streams it, and whether it can be cached."""
     result = execute()
     if result.__class__ is types.GeneratorType:
         return result, False
@@ -236,7 +236,7 @@ def _patch_cursor(original: Callable[..., Any]) -> Callable[..., Any]:
         lowered = (sql.decode(errors="replace") if isinstance(sql, bytes) else str(sql)).lower()
         tables: set[str] = set()
         if SQL_DATA_CHANGE_RE.search(lowered):
-            # The tables the SQL may write to, and those it changes through their foreign keys.
+            # The tables the SQL can write to, and those it changes through their foreign keys.
             tables = _get_tables_from_sql(connection, lowered)
             truncate = bool(_TRUNCATE_CASCADE_RE.search(lowered))
             if tables and (truncate or "delete" in lowered):
