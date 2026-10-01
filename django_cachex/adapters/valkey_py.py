@@ -243,6 +243,12 @@ _TLS_SCHEMES = frozenset({"rediss", "valkeys"})
 
 _VALKEY_ASYNC_POOLS: AsyncPoolsRegistry = weakref.WeakKeyDictionary()
 
+# Keyed like the async pools minus the loop. Django gives every thread and
+# task its own ``BaseCache``, and a pool per instance would connect anew.
+PoolsRegistry = dict[tuple[Any, ...], Any]
+_VALKEY_SYNC_POOLS: PoolsRegistry = {}
+_SYNC_POOLS_LOCK = threading.Lock()
+
 # Cluster-client caches, shared process-wide. Sync clusters are pooled by
 # config-key inside a thread-safe dict; async clusters live under the same
 # WeakKeyDictionary[loop] shape as the regular async pools because they're
@@ -671,6 +677,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
     # the ImportError without overriding ``__init__``.
     _LIB_AVAILABLE: bool = _VALKEY_AVAILABLE
 
+    _sync_pools = _VALKEY_SYNC_POOLS
     _async_pools = _VALKEY_ASYNC_POOLS
 
     # Safe here because a throwaway client is cheap; the cluster adapter can
@@ -790,17 +797,25 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         return result
 
     def _get_connection_pool(self, *, write: bool) -> Any:
-        """Get a connection pool for the given operation type."""
+        """Get the pool for the given operation type from ``_sync_pools``.
+
+        ``_pools`` holds this instance's pools, so later calls skip the lock.
+        """
         index = self._get_connection_pool_index(write=write)
-        if index not in self._pools:
-            if self._pool_class is None:
-                msg = "Subclasses must set _pool_class"
-                raise RuntimeError(msg)
-            self._pools[index] = self._pool_class.from_url(
-                self._servers[index],
-                **self._pool_options,
-            )
-        return self._pools[index]
+        if index in self._pools:
+            return self._pools[index]
+
+        if self._pool_class is None:
+            msg = "Subclasses must set _pool_class"
+            raise RuntimeError(msg)
+        key = (self._pool_class, self._servers[index], _options_key(self._pool_options), index)
+        with _SYNC_POOLS_LOCK:
+            pool = self._sync_pools.get(key)
+            if pool is None:
+                pool = self._pool_class.from_url(self._servers[index], **self._pool_options)
+                self._sync_pools[key] = pool
+        self._pools[index] = pool
+        return pool
 
     def _new_client(self, pool: Any) -> Any:
         """Build a fresh client for ``pool``, safe for a caller to mutate."""
@@ -3732,29 +3747,41 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
 
     @override
     def _get_connection_pool(self, *, write: bool) -> ConnectionPool:
+        """Get the Sentinel-managed pool from ``_sync_pools``; it keeps its creator's sentinel manager."""
         index = self._get_connection_pool_index(write=write)
 
         if index in self._pools:
             return self._pools[index]
 
-        service_name, is_master, clean_url = self._parse_sentinel_url(index)
-
-        pool_options: dict[str, Any] = dict(self._pool_options)
-        pool_options.update(
-            service_name=service_name,
-            sentinel_manager=self._sentinel,
-            is_master=is_master,
-        )
-        tls_connection_class = self._tls_connection_class(clean_url, is_async=False)
-        if tls_connection_class is not None:
-            pool_options["connection_class"] = tls_connection_class
-
         if self._sentinel_pool_class is None:
             msg = "Subclasses must set _sentinel_pool_class"
             raise RuntimeError(msg)
-        pool = self._sentinel_pool_class.from_url(clean_url, **pool_options)
-        self._pools[index] = pool
 
+        service_name, is_master, clean_url = self._parse_sentinel_url(index)
+        key = (
+            self._sentinel_pool_class,
+            clean_url,
+            service_name,
+            is_master,
+            *self._fleet_key,
+            _options_key(self._pool_options),
+            index,
+        )
+        with _SYNC_POOLS_LOCK:
+            pool = self._sync_pools.get(key)
+            if pool is None:
+                pool_options: dict[str, Any] = dict(self._pool_options)
+                pool_options.update(
+                    service_name=service_name,
+                    sentinel_manager=self._sentinel,
+                    is_master=is_master,
+                )
+                tls_connection_class = self._tls_connection_class(clean_url, is_async=False)
+                if tls_connection_class is not None:
+                    pool_options["connection_class"] = tls_connection_class
+                pool = self._sentinel_pool_class.from_url(clean_url, **pool_options)
+                self._sync_pools[key] = pool
+        self._pools[index] = pool
         return pool
 
     def _get_async_sentinel(self) -> Any:
@@ -3827,17 +3854,24 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         return {k: v for k, v in self._pool_options.items() if k != "parser_class"}
 
     @cached_property
+    def _fleet_key(self) -> tuple[Any, ...]:
+        """The fleet and ``sentinel_kwargs``, standing in for a pool's sentinel manager in registry keys.
+
+        Each adapter instance builds its own manager, and asgiref hands every
+        thread and task a fresh instance, so the manager itself would split pools.
+        """
+        sentinels = self._options.get("sentinels") or ()
+        return (
+            tuple(tuple(entry) for entry in sentinels),
+            _options_key(self._options.get("sentinel_kwargs") or {}),
+        )
+
+    @cached_property
     def _async_pool_targets(self) -> tuple[tuple[str, bool, str, tuple[Any, ...]], ...]:
         """``(service_name, is_master, clean_url, registry key)`` per server index.
 
-        Computed once: the async path looks its pool up on every awaited
-        command. The key must be stable across adapter instances (asgiref
-        hands each task a fresh one), so the fleet stands in for its
-        sentinel manager.
+        Computed once: the async path looks its pool up on every awaited command.
         """
-        sentinels = self._options.get("sentinels") or ()
-        fleet = tuple(tuple(entry) for entry in sentinels)
-        sentinel_kwargs_key = _options_key(self._options.get("sentinel_kwargs") or {})
         pool_options_key = _options_key(self._async_sentinel_pool_options())
         targets = []
         for index in range(len(self._servers)):
@@ -3847,8 +3881,7 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
                 clean_url,
                 service_name,
                 is_master,
-                fleet,
-                sentinel_kwargs_key,
+                *self._fleet_key,
                 pool_options_key,
                 index,
             )

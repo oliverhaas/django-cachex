@@ -264,6 +264,12 @@ Compression applies only to values longer than the compressor's `min_length`
 }
 ```
 
+Every thread in the process shares a pool, and so does every alias with the
+same `LOCATION` and connection options, so `max_connections` caps them all
+together. redis-py 8 defaults it to 100. Past the cap a command fails with
+`Too many connections`, unless `pool_class` is the driver's
+`BlockingConnectionPool`, which waits for a free connection.
+
 On a Sentinel backend, `pool_class` and `async_pool_class` default to the
 driver's sync and async `SentinelConnectionPool`, and a replacement must
 subclass the matching class. The redis-py and valkey-py cluster backends reject

@@ -47,7 +47,7 @@ Queueing methods such as `set()` and `hset()` are synchronous. Await only `apipe
 
 ## Event Loops and Connection Pools
 
-On the redis-py and valkey-py backends, sync and async calls use separate connection pools. Async calls use one pool per server and event loop, because connections belong to the loop that opened them. Each loop reuses its pools for every call.
+On the redis-py and valkey-py backends, sync and async calls use separate connection pools. Sync calls use one pool per server, which every thread shares. Async calls use one pool per server and event loop, because connections belong to the loop that opened them. Each loop reuses its pools for every call.
 
 !!! warning "Short-lived event loops"
     Each `asyncio.run()` starts a new event loop, so it opens a new pool and a new TCP connection. Use the sync methods where loops are short-lived.

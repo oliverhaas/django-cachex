@@ -247,13 +247,15 @@ def test_multiple_servers_pool_selection(redis_container: RedisContainerInfo, mo
         randint.assert_called_once_with(1, 2)
 
 
-def test_sync_pool_is_cached_per_instance(cache: RespCache):
-    pool1 = cache.adapter._get_connection_pool(write=True)
-    pool2 = cache.adapter._get_connection_pool(write=True)
-    assert pool1 is pool2
+def test_sync_pools_shared_across_per_thread_cache_instances(cache: RespCache):
+    """Django builds an instance per thread and per task; a pool per instance reconnected for each."""
+    write_client = cache.adapter.get_client(write=True)
+    read_client = cache.adapter.get_client(write=False)
 
-    assert 0 in cache.adapter._pools
-    assert cache.adapter._pools[0] is pool1
+    fresh = caches.create_connection("default")
+
+    assert fresh.adapter.get_client(write=True) is write_client
+    assert fresh.adapter.get_client(write=False) is read_client
 
 
 @pytest.mark.asyncio

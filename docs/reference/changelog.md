@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- The redis-py and valkey-py backends, Sentinel included, share sync connection pools across the process, as they do async ones. Django builds a cache instance per thread and per asyncio task, so each new thread opened new connections, and under ASGI so did each request that made sync cache calls. `OPTIONS["max_connections"]` now caps one pool that every thread shares, along with every alias with the same `LOCATION` and connection options. redis-py 8 defaults it to 100, so a process with more than 100 cache commands in flight at once gets `Too many connections` unless it raises the cap or uses `BlockingConnectionPool`.
+
 ## 0.12.0 (October 2026)
 
 ### Improvements

@@ -250,6 +250,24 @@ async def test_pools_not_shared_across_sentinel_fleets(monkeypatch: pytest.Monke
     assert pool_a is pool_a_again
 
 
+@requires_valkey
+@pytest.mark.parametrize(
+    ("sentinels", "sentinel_kwargs"),
+    [([("sentinel-b", 26379)], None), ([("sentinel-a", 26379)], {"password": "s3cret"})],
+)
+def test_sync_pools_not_shared_across_sentinel_fleets(
+    monkeypatch: pytest.MonkeyPatch,
+    sentinels: list[Any],
+    sentinel_kwargs: dict[str, Any] | None,
+):
+    monkeypatch.setattr(ValkeyPySentinelAdapter, "_sync_pools", {})
+    client = ValkeyPySentinelAdapter(["redis://mymaster/0"], sentinels=[("sentinel-a", 26379)]).get_client(write=True)
+
+    other = ValkeyPySentinelAdapter(["redis://mymaster/0"], sentinels=sentinels, sentinel_kwargs=sentinel_kwargs)
+
+    assert other.get_client(write=True).connection_pool is not client.connection_pool
+
+
 @pytest.mark.asyncio
 async def test_reset_awaits_coroutine_reset():
     class StubPipeline:
@@ -1029,6 +1047,22 @@ def test_pool_class_is_imported_and_used():
     adapter = ValkeyPyAdapter([SERVER_URL], pool_class="valkey.connection.BlockingConnectionPool")
 
     assert isinstance(adapter._get_connection_pool(write=True), valkey.BlockingConnectionPool)
+
+
+@requires_valkey
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"socket_timeout": 2},
+        {"pool_class": "valkey.connection.BlockingConnectionPool"},
+        {"parser_class": "valkey._parsers.resp2._RESP2Parser"},
+    ],
+)
+def test_differently_configured_adapters_get_their_own_sync_pool(monkeypatch: pytest.MonkeyPatch, options: dict):
+    monkeypatch.setattr(ValkeyPyAdapter, "_sync_pools", {})
+    pool = ValkeyPyAdapter([SERVER_URL]).get_client(write=True).connection_pool
+
+    assert ValkeyPyAdapter([SERVER_URL], **options).get_client(write=True).connection_pool is not pool
 
 
 @requires_valkey

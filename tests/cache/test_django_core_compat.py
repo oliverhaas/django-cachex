@@ -48,9 +48,6 @@ def cachex_cache(redis_container: RedisContainerInfo) -> Iterator[CachexRedisCac
     finally:
         cache.flush_db()
         cache.close()
-        # close() keeps sync pools for reuse; this instance is discarded, so disconnect them.
-        for pool in cache.adapter._pools.values():
-            pool.disconnect()
 
 
 def test_set_get_cross_read(
