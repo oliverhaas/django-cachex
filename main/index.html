@@ -1162,7 +1162,7 @@
 <li>An opt-in <a href="user-guide/orm-cache/">ORM cache</a>, <code>django_cachex.orm</code>, that caches ORM query results per table and invalidates them on every write.</li>
 <li><code>LocMemCache</code> and <code>DatabaseCache</code> extensions with the hash, list, set and sorted set operations, <code>ttl()</code>/<code>expire()</code>/<code>persist()</code>, key patterns and admin support, but no streams, locks, pipelines or Lua.</li>
 <li>Experimental <code>ValkeyGlideCache</code> and <code>ValkeyGlideClusterCache</code> backends on <code>valkey-glide</code>, Valkey's official client with a Rust core.</li>
-<li>A Django <a href="user-guide/admin/">admin UI</a> to browse keys, inspect and edit values, and flush caches.</li>
+<li>A Django <a href="user-guide/admin/">admin UI</a> to browse keys and inspect and edit values. Flushing caches is <a href="user-guide/admin/#flushing-caches">opt-in</a>.</li>
 </ul>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
 <ul>

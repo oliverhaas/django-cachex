@@ -572,6 +572,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#flushing-caches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flushing Caches
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#support-levels" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1148,6 +1159,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#flushing-caches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flushing Caches
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#support-levels" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1267,14 +1289,19 @@
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="p">]</span>
 </span></code></pre></div>
 <h2 id="permissions">Permissions<a class="headerlink" href="#permissions" title="Permanent link">&para;</a></h2>
-<p>Superusers have full access. Staff users need these Django permissions:</p>
+<p>Superusers have every permission. Staff users need these Django permissions:</p>
 <ul>
 <li><code>django_cachex.view_cache</code> / <code>view_key</code>: view caches and keys.</li>
-<li><code>django_cachex.change_cache</code>: the cache list's Flush action, the key browser's Clear tool and the cache info page's danger zone. All three delete keys.</li>
+<li><code>django_cachex.change_cache</code>: the cache list's Flush action, the key browser's Clear tool and the cache info page's danger zone, once <a href="#flushing-caches">turned on</a>. All three delete keys.</li>
 <li><code>django_cachex.add_key</code>: create keys.</li>
 <li><code>django_cachex.change_key</code>: edit values and TTLs and run the type operations on the key detail page. Without it, the page shows no edit controls.</li>
 <li><code>django_cachex.delete_key</code>: delete keys.</li>
 </ul>
+<h2 id="flushing-caches">Flushing Caches<a class="headerlink" href="#flushing-caches" title="Permanent link">&para;</a></h2>
+<p>The Flush action, the Clear tool and the danger zone delete keys in bulk, so they are off by default, for superusers too. To turn them on, set:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">CACHEX_ADMIN</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"ALLOW_FLUSH"</span><span class="p">:</span> <span class="kc">True</span><span class="p">}</span>
+</span></code></pre></div>
+<p>They still need the <code>change_cache</code> permission. While they are off, the admin hides them and refuses their requests.</p>
 <h2 id="support-levels">Support Levels<a class="headerlink" href="#support-levels" title="Permanent link">&para;</a></h2>
 <p>The cache list badges each cache "cachex" or "limited". The Valkey and Redis backends, <code>LocMemCache</code> and <code>DatabaseCache</code> are "cachex" and get the features in <a href="#backend-abilities">Backend Abilities</a>. Stock Django backends (<code>django.core.cache.backends.*</code>), custom backends and <code>TrackingCache</code> are "limited", with no key browsing.</p>
 <p>Switch Django's stock <code>LocMemCache</code> or <code>DatabaseCache</code> to <code>django_cachex.cache.LocMemCache</code> or <code>django_cachex.cache.DatabaseCache</code>, their drop-in replacements, for full support. To replace Django's stock Redis backend with <code>ValkeyCache</code> or <code>RedisCache</code>, follow the <a href="../../migration/">migration guide</a>.</p>
