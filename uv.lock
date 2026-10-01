@@ -525,6 +525,18 @@ wheels = [
 ]
 
 [[package]]
+name = "django-cachalot"
+version = "2.9.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b6/6b/e9df6b94965f783f660a2c469f2b1fd2ffb15fb3d6953bcec9652030c8f8/django_cachalot-2.9.1.tar.gz", hash = "sha256:7d3b12022abc811e344deac8830228e2d027ed8dcf762e1116dccde74d360512", size = 77071, upload-time = "2026-08-10T19:37:48.455Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7f/75/58c631f44f41f9eab7ab5dc29cfcdebeecabb63ee9487654990e1b7ac31e/django_cachalot-2.9.1-py3-none-any.whl", hash = "sha256:cd015b9e5235b74d6c9dc8cc984165aea876be02b51ce76d534870dbdd81dab0", size = 57818, upload-time = "2026-08-10T19:37:46.482Z" },
+]
+
+[[package]]
 name = "django-cachex"
 version = "0.12.1"
 source = { editable = "." }
@@ -566,6 +578,7 @@ valkey-py = [
 [package.dev-dependencies]
 dev = [
     { name = "beautifulsoup4" },
+    { name = "django-cachalot" },
     { name = "django-cachex-full-example" },
     { name = "django-stubs" },
     { name = "djlint" },
@@ -617,6 +630,7 @@ provides-extras = ["valkey-py", "libvalkey", "redis-py", "hiredis", "valkey-glid
 [package.metadata.requires-dev]
 dev = [
     { name = "beautifulsoup4", specifier = "==4.15.0" },
+    { name = "django-cachalot", specifier = "==2.9.1" },
     { name = "django-cachex-full-example", editable = "examples/full" },
     { name = "django-stubs", specifier = "==6.1.1" },
     { name = "djlint", specifier = "==1.46.3" },

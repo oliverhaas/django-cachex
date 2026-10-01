@@ -87,6 +87,8 @@ dev = [
   # ASGI benchmark only: granian (real ASGI server) plus httpx (load gen).
   "granian>=2.6,<3",
   "httpx>=0.28,<0.29",
+  # ORM benchmark only: the django-cachalot release the ORM cache derives from.
+  "django-cachalot==2.9.1",
   # Full example: workspace member so its deps (notably celery) survive
   # ``uv sync``, which the pre-commit hook runs on every commit.
   "django-cachex-full-example",
@@ -187,9 +189,15 @@ suppress-none-returning = true # Don't require -> None on functions
   "PERF401", # Loop append patterns are clearer here
   "RUF046",  # int(round()) is intentional for indexing
   "S101",    # assert
+  "S106",    # The password of a throwaway PostgreSQL container
   "T201",    # print() is the output mechanism
   "TC001",   # Don't bother with TYPE_CHECKING gymnastics
   "TC003",
+]
+"benchmarks/ormbench/**" = [
+  "DJ008",  # Nothing displays the benchmark's models
+  "RUF012", # Django migrations use mutable class attributes
+  "S311",   # Seeded pseudo-random numbers drive the workloads
 ]
 
 [tool.djlint]
