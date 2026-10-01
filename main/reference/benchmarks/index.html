@@ -1044,6 +1044,78 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#orm-cache-vs-django-cachalot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ORM cache vs django-cachalot
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ORM cache vs django-cachalot">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#correctness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Correctness
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#races" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Races
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clock-skew" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clock skew
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#speed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Speed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#network-delay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network delay
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#reproducing" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1220,6 +1292,78 @@
       
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#orm-cache-vs-django-cachalot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ORM cache vs django-cachalot
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ORM cache vs django-cachalot">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#correctness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Correctness
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#races" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Races
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clock-skew" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clock skew
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#speed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Speed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#network-delay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network delay
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1872,17 +2016,304 @@ in rough buckets (~600, ~400, ~200).</p>
 </tr>
 </tbody>
 </table>
+<h2 id="orm-cache-vs-django-cachalot">ORM cache vs django-cachalot<a class="headerlink" href="#orm-cache-vs-django-cachalot" title="Permanent link">&para;</a></h2>
+<p>The <a href="../../user-guide/orm-cache/">ORM cache</a> derives from django-cachalot 2.9.1.
+The contenders are the database alone (<code>none</code>), <code>cachalot</code>, the ORM cache
+(<code>cachex</code>), and both over a
+<a href="../../user-guide/composite-backends/"><code>TrackingCache</code></a> (<code>+tracking</code>), which
+keeps local copies of what each process read.</p>
+<ul>
+<li>The machine above on Linux 7.0, CPython 3.14.2 (free-threaded build, with
+  the GIL that libvalkey turns back on), Django 6.1.1, psycopg 3.3.6</li>
+<li>PostgreSQL 18 with <code>fsync=off</code> and Valkey 9 in local Docker, both libraries
+  on the <code>valkey-py+libvalkey</code> backend</li>
+<li>Every round trip 250 µs longer than on the local Docker network, as within
+  a cloud availability zone, except in the clock skew runs</li>
+</ul>
+<h3 id="correctness">Correctness<a class="headerlink" href="#correctness" title="Permanent link">&para;</a></h3>
+<p>Twelve cases where a cached result can differ from the database, each checked
+against an uncached read. They are the known differences between the two
+libraries, not a sample of typical queries. Cachalot got all 12 wrong, the ORM
+cache none:</p>
+<ul>
+<li>A read while an autocommit <code>UPDATE</code> runs, and one by a process that an
+  <code>on_commit()</code> hook hands the new row to. Cachalot invalidates before an
+  autocommit statement runs, and in <code>atomic()</code> only after every hook has run.</li>
+<li>A subquery or <code>Now()</code> nested in a <code>filter()</code> expression, and
+  <code>order_by(Random())</code>. Cachalot looks for subqueries and <code>Now()</code> only as a
+  filter's direct operands, and refuses <code>order_by("?")</code> but not <code>Random()</code>.</li>
+<li>Two JSON filter values of the same length that agree in their first 35
+  characters. Cachalot's cache key holds each parameter's <code>str()</code>, which
+  psycopg 3 shortens to those characters and the length.</li>
+<li><code>DB_CASCADE</code> deletes, raw <code>TRUNCATE</code>, raw <code>REFRESH MATERIALIZED VIEW</code>, and
+  raw writes to a mixed-case or unmanaged table. Cachalot doesn't invalidate
+  every table these change.</li>
+<li>Reads in a <code>REPEATABLE READ</code> transaction from its old snapshot, which
+  cachalot stores in the shared cache at the commit.</li>
+</ul>
+<p><code>CACHALOT_FINAL_SQL_CHECK = True</code> and listing the unmanaged table in
+<code>CACHALOT_ADDITIONAL_TABLES</code> fix 2 of the 12.</p>
+<h3 id="races">Races<a class="headerlink" href="#races" title="Permanent link">&para;</a></h3>
+<p>Four reader processes read a counter row while a writer updates it 500 times,
+at random times 10 ms apart on average. A read is stale if it returns a
+version older than one committed before the read began. Stale reads per
+1,000, where the ORM cache column covers it with and without a
+<code>TrackingCache</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th style="text-align: right;">cachalot</th>
+<th style="text-align: right;">cachalot+tracking</th>
+<th style="text-align: right;">ORM cache</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Autocommit</td>
+<td style="text-align: right;">132</td>
+<td style="text-align: right;">504</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td>Autocommit, commits 2 ms slower</td>
+<td style="text-align: right;">755</td>
+<td style="text-align: right;">602</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td><code>atomic()</code></td>
+<td style="text-align: right;">8.0</td>
+<td style="text-align: right;">512</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td><code>atomic()</code>, 1 ms of later <code>on_commit()</code> hooks</td>
+<td style="text-align: right;">117</td>
+<td style="text-align: right;">567</td>
+<td style="text-align: right;">0</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Under autocommit, cachalot invalidates before the statement runs, so a read
+  before the commit stores the old row as newer than the write. The cache
+  serves it until the next write: cachalot hid 146 in 1,000 writes that way,
+  and with slower commits all of them. Writes in quick succession, as in a
+  loop of updates, make it worse, since a raced read can store its old row
+  after the next write's invalidation too.</li>
+<li>In <code>atomic()</code>, cachalot invalidates only after all <code>on_commit()</code> hooks have
+  run, so a process that a hook hands the new row to, say through a task
+  queue, can get the old one. It also invalidates in two steps a round trip
+  apart, and until the second it can serve a row read before the commit.</li>
+<li><code>cachalot+tracking</code> serves hits from the process's memory. The thread that
+  evicts a copy after a write needs the GIL, and readers that never pause
+  make it wait up to 5 ms. At a read every 1 ms, it served 40 stale reads per
+  1,000.</li>
+<li>The ORM cache sends a table's queries to the database while a write to it
+  runs. That costs it 6 to 7 points of hit ratio against cachalot, and 20 to
+  22 with slower commits.</li>
+</ul>
+<h3 id="clock-skew">Clock skew<a class="headerlink" href="#clock-skew" title="Permanent link">&para;</a></h3>
+<p>Cachalot stamps results and invalidations with the <code>time.time()</code> of the
+process that makes them. If a reader's clock runs ahead by Δ, a result it
+stores right after a write outlives every write in the next Δ. With writes at
+random times and λ = Δ / mean time between writes, that hides λ / (1 + λ) of
+the writes. Runs with Δ from 2 to 60 ms came within 34 per 1,000 of that.
+Hidden writes per 1,000, by how far the reader's clock runs ahead and how
+often the table is written:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Skew</th>
+<th style="text-align: right;">Write every 1 s</th>
+<th style="text-align: right;">1 min</th>
+<th style="text-align: right;">15 min</th>
+<th style="text-align: right;">1 h</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">10 ms</td>
+<td style="text-align: right;">9.9</td>
+<td style="text-align: right;">0.17</td>
+<td style="text-align: right;">0.011</td>
+<td style="text-align: right;">0.003</td>
+</tr>
+<tr>
+<td style="text-align: right;">100 ms</td>
+<td style="text-align: right;">91</td>
+<td style="text-align: right;">1.7</td>
+<td style="text-align: right;">0.11</td>
+<td style="text-align: right;">0.028</td>
+</tr>
+<tr>
+<td style="text-align: right;">1 s</td>
+<td style="text-align: right;">500</td>
+<td style="text-align: right;">16</td>
+<td style="text-align: right;">1.1</td>
+<td style="text-align: right;">0.28</td>
+</tr>
+<tr>
+<td style="text-align: right;">10 s</td>
+<td style="text-align: right;">909</td>
+<td style="text-align: right;">143</td>
+<td style="text-align: right;">11</td>
+<td style="text-align: right;">2.8</td>
+</tr>
+</tbody>
+</table>
+<p>A hidden write stays hidden until the table's next write after the skew has
+passed. A writer's clock ahead costs only hits, keeping e^(−λ) of them, which
+the runs matched within 1.3 points: 1 s against a write every minute loses
+under 2%. The ORM cache keeps a generation per table on the cache server and
+reads no clock. With either clock 40 ms ahead, it hid no write.</p>
+<h3 id="speed">Speed<a class="headerlink" href="#speed" title="Permanent link">&para;</a></h3>
+<p>Median latency in µs over 2,000 calls. For <code>none</code>, the hit and the miss are
+the query alone.</p>
+<table>
+<thead>
+<tr>
+<th>Contender</th>
+<th style="text-align: right;">Hit</th>
+<th style="text-align: right;">Miss</th>
+<th style="text-align: right;">Autocommit write</th>
+<th style="text-align: right;"><code>atomic()</code> write</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>none</td>
+<td style="text-align: right;">566</td>
+<td style="text-align: right;">612</td>
+<td style="text-align: right;">563</td>
+<td style="text-align: right;">1,244</td>
+</tr>
+<tr>
+<td>cachalot</td>
+<td style="text-align: right;">500</td>
+<td style="text-align: right;">1,453</td>
+<td style="text-align: right;">990</td>
+<td style="text-align: right;">2,072</td>
+</tr>
+<tr>
+<td>cachex</td>
+<td style="text-align: right;">541</td>
+<td style="text-align: right;">1,489</td>
+<td style="text-align: right;">1,354</td>
+<td style="text-align: right;">2,057</td>
+</tr>
+<tr>
+<td>cachalot+tracking</td>
+<td style="text-align: right;">136</td>
+<td style="text-align: right;">1,508</td>
+<td style="text-align: right;">1,010</td>
+<td style="text-align: right;">2,128</td>
+</tr>
+<tr>
+<td>cachex+tracking</td>
+<td style="text-align: right;">531</td>
+<td style="text-align: right;">1,516</td>
+<td style="text-align: right;">1,377</td>
+<td style="text-align: right;">2,082</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>A hit takes a round trip, as the query does, so it saves only the
+  database's work. A hit on one row takes about 90% of the query's time, on
+  100 rows about half, and on 1,000 rows about a quarter.</li>
+<li>The ORM cache's hits take about 40 µs longer than cachalot's, for the Lua
+  script that checks leases and generations. Its autocommit writes make two
+  round trips to Valkey, a lease before the statement and its release after,
+  where cachalot makes one.</li>
+<li><code>cachalot+tracking</code> serves hits from memory in about a quarter of the time,
+  which is also what makes its reads stale. The ORM cache over a
+  <code>TrackingCache</code> still asks the server whether its copy is current.</li>
+<li>In a mixed workload of 100-row reads by one of 20 queries, the caches serve
+  about 1.5 times the database's throughput at 1% writes, and
+  <code>cachalot+tracking</code> twice. At 10% writes they serve about a fifth less,
+  since every write makes the cached queries on its table miss, and a miss
+  takes three round trips.</li>
+<li>A <code>migrate</code> with nothing to apply emptied cachalot's cache of 100 queries
+  and left the ORM cache's intact.</li>
+</ul>
+<h3 id="network-delay">Network delay<a class="headerlink" href="#network-delay" title="Permanent link">&para;</a></h3>
+<p>The same runs with no added delay and with 1 ms. Without delay, a round trip
+takes about 60 µs to Valkey and 80 µs to PostgreSQL. A hit saves the
+database's work but not the round trip, so with delay it saves less: at 1 ms,
+cachalot's one-row hit took 95% of the query's time, against 82% without
+delay. A race lasts a few round trips, so with delay more reads fall in one.
+Cachalot's results, and the ORM cache's hit ratio in the last row:</p>
+<table>
+<thead>
+<tr>
+<th>Result</th>
+<th style="text-align: right;">No delay</th>
+<th style="text-align: right;">250 µs</th>
+<th style="text-align: right;">1 ms</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Throughput at 1% writes, × the database's</td>
+<td style="text-align: right;">1.9</td>
+<td style="text-align: right;">1.5</td>
+<td style="text-align: right;">1.2</td>
+</tr>
+<tr>
+<td>Throughput at 10% writes, × the database's</td>
+<td style="text-align: right;">0.94</td>
+<td style="text-align: right;">0.79</td>
+<td style="text-align: right;">0.62</td>
+</tr>
+<tr>
+<td>Stale reads per 1,000, autocommit</td>
+<td style="text-align: right;">104</td>
+<td style="text-align: right;">132</td>
+<td style="text-align: right;">247</td>
+</tr>
+<tr>
+<td>Stale reads per 1,000, <code>atomic()</code></td>
+<td style="text-align: right;">0.19</td>
+<td style="text-align: right;">8.0</td>
+<td style="text-align: right;">88</td>
+</tr>
+<tr>
+<td>Hit ratio at a read every 1 ms</td>
+<td style="text-align: right;">94%</td>
+<td style="text-align: right;">90%</td>
+<td style="text-align: right;">83%</td>
+</tr>
+<tr>
+<td>Hit ratio at a read every 1 ms, ORM cache</td>
+<td style="text-align: right;">92%</td>
+<td style="text-align: right;">83%</td>
+<td style="text-align: right;">60%</td>
+</tr>
+</tbody>
+</table>
+<p>The ORM cache's throughput stayed within 4% of cachalot's, and it served no
+stale read at any delay. Its hit ratio falls faster, since its lease sends a
+table's reads to the database for as long as a write runs, and writes take
+longer with delay.</p>
 <h2 id="reproducing">Reproducing<a class="headerlink" href="#reproducing" title="Permanent link">&para;</a></h2>
-<p>The harness starts its own Redis and Valkey containers, so a Docker daemon is
-the only host requirement:</p>
+<p>The harness starts its own Redis, Valkey and PostgreSQL containers, so a
+Docker daemon is the only host requirement:</p>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="go">uv run pytest benchmarks/ -c benchmarks/pytest.ini</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="gp"># </span>A<span class="w"> </span>single<span class="w"> </span>slice
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="go">uv run pytest benchmarks/test_throughput.py::test_adapters_sync \</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="go">  -c benchmarks/pytest.ini</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="gp"># </span>The<span class="w"> </span>ORM<span class="w"> </span>cache<span class="w"> </span>comparison,<span class="w"> </span>with<span class="w"> </span><span class="m">250</span><span class="w"> </span>µs<span class="w"> </span>added<span class="w"> </span>to<span class="w"> </span>every<span class="w"> </span>round<span class="w"> </span>trip
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="go">BENCH_NET_DELAY_US=250 uv run pytest benchmarks/test_orm.py \</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="go">  -c benchmarks/pytest.ini</span>
 </span></code></pre></div>
 <p><code>benchmarks/README.md</code> lists the slices, the knobs (<code>N_OPS</code>, <code>K_RUNS</code>,
-<code>WARMUP_KEYS</code>, <code>MGET_BATCH</code>) and the full methodology.</p>
+<code>WARMUP_KEYS</code>, <code>MGET_BATCH</code>) and the full methodology. <code>BENCH_NET_DELAY_US</code>
+delays everything the server containers send, using <code>tc netem</code> from a helper
+container, so it needs no host privileges.</p>
 
 
 
