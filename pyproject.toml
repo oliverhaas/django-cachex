@@ -1,6 +1,6 @@
 [project]
 name = "django-cachex"
-version = "0.12.0"
+version = "0.12.1"
 description = "Valkey and Redis cache backends for Django: standalone, Sentinel and Cluster topologies, sync and async APIs, and an ORM query cache"
 readme = "README.md"
 license = "MIT AND BSD-3-Clause"
