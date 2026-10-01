@@ -22,7 +22,7 @@ A drop-in replacement for Django's built-in Redis cache, plus:
 - An opt-in [ORM cache](user-guide/orm-cache.md), `django_cachex.orm`, that caches ORM query results per table and invalidates them on every write.
 - `LocMemCache` and `DatabaseCache` extensions with the hash, list, set and sorted set operations, `ttl()`/`expire()`/`persist()`, key patterns and admin support, but no streams, locks, pipelines or Lua.
 - Experimental `ValkeyGlideCache` and `ValkeyGlideClusterCache` backends on `valkey-glide`, Valkey's official client with a Rust core.
-- A Django [admin UI](user-guide/admin.md) to browse keys, inspect and edit values, and flush caches.
+- A Django [admin UI](user-guide/admin.md) to browse keys and inspect and edit values. Flushing caches is [opt-in](user-guide/admin.md#flushing-caches).
 
 ## Requirements
 

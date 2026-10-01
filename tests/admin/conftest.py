@@ -57,3 +57,9 @@ def test_cache(db, redis_container: RedisContainerInfo):
         cache.flush_db()
         yield cache
         cache.flush_db()
+
+
+@pytest.fixture
+def _allow_flush(settings):
+    """Turn on the Flush action, the Clear tool and the danger zone."""
+    settings.CACHEX_ADMIN = {"ALLOW_FLUSH": True}

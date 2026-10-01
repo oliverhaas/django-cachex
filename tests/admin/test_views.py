@@ -2025,6 +2025,7 @@ def test_string_update_strips_surrounding_whitespace(admin_client: Client, test_
     assert test_cache.get("inputs:string") == "new"
 
 
+@pytest.mark.usefixtures("_allow_flush")
 def test_flush_cache(
     admin_client: Client,
     test_cache: RespCache,
@@ -2619,6 +2620,7 @@ def test_staff_with_view_perm_can_access_cache_list(db, test_cache):
     assert response.status_code == 200
 
 
+@pytest.mark.usefixtures("_allow_flush")
 def test_view_only_user_cannot_flush_cache(db, test_cache):
     """Staff user with only view_cache perm cannot flush via action.
 
@@ -2685,7 +2687,50 @@ def test_superuser_can_access_all_views(admin_client, test_cache):
     assert admin_client.get(_key_add_url("default")).status_code == 200
 
 
+def test_flush_action_is_refused_without_allow_flush(admin_client: Client, test_cache: RespCache):
+    test_cache.set("survivor", "value")
+
+    response = admin_client.post(_cache_list_url(), {"action": "flush_selected", "_selected_action": ["default"]})
+
+    assert response.status_code == 200
+    assert test_cache.get("survivor") == "value"
+
+
+def test_key_list_has_no_clear_tool_without_allow_flush(admin_client: Client, test_cache: RespCache):
+    response = admin_client.get(_key_list_url("default"))
+
+    assert response.status_code == 200
+    assert 'value="clear_cache"' not in response.content.decode()
+
+
+def test_clear_is_refused_without_allow_flush(admin_client: Client, test_cache: RespCache):
+    test_cache.set("survivor", "value")
+
+    response = admin_client.post(_key_list_url("default"), {"action": "clear_cache", "cache_name": "default"})
+
+    assert response.status_code == 403
+    assert test_cache.get("survivor") == "value"
+
+
+def test_danger_zone_hidden_without_allow_flush(admin_client: Client, test_cache: RespCache):
+    response = admin_client.get(_cache_detail_url("default"))
+
+    assert response.status_code == 200
+    assert 'name="action" value="flush_db"' not in response.content.decode()
+
+
+@pytest.mark.parametrize("action", ["flush_db", "clear_all_versions"])
+def test_cache_detail_actions_need_allow_flush(admin_client: Client, test_cache: RespCache, action: str):
+    test_cache.set("survivor", "value")
+
+    response = admin_client.post(_cache_detail_url("default"), {"action": action})
+
+    assert response.status_code == 403
+    assert test_cache.get("survivor") == "value"
+
+
 # clear_cache and the danger-zone actions have the same blast radius, so both need change_cache, not change_key.
+@pytest.mark.usefixtures("_allow_flush")
 def test_change_key_only_cannot_clear_cache(db, test_cache):
     """Regression: ``change_key`` alone must NOT permit ``clear_cache``."""
     staff_user = User.objects.create_user(
@@ -2714,6 +2759,7 @@ def test_change_key_only_cannot_clear_cache(db, test_cache):
     assert test_cache.get("preserved_key") == "value"
 
 
+@pytest.mark.usefixtures("_allow_flush")
 def test_change_cache_permits_clear_cache(db, test_cache):
     """Sanity check: ``change_cache`` is the right gate."""
     staff_user = User.objects.create_user(
@@ -3512,6 +3558,7 @@ def test_unbuildable_backend_key_add_redirects_with_a_message(admin_client: Clie
     assert "could not be loaded" in response.content.decode()
 
 
+@pytest.mark.usefixtures("_allow_flush")
 def test_danger_zone_hidden_for_a_backend_without_the_operations(admin_client: Client, test_cache: RespCache):
     response = admin_client.get(_cache_detail_url("local"))
 
@@ -3521,6 +3568,7 @@ def test_danger_zone_hidden_for_a_backend_without_the_operations(admin_client: C
     assert 'name="action" value="flush_db"' not in content
 
 
+@pytest.mark.usefixtures("_allow_flush")
 def test_danger_zone_shown_for_a_resp_backend(admin_client: Client, test_cache: RespCache):
     response = admin_client.get(_cache_detail_url("default"))
 
@@ -3530,6 +3578,7 @@ def test_danger_zone_shown_for_a_resp_backend(admin_client: Client, test_cache: 
     assert 'name="action" value="flush_db"' in content
 
 
+@pytest.mark.usefixtures("_allow_flush")
 def test_danger_zone_hand_crafted_post_is_refused(admin_client: Client, test_cache: RespCache):
     response = admin_client.post(_cache_detail_url("local"), {"action": "flush_db"}, follow=True)
 
@@ -3940,6 +3989,7 @@ def test_unknown_typed_keys_are_listed(admin_client: Client, test_cache: RespCac
 
 
 # Clear wipes the whole cache and Add key writes one, so neither belongs on the page of a view_key-only user.
+@pytest.mark.usefixtures("_allow_flush")
 def test_view_only_user_gets_no_key_list_tools(db, test_cache):
     client = _staff_client(["view_key"])
 
@@ -3951,6 +4001,7 @@ def test_view_only_user_gets_no_key_list_tools(db, test_cache):
     assert 'class="addlink"' not in content
 
 
+@pytest.mark.usefixtures("_allow_flush")
 def test_the_permissions_bring_the_key_list_tools_back(db, test_cache):
     client = _staff_client(["view_key", "add_key", "view_cache", "change_cache"])
 
@@ -3962,6 +4013,7 @@ def test_the_permissions_bring_the_key_list_tools_back(db, test_cache):
     assert 'class="addlink"' in content
 
 
+@pytest.mark.usefixtures("_allow_flush")
 def test_clear_is_refused_without_the_cache_permission(db, test_cache: RespCache):
     test_cache.set("survivor", "value")
     client = _staff_client(["view_key"])
@@ -4331,6 +4383,7 @@ def test_container_page_error_is_masked(admin_client: Client, test_cache: RespCa
     _assert_masked(response.content.decode())
 
 
+@pytest.mark.usefixtures("_allow_flush")
 def test_cache_detail_flush_error_is_masked(admin_client: Client, test_cache: RespCache, mocker):
     mocker.patch.object(type(test_cache), "flush_db", side_effect=_ERROR)
 
@@ -4373,6 +4426,7 @@ def test_bulk_delete_error_is_masked(admin_client: Client, test_cache: RespCache
 
 
 @pytest.mark.parametrize("action", ["flush_db", "clear_all_versions"])
+@pytest.mark.usefixtures("_allow_flush")
 def test_cache_detail_actions_need_change_cache(db, test_cache: RespCache, action: str):
     client = _staff_client(["view_cache"])
     test_cache.set("gated:cache", "value")
@@ -4484,6 +4538,7 @@ def test_hash_field_with_surrounding_spaces_can_be_deleted(admin_client: Client,
     assert test_cache.hgetall("inputs:hpadded") == {"padded": "b"}
 
 
+@pytest.mark.usefixtures("_allow_flush")
 def test_flush_database_warns_that_a_cluster_loses_every_primary(admin_client: Client, test_cache: RespCache):
     response = admin_client.get(_cache_detail_url("default"))
 

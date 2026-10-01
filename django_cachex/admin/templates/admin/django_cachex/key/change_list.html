@@ -24,7 +24,7 @@
     <li>
         <a href="{% url "admin:django_cachex_cache_change" cache_name|admin_urlquote %}">{% trans "Cache Details" %}</a>
     </li>
-    {% if perms.django_cachex.change_cache %}
+    {% if can_flush %}
     <li>
         <form method="post" style="display: inline;" id="clear-cache-form">
             {% csrf_token %}

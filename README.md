@@ -48,7 +48,7 @@ INSTALLED_APPS = [
 ]
 ```
 
-The admin lists every configured cache, finds keys by wildcard pattern and type, and edits values and TTLs. It also shows server info and memory statistics and flushes caches.
+The admin lists every configured cache, finds keys by wildcard pattern and type, and edits values and TTLs. It also shows server info and memory statistics, and with `CACHEX_ADMIN = {"ALLOW_FLUSH": True}` it flushes caches.
 
 ![Cache list](https://raw.githubusercontent.com/oliverhaas/django-cachex/main/docs/assets/screenshot-cache-list.png)
 ![Key list](https://raw.githubusercontent.com/oliverhaas/django-cachex/main/docs/assets/screenshot-key-list.png)

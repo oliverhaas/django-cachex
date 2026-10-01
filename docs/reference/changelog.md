@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Improvements
+
+- The admin's Flush action, Clear tool and danger zone are off by default, for superusers too. Set `CACHEX_ADMIN = {"ALLOW_FLUSH": True}` to turn them back on; they still need the `change_cache` permission. See [Flushing Caches](../user-guide/admin.md#flushing-caches).
+
 ## 0.11.1 (September 2026)
 
 ### Fixes

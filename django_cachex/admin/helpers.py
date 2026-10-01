@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from django.http import HttpRequest
+
 
 class CacheUnavailableError(Exception):
     """The alias is missing from ``CACHES`` or its backend cannot be built."""
@@ -199,6 +201,16 @@ def get_cache(cache_name: str) -> Any:
     except Exception as exc:
         msg = f"Cache '{cache_name}' could not be loaded: {mask_credentials(str(exc))}"
         raise CacheUnavailableError(msg) from exc
+
+
+def can_flush(request: HttpRequest) -> bool:
+    """Report whether ``request`` may use the Flush action, the Clear tool and the danger zone.
+
+    All three delete keys in bulk, so they stay off, for superusers too, until the
+    project sets ``CACHEX_ADMIN["ALLOW_FLUSH"]``. Then they need ``change_cache``.
+    """
+    admin_settings = getattr(settings, "CACHEX_ADMIN", None) or {}
+    return bool(admin_settings.get("ALLOW_FLUSH")) and request.user.has_perm("django_cachex.change_cache")  # ty: ignore[unresolved-attribute]
 
 
 def parse_metadata(

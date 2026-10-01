@@ -16,13 +16,23 @@ INSTALLED_APPS = [
 
 ## Permissions
 
-Superusers have full access. Staff users need these Django permissions:
+Superusers have every permission. Staff users need these Django permissions:
 
 - `django_cachex.view_cache` / `view_key`: view caches and keys.
-- `django_cachex.change_cache`: the cache list's Flush action, the key browser's Clear tool and the cache info page's danger zone. All three delete keys.
+- `django_cachex.change_cache`: the cache list's Flush action, the key browser's Clear tool and the cache info page's danger zone, once [turned on](#flushing-caches). All three delete keys.
 - `django_cachex.add_key`: create keys.
 - `django_cachex.change_key`: edit values and TTLs and run the type operations on the key detail page. Without it, the page shows no edit controls.
 - `django_cachex.delete_key`: delete keys.
+
+## Flushing Caches
+
+The Flush action, the Clear tool and the danger zone delete keys in bulk, so they are off by default, for superusers too. To turn them on, set:
+
+```python
+CACHEX_ADMIN = {"ALLOW_FLUSH": True}
+```
+
+They still need the `change_cache` permission. While they are off, the admin hides them and refuses their requests.
 
 ## Support Levels
 

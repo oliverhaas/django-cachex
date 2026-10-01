@@ -80,7 +80,8 @@ class CacheAdmin(_NoObjectRoutesMixin, CacheAdminMixin, _CacheBase):  # type: ig
             "<strong>Actions</strong><br>"
             "• Click a cache name to view its details (info, stats, slowlog)<br>"
             "• Click 'List Keys' to browse keys in that cache<br>"
-            "• Select caches and use 'Flush selected caches' to clear them<br>"
+            "• Select caches and use 'Flush selected caches' to clear them "
+            "(needs <code>CACHEX_ADMIN['ALLOW_FLUSH']</code>)<br>"
             "• Use the filter sidebar to filter by support level",
         ),
         "cache_detail": mark_safe(

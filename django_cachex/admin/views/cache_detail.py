@@ -10,6 +10,7 @@ from django.shortcuts import redirect, render
 
 from django_cachex.admin.helpers import (
     CacheUnavailableError,
+    can_flush,
     get_cache,
     get_slowlog,
     mask_credentials,
@@ -44,7 +45,7 @@ def _handle_danger_zone_post(
     if request.method != "POST":
         return None
 
-    if not request.user.has_perm("django_cachex.change_cache"):  # ty: ignore[unresolved-attribute]
+    if not can_flush(request):
         raise PermissionDenied
 
     action = request.POST.get("action")
@@ -135,8 +136,6 @@ def cache_detail_view(
     if raw_info:
         raw_info_json = json.dumps(raw_info, indent=2, default=str)
 
-    can_change = request.user.has_perm("django_cachex.change_cache")  # ty: ignore[unresolved-attribute]
-
     context = admin.site.each_context(request)
     context.update(
         {
@@ -147,7 +146,7 @@ def cache_detail_view(
             "raw_info_json": raw_info_json,
             "slowlog_data": slowlog_data,
             "help_active": help_active,
-            "show_danger_zone": can_change and supports_danger_zone(cache),
+            "show_danger_zone": can_flush(request) and supports_danger_zone(cache),
         },
     )
     return render(request, config.template("cache/change_form.html"), context)

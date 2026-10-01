@@ -23,7 +23,14 @@ from django.utils.safestring import mark_safe
 from django.utils.timesince import timeuntil
 from django.utils.translation import gettext_lazy as _
 
-from django_cachex.admin.helpers import CacheUnavailableError, creatable_types, get_cache, get_size, mask_credentials
+from django_cachex.admin.helpers import (
+    CacheUnavailableError,
+    can_flush,
+    creatable_types,
+    get_cache,
+    get_size,
+    mask_credentials,
+)
 from django_cachex.admin.models import Cache, Key
 from django_cachex.cache.resp import RespClusterCache
 from django_cachex.exceptions import NotSupportedError
@@ -221,7 +228,10 @@ class CacheAdminMixin:
     # Admin action
     # ------------------------------------------------------------------
 
-    @admin.action(description=_("Flush selected caches"), permissions=["change"])
+    def has_flush_permission(self, request: HttpRequest) -> bool:
+        return can_flush(request)
+
+    @admin.action(description=_("Flush selected caches"), permissions=["flush"])
     def flush_selected(self, request: HttpRequest, queryset: CacheQuerySet) -> None:
         flushed = 0
         for cache_obj in queryset:
@@ -671,9 +681,9 @@ class KeyAdminMixin:
 
     def _handle_clear_cache(self, request: HttpRequest, cache_name: str) -> HttpResponse:
         """Clear every key in the current cache version, then redirect back."""
-        # Same blast radius as the danger zone, so gate it on ``change_cache``
-        # rather than ``change_key``.
-        if not request.user.has_perm("django_cachex.change_cache"):  # ty: ignore[unresolved-attribute]
+        # Same blast radius as the danger zone, so it takes the danger zone's
+        # gate rather than ``change_key``.
+        if not can_flush(request):
             raise PermissionDenied
         try:
             cache = get_cache(cache_name)
@@ -700,6 +710,7 @@ class KeyAdminMixin:
             return HttpResponseRedirect(reverse("admin:django_cachex_cache_changelist"))
         extra_context["cache_name"] = cache_name
         extra_context["title"] = f"Keys in '{cache_name}'"
+        extra_context["can_flush"] = can_flush(request)
         with contextlib.suppress(CacheUnavailableError):
             # Django sets ``has_add_permission`` from the ModelAdmin; the link is
             # also pointless where no key type can be created.
