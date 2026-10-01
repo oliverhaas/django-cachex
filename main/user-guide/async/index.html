@@ -1204,7 +1204,7 @@
 </span></code></pre></div>
 <p>Queueing methods such as <code>set()</code> and <code>hset()</code> are synchronous. Await only <code>apipeline()</code> and <code>execute()</code>, on every backend. The async pipeline otherwise behaves like the sync <a href="../../reference/api/#pipelines"><code>pipeline()</code></a>.</p>
 <h2 id="event-loops-and-connection-pools">Event Loops and Connection Pools<a class="headerlink" href="#event-loops-and-connection-pools" title="Permanent link">&para;</a></h2>
-<p>On the redis-py and valkey-py backends, sync and async calls use separate connection pools. Async calls use one pool per server and event loop, because connections belong to the loop that opened them. Each loop reuses its pools for every call.</p>
+<p>On the redis-py and valkey-py backends, sync and async calls use separate connection pools. Sync calls use one pool per server, which every thread shares. Async calls use one pool per server and event loop, because connections belong to the loop that opened them. Each loop reuses its pools for every call.</p>
 <div class="admonition warning">
 <p class="admonition-title">Short-lived event loops</p>
 <p>Each <code>asyncio.run()</code> starts a new event loop, so it opens a new pool and a new TCP connection. Use the sync methods where loops are short-lived.</p>

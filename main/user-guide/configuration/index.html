@@ -1803,6 +1803,11 @@ scheme, username and password, and on <code>ValkeyGlideCache</code> also on the 
 </span><span id="__span-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>    <span class="s2">"socket_timeout"</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span>
 </span><span id="__span-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="p">}</span>
 </span></code></pre></div>
+<p>Every thread in the process shares a pool, and so does every alias with the
+same <code>LOCATION</code> and connection options, so <code>max_connections</code> caps them all
+together. redis-py 8 defaults it to 100. Past the cap a command fails with
+<code>Too many connections</code>, unless <code>pool_class</code> is the driver's
+<code>BlockingConnectionPool</code>, which waits for a free connection.</p>
 <p>On a Sentinel backend, <code>pool_class</code> and <code>async_pool_class</code> default to the
 driver's sync and async <code>SentinelConnectionPool</code>, and a replacement must
 subclass the matching class. The redis-py and valkey-py cluster backends reject
