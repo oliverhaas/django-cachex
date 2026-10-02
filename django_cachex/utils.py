@@ -52,8 +52,10 @@ def _glob_tokens(pattern: str) -> Iterator[tuple[str, str]]:
 
     ``kind`` is ``star`` for ``*``, ``any`` for ``?``, ``class`` for a
     ``[...]`` body or ``literal`` for one plain character. ``\\`` escapes the
-    next character anywhere, including inside a class; an unterminated class
-    runs to the end of the pattern, as it does in Redis.
+    next character anywhere, including inside a class. A class is read as
+    Redis's ``stringmatchlen`` reads it: ``x-y`` is a range whenever two
+    more characters follow ``x``, even when ``y`` is ``]``, and an
+    unterminated class runs to the end of the pattern.
     """
     i = 0
     end = len(pattern)
@@ -67,8 +69,15 @@ def _glob_tokens(pattern: str) -> Iterator[tuple[str, str]]:
             i += 1
         elif char == "[":
             j = i + 2 if pattern[i + 1 : i + 2] == "^" else i + 1
-            while j < end and pattern[j] != "]":
-                j += 2 if pattern[j] == "\\" else 1
+            while j < end:
+                if pattern[j] == "\\" and j + 1 < end:
+                    j += 2
+                elif pattern[j] == "]":
+                    break
+                elif j + 2 < end and pattern[j + 1] == "-":
+                    j += 3
+                else:
+                    j += 1
             yield "class", pattern[i + 1 : j]
             i = j + 1
         elif char == "\\" and i + 1 < end:

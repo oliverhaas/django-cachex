@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from django_cachex.utils import _apply_zrange_limit, _as_incremented_score, _as_score
+from django_cachex.utils import _apply_zrange_limit, _as_incremented_score, _as_score, _glob_to_regex
 
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
@@ -57,3 +57,19 @@ def test_score_errors_match_the_server(cache: RespCache):
     cache.zadd("z", {"a": math.inf})
     with pytest.raises(Exception, match=r"resulting score is not a number \(NaN\)"):
         cache.zincrby("z", -math.inf, "a")
+
+
+@pytest.mark.parametrize(
+    ("pattern", "key", "expected"),
+    [
+        ("k[a-]1", "ka1", False),
+        ("k[a-]1", "k1", True),
+        ("k[a-]1", "k_", True),
+        (r"k[a-\]]", "k_]", True),
+        (r"k[a-\]]", "k]", False),
+        ("k[ab-]z", "kz", True),
+        ("k[ab-]z", "kaz", False),
+    ],
+)
+def test_glob_class_range_reads_its_end_like_the_server(pattern, key, expected):
+    assert bool(_glob_to_regex(pattern).match(key)) is expected
