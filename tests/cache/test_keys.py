@@ -181,6 +181,17 @@ def test_delete_pattern_deletes_an_undecodable_name_and_not_its_escaped_spelling
     assert cache.keys("dpbad_*") == ["dpbad_\\xff"]
 
 
+def test_keys_iter_keys_and_delete_pattern_take_an_undecodable_name_back_as_a_pattern(cache: RespCache):
+    cache.get_client(write=True).set(cache.make_key("kpbad_").encode() + b"\xff", b"raw")
+    [name] = cache.keys("kpbad_*")
+    cache.set("kpbad_a", "one byte")
+
+    assert cache.keys(name) == [name]
+    assert list(cache.iter_keys(name)) == [name]
+    assert cache.delete_pattern(name) == 1
+    assert cache.keys("kpbad_*") == ["kpbad_a"]
+
+
 def test_glob_characters_in_key_prefix_match_literally(cache: RespCache):
     """A prefix with glob metacharacters is escaped in patterns, and a backslash escapes itself."""
     config = copy.deepcopy(settings.CACHES)
@@ -362,6 +373,18 @@ async def test_adelete_pattern_deletes_an_undecodable_name_and_not_its_escaped_s
 
     assert await cache.adelete_pattern("adpbad_?") == 1
     assert cache.keys("adpbad_*") == ["adpbad_\\xff"]
+
+
+@pytest.mark.asyncio
+async def test_akeys_aiter_keys_and_adelete_pattern_take_an_undecodable_name_back_as_a_pattern(cache: RespCache):
+    cache.get_client(write=True).set(cache.make_key("akpbad_").encode() + b"\xff", b"raw")
+    [name] = await cache.akeys("akpbad_*")
+    cache.set("akpbad_a", "one byte")
+
+    assert await cache.akeys(name) == [name]
+    assert [key async for key in cache.aiter_keys(name)] == [name]
+    assert await cache.adelete_pattern(name) == 1
+    assert await cache.akeys("akpbad_*") == ["akpbad_a"]
 
 
 @pytest.mark.asyncio

@@ -1314,7 +1314,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> list[str]:
         """Return all keys matching pattern (returns original keys without prefix)."""
-        full_pattern = self.make_pattern(pattern, version=version)
+        full_pattern = _wire_key(self.make_pattern(pattern, version=version))
         raw_keys = self.adapter.keys(full_pattern)
         return [self.reverse_key(k) for k in raw_keys]
 
@@ -1324,7 +1324,7 @@ class RespCache(BaseCachex):
         version: int | None = None,
     ) -> list[str]:
         """Return all keys matching pattern asynchronously."""
-        full_pattern = self.make_pattern(pattern, version=version)
+        full_pattern = _wire_key(self.make_pattern(pattern, version=version))
         raw_keys = await self.adapter.akeys(full_pattern)
         return [self.reverse_key(k) for k in raw_keys]
 
@@ -1335,7 +1335,7 @@ class RespCache(BaseCachex):
         itersize: int | None = None,
     ) -> Iterator[str]:
         """Iterate over keys matching pattern using SCAN."""
-        full_pattern = self.make_pattern(pattern, version=version)
+        full_pattern = _wire_key(self.make_pattern(pattern, version=version))
         for key in self.adapter.iter_keys(full_pattern, itersize=itersize):
             yield self.reverse_key(key)
 
@@ -1346,7 +1346,7 @@ class RespCache(BaseCachex):
         itersize: int | None = None,
     ) -> AsyncIterator[str]:
         """Iterate over keys matching pattern using SCAN asynchronously."""
-        full_pattern = self.make_pattern(pattern, version=version)
+        full_pattern = _wire_key(self.make_pattern(pattern, version=version))
         async for key in self.adapter.aiter_keys(full_pattern, itersize=itersize):
             yield self.reverse_key(key)
 
@@ -1359,7 +1359,7 @@ class RespCache(BaseCachex):
         key_type: str | None = None,
     ) -> tuple[int, list[str]]:
         """Perform a single SCAN iteration returning cursor and keys."""
-        full_pattern = self.make_pattern(pattern, version=version)
+        full_pattern = _wire_key(self.make_pattern(pattern, version=version))
         next_cursor, raw_keys = self.adapter.scan(
             cursor=cursor,
             match=full_pattern,
@@ -1377,7 +1377,7 @@ class RespCache(BaseCachex):
         key_type: str | None = None,
     ) -> tuple[int, list[str]]:
         """Perform a single SCAN iteration asynchronously."""
-        full_pattern = self.make_pattern(pattern, version=version)
+        full_pattern = _wire_key(self.make_pattern(pattern, version=version))
         next_cursor, raw_keys = await self.adapter.ascan(
             cursor=cursor,
             match=full_pattern,
@@ -1393,7 +1393,7 @@ class RespCache(BaseCachex):
         itersize: int | None = None,
     ) -> int:
         """Delete all keys matching pattern."""
-        full_pattern = self.make_pattern(pattern, version=version)
+        full_pattern = _wire_key(self.make_pattern(pattern, version=version))
         return self.adapter.delete_pattern(full_pattern, itersize=itersize)
 
     async def adelete_pattern(
@@ -1403,7 +1403,7 @@ class RespCache(BaseCachex):
         itersize: int | None = None,
     ) -> int:
         """Delete all keys matching pattern asynchronously."""
-        full_pattern = self.make_pattern(pattern, version=version)
+        full_pattern = _wire_key(self.make_pattern(pattern, version=version))
         return await self.adapter.adelete_pattern(full_pattern, itersize=itersize)
 
     def lock(
