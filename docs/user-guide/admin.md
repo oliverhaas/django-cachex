@@ -110,7 +110,7 @@ The admin rejects an edit if the key's type changed after the page loaded. On th
 
 A key of a type the admin cannot render is read-only, apart from Delete and the TTL form. The stock Django backends have no `type()`, so their key pages allow only Delete.
 
-On the Valkey and Redis backends, the page does not read a string value over 1 MiB. It shows the value's size, with Delete and the TTL form.
+The page shows a string value over 1 MiB, before or after decompression, as its size, with Delete and the TTL form. On the Valkey and Redis backends, it does not read a value stored in over 1 MiB.
 
 ![The key detail page editing a value and its TTL](../assets/screenshot-key-detail.png)
 

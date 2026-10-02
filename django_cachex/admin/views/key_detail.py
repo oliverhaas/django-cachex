@@ -114,8 +114,8 @@ _UNHASHABLE_MEMBER_ERROR = "JSON arrays and objects cannot be used as sorted set
 _CAS_NAME_TAKEN = -2
 
 
-# Strings above this many stored bytes are not read: the GET and the SHA1 hold
-# the server for the whole value, and the page would carry all of it.
+# Strings above this many stored bytes are not read: the GET and the SHA1 hold the
+# server for the whole value. A compressed value can decode past it and is not shown.
 _MAX_STRING_BYTES = 1024 * 1024
 
 
@@ -996,6 +996,10 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         value_display, value_is_editable = "", False
     elif raw_value is not None:
         value_display, value_is_editable = format_value_for_display(raw_value)
+        rendered_size = len(value_display.encode())
+        if rendered_size > _MAX_STRING_BYTES:
+            value_display, value_is_editable = "", False
+            value_too_large, value_size = True, rendered_size
     else:
         value_display = "null"
 

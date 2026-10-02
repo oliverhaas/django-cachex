@@ -2978,6 +2978,28 @@ def test_oversized_string_is_neither_read_nor_rendered(admin_client: Client, tes
     assert 'id="delete-form"' in content
 
 
+def test_compressed_string_over_the_cap_once_decoded_is_not_rendered(admin_client: Client, test_cache: RespCache):
+    config = {
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": settings.CACHES["default"]["LOCATION"],
+        "OPTIONS": {"compressor": "django_cachex.compressors.zlib.ZlibCompressor"},
+    }
+    with _extra_cache("compressed", config):
+        cache = caches["compressed"]
+        cache.set("big:compressed", "x" * (_MAX_STRING_BYTES + 1))
+        stored = cache.get_client(write=False).strlen(cache.make_key("big:compressed"))
+        response = admin_client.get(_key_detail_url("compressed", "big:compressed"))
+        caches.close_all()
+
+    assert stored < _MAX_STRING_BYTES
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert "too large" in content
+    assert "x" * 100 not in content
+    assert 'name="ttl_value"' in content
+    assert 'id="delete-form"' in content
+
+
 def _assert_breadcrumbs(content: str, *, trail: list[str]) -> None:
     if django.VERSION >= (6, 1):
         open_tag, close_tag = '<ol class="breadcrumbs">', "</ol>"
