@@ -1,12 +1,10 @@
 """The generation and lease protocol that keeps cached results in step with writes."""
 
 import logging
-import os
 import re
-import signal
 import time
 import uuid
-from threading import Event, Thread
+from threading import Thread
 from types import SimpleNamespace
 
 import pytest
@@ -26,6 +24,7 @@ from django_cachex.orm.settings import orm_settings
 from django_cachex.orm.store import BYPASS, Lookup, RespStore, _entry_key, _LocalResults
 from django_cachex.orm.utils import deletion_dependents
 from django_cachex.script import keys_only_pre
+from tests.cache.support import run_forked_while_held
 from tests.orm.app.models import Test, TestChild, TestParent
 from tests.orm.utils import assert_num_queries, assert_query_cached, orm_store, override_orm_settings
 
@@ -223,36 +222,10 @@ def test_bounded():
     assert local.get("c") == (b"1", b"c")
 
 
+@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded:DeprecationWarning")
 @pytest.mark.skipif(not TRACKING, reason="only the store over a TrackingCache keeps results per process")
 def test_a_forked_child_skips_a_lock_held_at_the_fork():
-    holding, release = Event(), Event()
-
-    def hold_the_lock():
-        with store_module._LOCAL_RESULTS_LOCK:
-            holding.set()
-            release.wait(10)
-
-    holder = Thread(target=hold_the_lock, daemon=True)
-    holder.start()
-    assert holding.wait(5)
-    pid = os.fork()
-    if pid == 0:
-        code = 1
-        try:
-            assert isinstance(orm_store(), RespStore)
-            code = 0
-        finally:
-            os._exit(code)
-    release.set()
-    holder.join(5)
-    deadline = time.monotonic() + 10
-    while (waited := os.waitpid(pid, os.WNOHANG)) == (0, 0) and time.monotonic() < deadline:
-        time.sleep(0.05)
-    if waited == (0, 0):
-        os.kill(pid, signal.SIGKILL)
-        os.waitpid(pid, 0)
-        pytest.fail("the forked child deadlocked on a lock held at the fork")
-    assert os.waitstatus_to_exitcode(waited[1]) == 0
+    run_forked_while_held(store_module._LOCAL_RESULTS_LOCK, orm_store)
 
 
 # What a transaction wrote and cached, across its savepoints.
