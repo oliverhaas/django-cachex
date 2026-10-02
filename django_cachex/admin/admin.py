@@ -2,7 +2,6 @@
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.admin.utils import unquote
 from django.core.exceptions import PermissionDenied
@@ -10,6 +9,7 @@ from django.http import Http404, HttpResponseRedirect
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 
+from .helpers import check_cache_access, requested_cache
 from .models import Cache, Key
 from .queryset import CacheAdminMixin, KeyAdminMixin
 from .views import ViewConfig, cache_detail_view, key_add_view, key_detail_view
@@ -264,12 +264,9 @@ class KeyAdmin(_NoObjectRoutesMixin, KeyAdminMixin, _KeyBase):  # type: ignore[m
                 reverse("admin:django_cachex_cache_changelist"),
             )
 
-        # get_cache() raises on an unconfigured alias, so check first like add_view.
-        if Cache.get_by_name(cache_name) is None:
-            messages.error(request, f"Cache '{cache_name}' not found.")
-            return HttpResponseRedirect(
-                reverse("admin:django_cachex_cache_changelist"),
-            )
+        response = check_cache_access(request, cache_name)
+        if response is not None:
+            return response
 
         return key_detail_view(request, cache_name, key_name, self._get_config())
 
@@ -283,12 +280,9 @@ class KeyAdmin(_NoObjectRoutesMixin, KeyAdminMixin, _KeyBase):  # type: ignore[m
         if not self.has_add_permission(request):
             raise PermissionDenied
 
-        cache_name = request.GET.get("cache") or next(iter(settings.CACHES))
-
-        if Cache.get_by_name(cache_name) is None:
-            messages.error(request, f"Cache '{cache_name}' not found.")
-            return HttpResponseRedirect(
-                reverse("admin:django_cachex_cache_changelist"),
-            )
+        cache_name = requested_cache(request)
+        response = check_cache_access(request, cache_name)
+        if response is not None:
+            return response
 
         return key_add_view(request, cache_name, self._get_config())

@@ -9,7 +9,6 @@ import logging
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.admin import ShowFacets
 from django.contrib.admin.views.main import ERROR_FLAG, PAGE_VAR
@@ -27,11 +26,16 @@ from django.utils.translation import gettext_lazy as _
 
 from django_cachex.admin.helpers import (
     CacheUnavailableError,
+    accessible_caches,
+    can_access_cache,
+    can_clear_cache,
     can_flush,
+    check_cache_access,
     creatable_types,
     get_cache,
     get_size,
     mask_credentials,
+    requested_cache,
 )
 from django_cachex.admin.models import Cache, Key
 from django_cachex.cache.resp import RespCache, RespClusterCache
@@ -190,7 +194,10 @@ class CacheAdminMixin:
     # ------------------------------------------------------------------
 
     def get_queryset(self, request: HttpRequest) -> CacheQuerySet:
-        return CacheQuerySet()
+        caches = Cache.get_all()
+        for cache_obj in caches:
+            cache_obj.keys_accessible = can_access_cache(request, cache_obj.name)
+        return CacheQuerySet(caches)
 
     def get_search_results(
         self,
@@ -236,6 +243,11 @@ class CacheAdminMixin:
 
     @admin.action(description=_("Flush selected caches"), permissions=["flush"])
     def flush_selected(self, request: HttpRequest, queryset: CacheQuerySet) -> None:
+        denied = [cache_obj.name for cache_obj in queryset if not can_clear_cache(request, cache_obj.name)]
+        if denied:
+            names = ", ".join(f"'{name}'" for name in denied)
+            messages.error(request, f"Nothing was flushed: flushing {names} would delete keys you have no access to.")
+            return
         flushed = 0
         for cache_obj in queryset:
             try:
@@ -291,7 +303,7 @@ class CacheAdminMixin:
 
     @admin.display(description=_("Actions"))
     def keys_link(self, obj: Cache) -> str:
-        if obj.support_level != "cachex":
+        if obj.support_level != "cachex" or not obj.keys_accessible:
             return mark_safe('<span style="color:#9ca3af">-</span>')
         url = reverse("admin:django_cachex_key_changelist") + "?" + urlencode({"cache": obj.name})
         return format_html('<a href="{}">{}</a>', url, _("List Keys"))
@@ -432,19 +444,19 @@ class CacheFilter(admin.SimpleListFilter):
         request: HttpRequest,
         model_admin: admin.ModelAdmin[Any],
     ) -> list[tuple[str, str]]:
-        return [(name, name) for name in settings.CACHES]
+        return [(name, name) for name in accessible_caches(request)]
 
     def queryset(self, request: HttpRequest, queryset: KeyQuerySet) -> KeyQuerySet:  # type: ignore[override]
         return queryset  # No-op: cache selection handled in get_queryset
 
     def has_output(self) -> bool:
-        return len(settings.CACHES) > 1
+        return len(self.lookup_choices) > 1
 
-    def value(self) -> str:
-        """Default to first cache when not specified."""
+    def value(self) -> str | None:
+        """Default to the first cache the user can access, as ``requested_cache`` does."""
         val = super().value()
-        if val is None:
-            return next(iter(settings.CACHES))
+        if val is None and self.lookup_choices:
+            return self.lookup_choices[0][0]
         return val
 
     def choices(self, changelist: Any) -> Iterator[dict[str, Any]]:  # type: ignore[override]
@@ -611,7 +623,10 @@ class KeyAdminMixin:
     # ------------------------------------------------------------------
 
     def get_queryset(self, request: HttpRequest) -> KeyQuerySet:
-        cache_name = request.GET.get("cache") or next(iter(settings.CACHES))
+        cache_name = requested_cache(request)
+        # changelist_view checks first; this covers any other caller.
+        if not can_access_cache(request, cache_name):
+            raise PermissionDenied
         search_query = request.GET.get("q", "").strip()
         type_filter = request.GET.get("type", "").strip().lower()
         cursor = getattr(request, "_cachex_cursor", 0)
@@ -698,7 +713,7 @@ class KeyAdminMixin:
         """Clear the cache, then redirect back."""
         # Same blast radius as the danger zone, so it takes the danger zone's
         # gate rather than ``change_key``.
-        if not can_flush(request):
+        if not can_flush(request) or not can_clear_cache(request, cache_name):
             raise PermissionDenied
         try:
             cache = get_cache(cache_name)
@@ -719,13 +734,13 @@ class KeyAdminMixin:
     ) -> HttpResponse:
         extra_context = extra_context or {}
 
-        cache_name = request.GET.get("cache") or request.POST.get("cache_name") or next(iter(settings.CACHES))
-        if Cache.get_by_name(cache_name) is None:
-            messages.error(request, f"Cache '{cache_name}' not found.")
-            return HttpResponseRedirect(reverse("admin:django_cachex_cache_changelist"))
+        cache_name = requested_cache(request)
+        response = check_cache_access(request, cache_name)
+        if response is not None:
+            return response
         extra_context["cache_name"] = cache_name
         extra_context["title"] = f"Keys in '{cache_name}'"
-        extra_context["can_flush"] = can_flush(request)
+        extra_context["can_flush"] = can_flush(request) and can_clear_cache(request, cache_name)
         with contextlib.suppress(CacheUnavailableError):
             cache = get_cache(cache_name)
             extra_context["clear_confirm"] = _clear_scope(cache)[0]
@@ -776,6 +791,9 @@ class KeyAdminMixin:
 
     @admin.action(description=_("Delete selected keys"), permissions=["delete"])
     def delete_selected_keys(self, request: HttpRequest, queryset: KeyQuerySet) -> None:
+        # Each pk names its own alias, so a crafted POST can select keys of a cache other than the listed one.
+        if not all(can_access_cache(request, key_obj.cache_name) for key_obj in queryset):
+            raise PermissionDenied
         deleted = 0
         missing = 0
         errors: list[str] = []

@@ -9,7 +9,14 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
+from django.contrib import messages
 from django.core.cache import caches
+from django.core.cache.backends.memcached import BaseMemcachedCache
+from django.core.cache.backends.redis import RedisCache as DjangoRedisCache
+from django.core.exceptions import PermissionDenied
+from django.http import HttpResponseRedirect
+from django.urls import reverse
+from django.utils.module_loading import import_string
 from django.utils.translation import gettext_lazy as _
 
 from django_cachex.admin.cas import (
@@ -20,6 +27,7 @@ from django_cachex.admin.cas import (
     supports_cas,
 )
 from django_cachex.cache.resp import RespCache
+from django_cachex.cache.tracking import TrackingCache
 from django_cachex.exceptions import CompressorError, NotSupportedError, SerializerError
 from django_cachex.types import KeyType
 from django_cachex.utils import _deep_getsizeof
@@ -29,7 +37,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from django.http import HttpRequest
+    from django.http import HttpRequest, HttpResponse
 
 
 class CacheUnavailableError(Exception):
@@ -211,6 +219,84 @@ def can_flush(request: HttpRequest) -> bool:
     """
     admin_settings = getattr(settings, "CACHEX_ADMIN", None) or {}
     return bool(admin_settings.get("ALLOW_FLUSH")) and request.user.has_perm("django_cachex.change_cache")  # ty: ignore[unresolved-attribute]
+
+
+def _backend_class(alias: str) -> type | None:
+    """Import the ``BACKEND`` class of ``alias`` without building the cache, or return None."""
+    try:
+        backend = import_string(settings.CACHES[alias]["BACKEND"])
+    except KeyError, ImportError:
+        return None
+    return backend if isinstance(backend, type) else None
+
+
+def can_access_cache(request: HttpRequest, alias: str) -> bool:
+    """Report whether ``request`` can use the keys of cache ``alias``.
+
+    A ``TrackingCache`` alias shows the keys of its transport, so it needs both permissions.
+    """
+    if not request.user.has_perm(f"django_cachex.access_{alias}"):  # ty: ignore[unresolved-attribute]
+        return False
+    backend = _backend_class(alias)
+    if backend is None or not issubclass(backend, TrackingCache):
+        return True
+    transport = (settings.CACHES[alias].get("OPTIONS") or {}).get("transport")
+    return request.user.has_perm(f"django_cachex.access_{transport}")  # ty: ignore[unresolved-attribute]
+
+
+def accessible_caches(request: HttpRequest) -> list[str]:
+    """Return the aliases ``request`` can access, in ``CACHES`` order."""
+    return [alias for alias in settings.CACHES if can_access_cache(request, alias)]
+
+
+def can_access_all_caches(request: HttpRequest) -> bool:
+    """Report whether ``request`` can access every alias.
+
+    ``LOCATION`` cannot reliably tell which aliases share a server, so an
+    operation on a whole database or server needs all of them.
+    """
+    return all(can_access_cache(request, alias) for alias in settings.CACHES)
+
+
+def can_clear_cache(request: HttpRequest, alias: str) -> bool:
+    """Report whether ``request`` can run ``clear()`` on ``alias`` from the Clear tool or the Flush action.
+
+    Django's ``RedisCache`` clears with FLUSHDB and the memcached backends with
+    ``flush_all``, so on those the clear needs every alias.
+    """
+    backend = _backend_class(alias)
+    if backend is not None and issubclass(backend, DjangoRedisCache | BaseMemcachedCache):
+        return can_access_all_caches(request)
+    return can_access_cache(request, alias)
+
+
+def requested_cache(request: HttpRequest) -> str:
+    """Resolve the alias a key list or add-key request is for.
+
+    ``?cache=``, else the Clear tool's ``cache_name``, else the first alias the
+    user can access. Raises ``PermissionDenied`` when there is none.
+    """
+    named = request.GET.get("cache") or request.POST.get("cache_name")
+    if named:
+        return named
+    accessible = accessible_caches(request)
+    if not accessible:
+        raise PermissionDenied
+    return accessible[0]
+
+
+def check_cache_access(request: HttpRequest, cache_name: str) -> HttpResponse | None:
+    """Redirect to the cache list for an alias missing from ``CACHES``, else return None.
+
+    Raises ``PermissionDenied`` for an alias the user cannot access. The lookup
+    runs first, so a mistyped alias reads as a mistake rather than a missing grant.
+    """
+    if cache_name not in settings.CACHES:
+        messages.error(request, f"Cache '{cache_name}' not found.")
+        return HttpResponseRedirect(reverse("admin:django_cachex_cache_changelist"))
+    if not can_access_cache(request, cache_name):
+        raise PermissionDenied
+    return None
 
 
 def parse_metadata(
