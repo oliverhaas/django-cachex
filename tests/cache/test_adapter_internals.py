@@ -1180,6 +1180,32 @@ _STANDALONE_DRIVERS = [
 ]
 
 
+@requires_valkey
+@pytest.mark.parametrize("adapter_class", _STANDALONE_DRIVERS)
+@pytest.mark.asyncio
+async def test_a_client_class_override_gets_its_own_clients(monkeypatch: pytest.MonkeyPatch, adapter_class: Any):
+    monkeypatch.setattr(adapter_class, "_sync_pools", {})
+    monkeypatch.setattr(adapter_class, "_async_pools", weakref.WeakKeyDictionary())
+    client_class = type("Client", (adapter_class._client_class,), {})
+    async_client_class = type("AsyncClient", (adapter_class._async_client_class,), {})
+    override_class = type(
+        "Adapter",
+        (adapter_class,),
+        {"_client_class": client_class, "_async_client_class": async_client_class},
+    )
+    base, override = adapter_class([SERVER_URL]), override_class([SERVER_URL])
+    try:
+        base.get_client(write=True)
+        await base.get_async_client(write=True)
+
+        clients = [override.get_client(write=True), await override.get_async_client(write=True)]
+
+        assert [type(client) for client in clients] == [client_class, async_client_class]
+    finally:
+        await base.aclose()
+        await override.aclose()
+
+
 # Regression: the driver's from_url() applies URL values after keyword
 # arguments, so the URL credentials silently beat OPTIONS on redis-py and valkey-py.
 

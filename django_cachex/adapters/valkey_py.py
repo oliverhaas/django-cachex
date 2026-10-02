@@ -865,7 +865,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         if self._pool_class is None:
             msg = "Subclasses must set _pool_class"
             raise RuntimeError(msg)
-        key = (self._pool_class, self._servers[index], _options_key(self._pool_options), index)
+        key = (self._pool_class, self._client_class, self._servers[index], _options_key(self._pool_options), index)
         with _SYNC_POOLS_LOCK:
             pool = self._sync_pools.get(key)
             if pool is None:
@@ -928,7 +928,13 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         return pool
 
     def _async_pool_key(self, index: int) -> tuple[Any, ...]:
-        return (self._async_pool_class, self._servers[index], self._async_pool_options_key, index)
+        return (
+            self._async_pool_class,
+            self._async_client_class,
+            self._servers[index],
+            self._async_pool_options_key,
+            index,
+        )
 
     def _new_async_client(self, pool: Any) -> Any:
         """Build a fresh async client for ``pool``, safe for a caller to mutate."""
@@ -3822,6 +3828,7 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         service_name, is_master, clean_url = self._parse_sentinel_url(index)
         key = (
             self._sentinel_pool_class,
+            self._client_class,
             clean_url,
             service_name,
             is_master,
@@ -3939,6 +3946,7 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
             service_name, is_master, clean_url = self._parse_sentinel_url(index)
             key = (
                 self._async_sentinel_pool_class,
+                self._async_client_class,
                 clean_url,
                 service_name,
                 is_master,
