@@ -725,19 +725,11 @@ def get_slowlog(cache: Any, count: int = 25) -> dict[str, Any]:
     """
     result: dict[str, Any] = {
         "entries": [],
-        "length": 0,
         "error": None,
     }
 
     try:
-        slowlog_result = cache.slowlog_get(count)
-        # Wrappers return a structured dict with an "entries" key.
-        if isinstance(slowlog_result, dict) and "entries" in slowlog_result:
-            return slowlog_result
-        # Native backends return a raw entries list, so the length is a second call.
-        with contextlib.suppress(AttributeError, NotSupportedError):
-            result["length"] = cache.slowlog_len()
-        result["entries"] = [_parse_slowlog_entry(entry) for entry in slowlog_result]
+        result["entries"] = [_parse_slowlog_entry(entry) for entry in cache.slowlog_get(count)]
     except AttributeError, NotSupportedError:
         raise
     except Exception as e:  # noqa: BLE001

@@ -3,13 +3,11 @@
 import contextlib
 import logging
 import math
-from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect, render
-from django.utils import timezone
 from django.utils.http import urlencode
 
 from django_cachex.admin.cas import (
@@ -932,15 +930,12 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
 
     key_type = None
     ttl = None
-    ttl_expires_at = None
     type_data: dict[str, Any] = {}
     if key_exists:
         with contextlib.suppress(Exception):
             key_type = cache.type(key)
         with contextlib.suppress(Exception):
             ttl = cache.ttl(key)
-            if ttl is not None and ttl >= 0:
-                ttl_expires_at = timezone.now() + timedelta(seconds=ttl)
         if key_type and key_type != KeyType.STRING:
             type_data = get_type_data(cache, key, key_type, page=page)
     elif create_mode:
@@ -1047,8 +1042,6 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             "key": shown_key,
             "raw_key": raw_key,
             "cache_metadata": cache_metadata,
-            "key_exists": key_exists,
-            "create_mode": create_mode,
             "value_display": value_display,
             "value_is_editable": value_is_editable,
             "value_too_large": value_too_large,
@@ -1058,7 +1051,6 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             "key_type": key_type,
             "opaque_type": opaque_type,
             "ttl": ttl,
-            "ttl_expires_at": ttl_expires_at,
             "type_data": type_data,
             "can_mutate": can_mutate,
             "can_change": can_change,
