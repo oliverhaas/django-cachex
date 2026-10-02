@@ -879,6 +879,7 @@ async def _run_async_workload(
     result.py_peak_kb_per_run.append(peak / 1024)
 
     await cache.aclear()
+    await cache.aclose()
 
 
 def run_async_benchmark(
