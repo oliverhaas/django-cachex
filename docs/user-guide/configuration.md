@@ -369,8 +369,13 @@ value until the key expires, up to `buffer` seconds after its timeout.
     "ssl_ca_certs": "/path/to/ca.crt",
     "ssl_certfile": "/path/to/client.crt",
     "ssl_keyfile": "/path/to/client.key",
+    "ssl_check_hostname": True,
 }
 ```
+
+`ssl_check_hostname` defaults to `False` in valkey-py and to `True` in
+redis-py, so set it on valkey-py backends to match the certificate against the
+server hostname.
 
 valkey-glide ignores the `ssl_*` keys and takes only a TLS flag, see
 [Valkey-Glide OPTIONS](#valkey-glide-options).
