@@ -74,11 +74,20 @@ def wait_for_replication(
     return result
 
 
-def test_write_to_master_read_from_replica(replica_cache: RespCache):
+def test_write_to_master_read_from_replica(replica_cache: RespCache, replica_urls: list[str]):
     replica_cache.set("replica_test_key", "test_value", timeout=60)
 
     result = wait_for_replication(replica_cache, {"replica_test_key": "test_value"})
     assert result == {"replica_test_key": "test_value"}, "Replication timed out"
+
+    master = redis.Redis.from_url(replica_urls[0])
+    try:
+        before = master.info("commandstats").get("cmdstat_get", {}).get("calls", 0)
+        for _ in range(10):
+            assert replica_cache.get("replica_test_key") == "test_value"
+        assert master.info("commandstats").get("cmdstat_get", {}).get("calls", 0) == before
+    finally:
+        master.close()
 
     replica_cache.delete("replica_test_key")
 

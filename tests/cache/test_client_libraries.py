@@ -28,13 +28,9 @@ def test_set_get_across_images(cache: RespCache, resp_images: tuple[str, str]):
     assert cache.get("int_key") == 42, f"image={image}, client_library={client_library}"
 
 
-# valkey-glide ignores parser_class and the cluster client picks its own
-# parser, so both parser cells would run the same thing there.
 @pytest.mark.parametrize("resp_adapter", sorted(POOL_OPTION_ADAPTERS), indirect=True)
-def test_native_parser_round_trips_nested_values(cache: RespCache, native_parser: bool, client_class: str):
+def test_native_parser_round_trips_nested_values(cache: RespCache, native_parser: bool):
     """hiredis / libvalkey must decode what the pure-Python parser decodes."""
-    if client_class == "cluster":
-        pytest.skip("cluster rejects parser_class")
     parser = "native" if native_parser else "python"
 
     cache.set("test_key", {"nested": {"data": [1, 2, 3]}})

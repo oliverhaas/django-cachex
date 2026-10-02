@@ -150,10 +150,11 @@ def test_scan_explicit_count_zero_is_honored(five_key_cache: KeysOnlyCache):
     assert next_cursor == 0
 
 
-def test_scan_default_count_paginates(five_key_cache: KeysOnlyCache):
-    next_cursor, keys = five_key_cache.scan()
-    assert keys == ["k0", "k1", "k2", "k3", "k4"]
-    assert next_cursor == 0
+def test_scan_default_count_paginates():
+    cache = KeysOnlyCache({f"k{i}": i for i in range(1000)})
+    next_cursor, keys = cache.scan()
+    assert next_cursor != 0
+    assert 0 < len(keys) < 1000
 
 
 def test_scan_cursor_advances(five_key_cache: KeysOnlyCache):

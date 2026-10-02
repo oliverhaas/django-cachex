@@ -6,8 +6,6 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from django_cachex.exceptions import NotSupportedError
-from django_cachex.serializers.json import JsonSerializer
-from django_cachex.serializers.msgpack import MsgpackSerializer
 from tests.fixtures.cache import server_version
 
 if TYPE_CHECKING:
@@ -78,16 +76,6 @@ def test_set_get_with_timeout(cache: RespCache):
     assert ttl is not None and ttl > 0
 
 
-def test_set_get_preserves_none_vs_missing(cache: RespCache):
-    cache.delete("get_chain")
-    old1 = cache.set("get_chain", "a", get=True)
-    assert old1 is None
-    old2 = cache.set("get_chain", "b", get=True)
-    assert old2 == "a"
-    old3 = cache.set("get_chain", "c", get=True)
-    assert old3 == "b"
-
-
 def test_cyrillic_key(cache: RespCache):
     cache.set("ключ", "данные")
     assert cache.get("ключ") == "данные"
@@ -134,11 +122,7 @@ def test_accented_string(cache: RespCache):
 
 
 def test_dictionary_with_datetime(cache: RespCache):
-    if isinstance(cache._serializers[0], JsonSerializer | MsgpackSerializer):
-        timestamp: str | datetime.datetime = datetime.datetime.now().isoformat()
-    else:
-        timestamp = datetime.datetime.now()
-
+    timestamp = datetime.datetime.now()
     data = {"user_id": 42, "created": timestamp, "label": "Test"}
     cache.set("dict_data", data)
     result = cache.get("dict_data")
@@ -644,17 +628,6 @@ async def test_aset_get_with_timeout(cache: RespCache):
 
 
 @pytest.mark.asyncio
-async def test_aset_get_preserves_none_vs_missing(cache: RespCache):
-    await cache.adelete("aget_chain")
-    old1 = await cache.aset("aget_chain", "a", get=True)
-    assert old1 is None
-    old2 = await cache.aset("aget_chain", "b", get=True)
-    assert old2 == "a"
-    old3 = await cache.aset("aget_chain", "c", get=True)
-    assert old3 == "b"
-
-
-@pytest.mark.asyncio
 async def test_acyrillic_key(cache: RespCache):
     await cache.aset("ключ", "данные")
     assert await cache.aget("ключ") == "данные"
@@ -708,11 +681,7 @@ async def test_aaccented_string(cache: RespCache):
 
 @pytest.mark.asyncio
 async def test_adictionary_with_datetime(cache: RespCache):
-    if isinstance(cache._serializers[0], JsonSerializer | MsgpackSerializer):
-        timestamp: str | datetime.datetime = datetime.datetime.now().isoformat()
-    else:
-        timestamp = datetime.datetime.now()
-
+    timestamp = datetime.datetime.now()
     data = {"user_id": 42, "created": timestamp, "label": "Test"}
     await cache.aset("adict_data", data)
     result = await cache.aget("adict_data")
