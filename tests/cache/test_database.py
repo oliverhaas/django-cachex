@@ -6,6 +6,7 @@ full per-op battery lives with the RESP-backend tests via the parametrized
 fixtures.
 """
 
+import inspect
 from typing import TYPE_CHECKING
 
 import pytest
@@ -16,14 +17,13 @@ from django.db import connections
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 
-from django_cachex.cache.database import _MISSING, _List
+from django_cachex.cache.base import BaseCachex
+from django_cachex.cache.database import _MISSING, DatabaseCache, _List
 from django_cachex.exceptions import NotSupportedError, WrongTypeError
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-
-    from django_cachex.cache.database import DatabaseCache
 
 
 DATABASE_CACHES = {
@@ -93,13 +93,6 @@ def test_set_get_raises_not_supported(db_cache: DatabaseCache):
         db_cache.set("k", "v", get=True)
 
 
-# Async tests are deliberately omitted: Django's DatabaseCache.aset
-# bridges through ``sync_to_async``, which on SQLite ``:memory:`` hits
-# "schema is locked" because the in-memory DB has a single connection.
-# The async path adds no logic beyond the bridge; the sync tests above
-# cover the cachex contract.
-
-
 # Cross-backend code that catches ``WrongTypeError`` must work against DatabaseCache too.
 def test_lpush_on_string_raises_wrongtype(db_cache: DatabaseCache):
     db_cache.set("k", "abc")
@@ -156,25 +149,6 @@ def test_incr_on_collection_raises_wrongtype(db_cache: DatabaseCache):
     db_cache.rpush("lk", 1)
     with pytest.raises(WrongTypeError):
         db_cache.incr("lk")
-
-
-def test_aget_many_and_ahas_key_dispatch_to_the_sync_twins(db_cache: DatabaseCache):
-    # Regression: Django 6.0's BaseCache composes aget_many/ahas_key from
-    # aget, which raised WrongTypeError on a list key. ``async_to_sync``
-    # for the same reason as ``test_ascan_mirrors_scan``.
-    db_cache.set("plain", 1)
-    db_cache.rpush("lst", "a")
-    assert async_to_sync(db_cache.aget_many)(["plain", "lst", "missing"]) == {"plain": 1}
-    assert async_to_sync(db_cache.ahas_key)("lst") is True
-    assert async_to_sync(db_cache.ahas_key)("missing") is False
-
-
-def test_adelete_many_deletes_collections(db_cache: DatabaseCache):
-    db_cache.set("plain", 1)
-    db_cache.rpush("lst", "a")
-    async_to_sync(db_cache.adelete_many)(["plain", "lst"])
-    assert db_cache.has_key("plain") is False
-    assert db_cache.has_key("lst") is False
 
 
 def test_wrongtype_message_uses_the_user_key(db_cache: DatabaseCache):
@@ -239,15 +213,6 @@ def test_incr_runs_through_the_locked_read_modify_write(db_cache: DatabaseCache,
     spy = mocker.patch.object(db_cache, "_atomic_compound", wraps=db_cache._atomic_compound)
     assert db_cache.incr("c") == 6
     spy.assert_called_once()
-
-
-def test_aincr_dispatches_to_incr(db_cache: DatabaseCache):
-    # ``async_to_sync`` for the same reason as ``test_ascan_mirrors_scan``.
-    db_cache.set("c", 5, timeout=3600)
-    before = _expires(db_cache, "c")
-    assert async_to_sync(db_cache.aincr)("c") == 6
-    assert async_to_sync(db_cache.adecr)("c", 2) == 4
-    assert _expires(db_cache, "c") == before
 
 
 def test_ttl_persistent_key_reports_none(db_cache: DatabaseCache):
@@ -737,10 +702,6 @@ def test_zrevrangebyscore_missing_key(db_cache: DatabaseCache):
     assert db_cache.zrevrangebyscore("missing", 100.0, 0.0) == []
 
 
-def test_azrevrangebyscore(zset_cache: DatabaseCache):
-    assert async_to_sync(zset_cache.azrevrangebyscore)("z", 3.0, 2.0) == ["c", "b"]
-
-
 def test_infinite_bounds_parse(zset_cache: DatabaseCache):
     assert zset_cache.zcount("z", "-inf", "+inf") == 4
 
@@ -902,17 +863,6 @@ def test_scan_combines_pattern_and_type(typed_cache: DatabaseCache):
     assert typed_cache.scan(pattern="a*", key_type=KeyType.LIST) == (0, ["alist"])
 
 
-def test_ascan_mirrors_scan(typed_cache: DatabaseCache):
-    # Regression: ``ascan`` was left at the BaseCachex default and raised
-    # NotSupportedError even though the sync ``scan`` works.
-    #
-    # Driven through ``async_to_sync`` rather than an ``asyncio`` test so
-    # that ``sync_to_async(thread_sensitive=True)`` runs the query back on
-    # this thread, which owns the test transaction and its connection.
-    result = async_to_sync(typed_cache.ascan)(pattern="*", key_type=KeyType.LIST)
-    assert result == (0, ["alist"])
-
-
 @pytest.fixture
 def mixed_case_cache(db_cache: DatabaseCache) -> DatabaseCache:
     db_cache.set("Foo", 1)
@@ -993,16 +943,6 @@ def test_decr_version_moves_back(db_cache: DatabaseCache):
     db_cache.rpush("l", 1, version=2)
     assert db_cache.decr_version("l", version=2) == 1
     assert db_cache.lrange("l", 0, -1, version=1) == [1]
-
-
-def test_aincr_version_moves_a_collection(db_cache: DatabaseCache):
-    # Regression: on Django 6.0 aincr_version composed aget/aset/adelete
-    # and raised WrongTypeError on a list key.
-    db_cache.rpush("l", 1, 2)
-    assert async_to_sync(db_cache.aincr_version)("l") == 2
-    assert db_cache.lrange("l", 0, -1, version=2) == [1, 2]
-    assert async_to_sync(db_cache.adecr_version)("l", version=2) == 1
-    assert db_cache.lrange("l", 0, -1) == [1, 2]
 
 
 def test_incr_version_zero_delta_is_a_no_op(db_cache: DatabaseCache):
@@ -1159,3 +1099,134 @@ def test_info_failed_counts_roll_back_a_savepoint(db_cache: DatabaseCache):
     statements = [q["sql"] for q in ctx.captured_queries]
     assert any(sql.startswith("SAVEPOINT") for sql in statements)
     assert any(sql.startswith("ROLLBACK TO SAVEPOINT") for sql in statements)
+
+
+def _seed_twin_data(cache: DatabaseCache) -> None:
+    cache.clear()
+    cache.set("s", 5, timeout=3600)
+    cache.rpush("l", "a", "b", "a", "c")
+    cache.sadd("one", "a")
+    cache.sadd("two", "a", "b")
+    cache.hset("h", mapping={"f": 1, "g": 2.5})
+    cache.zadd("z", {"a": 1.0, "b": 2.0, "c": 3.0})
+
+
+def _twin_state(cache: DatabaseCache) -> tuple[dict[tuple[int, str], object], dict[tuple[int, str], int | None]]:
+    versions = (cache.version - 1, cache.version, cache.version + 1)
+    stored = [(version, key) for version in versions for key in cache.keys(version=version)]
+    values = {(version, key): cache._read(cache._internal_key(key, version=version)) for version, key in stored}
+    return values, {(version, key): cache.ttl(key, version=version) for version, key in stored}
+
+
+async def _call_async_twin(method, args, kwargs):
+    call = method(*args, **kwargs)
+    return [item async for item in call] if inspect.isasyncgen(call) else await call
+
+
+_ASYNC_TWIN_CASES = [
+    ("aset", ("s", 7, 100), {}),
+    ("aset", ("new", 7), {"nx": True}),
+    ("aget", ("s",), {}),
+    ("aadd", ("new", 1), {}),
+    ("atouch", ("s", 100), {}),
+    ("adelete", ("l",), {}),
+    ("aget_or_set", ("new", lambda: 3), {}),
+    ("aset_many", ({"s": 1, "new": 2},), {}),
+    ("adelete_many", (["s", "l", "missing"],), {}),
+    ("aclear", (), {}),
+    ("aclose", (), {}),
+    ("ahas_key", ("l",), {}),
+    ("aincr", ("s",), {}),
+    ("adecr", ("s", 2), {}),
+    ("aget_many", (["s", "l", "missing"],), {}),
+    ("aincr_version", ("l",), {}),
+    ("adecr_version", ("l",), {}),
+    ("attl", ("l",), {}),
+    ("atype", ("z",), {}),
+    ("apersist", ("s",), {}),
+    ("aexpire", ("l", 100), {}),
+    ("akeys", ("*",), {}),
+    ("ascan", (0,), {"count": 1, "key_type": KeyType.SET}),
+    ("aiter_keys", ("*",), {}),
+    ("adelete_pattern", ("*o*",), {}),
+    ("alpush", ("l", "x", "y"), {}),
+    ("arpush", ("l", "x"), {}),
+    ("alpop", ("l",), {"count": 2}),
+    ("arpop", ("l",), {}),
+    ("alrange", ("l", 0, -1), {}),
+    ("allen", ("l",), {}),
+    ("alrem", ("l", 0, "a"), {}),
+    ("altrim", ("l", 0, 1), {}),
+    ("alindex", ("l", 1), {}),
+    ("alset", ("l", 0, "z"), {}),
+    ("alinsert", ("l", "BEFORE", "b", "q"), {}),
+    ("alpos", ("l", "a"), {"count": 0}),
+    ("asadd", ("one", "b", "c"), {}),
+    ("asrem", ("two", "a", "zz"), {}),
+    ("ascard", ("two",), {}),
+    ("asismember", ("one", "a"), {}),
+    ("asmembers", ("two",), {}),
+    ("aspop", ("one",), {}),
+    ("asrandmember", ("one", -3), {}),
+    ("asmismember", ("two", "a", "x"), {}),
+    ("asdiff", (["two", "one"],), {}),
+    ("asinter", (["two", "one"],), {}),
+    ("asunion", (["two", "one"],), {}),
+    ("ahset", ("h", "n", 1), {"mapping": {"m": 2}}),
+    ("ahdel", ("h", "f", "zz"), {}),
+    ("ahget", ("h", "f"), {}),
+    ("ahgetall", ("h",), {}),
+    ("ahlen", ("h",), {}),
+    ("ahkeys", ("h",), {}),
+    ("ahvals", ("h",), {}),
+    ("ahexists", ("h", "g"), {}),
+    ("ahmget", ("h", "f", "zz"), {}),
+    ("ahsetnx", ("h", "new", 1), {}),
+    ("ahincrby", ("h", "f", 2), {}),
+    ("ahincrbyfloat", ("h", "g", 0.5), {}),
+    ("azadd", ("z", {"d": 4.0, "a": 0.5}), {"ch": True}),
+    ("azcard", ("z",), {}),
+    ("azscore", ("z", "b"), {}),
+    ("azrank", ("z", "c"), {}),
+    ("azrevrank", ("z", "c"), {}),
+    ("azrange", ("z", 0, 1), {"withscores": True}),
+    ("azrevrange", ("z", 0, 1), {}),
+    ("azrangebyscore", ("z", 1, 2), {"withscores": True}),
+    ("azrevrangebyscore", ("z", 3, 2), {}),
+    ("azrem", ("z", "a", "zz"), {}),
+    ("azincrby", ("z", 2.5, "a"), {}),
+    ("azcount", ("z", 1, 2), {}),
+    ("azpopmin", ("z",), {"count": 2}),
+    ("azpopmax", ("z",), {}),
+    ("azmscore", ("z", "a", "zz"), {}),
+    ("azremrangebyrank", ("z", 0, 0), {}),
+    ("azremrangebyscore", ("z", 2, 3), {}),
+]
+
+
+@pytest.mark.parametrize(("name", "args", "kwargs"), _ASYNC_TWIN_CASES, ids=[case[0] for case in _ASYNC_TWIN_CASES])
+def test_async_twin_matches_sync(db_cache: DatabaseCache, name, args, kwargs):
+    """``async_to_sync`` runs the ``sync_to_async`` query back on this thread, which owns the test transaction."""
+    _seed_twin_data(db_cache)
+    expected = getattr(db_cache, name.removeprefix("a"))(*args, **kwargs)
+    if inspect.isgenerator(expected):
+        expected = list(expected)
+    expected_values, expected_ttls = _twin_state(db_cache)
+    _seed_twin_data(db_cache)
+    result = async_to_sync(_call_async_twin)(getattr(db_cache, name), args, kwargs)
+    assert result == expected
+    assert type(result) is type(expected)
+    values, ttls = _twin_state(db_cache)
+    assert values == expected_values
+    assert ttls == pytest.approx(expected_ttls, abs=1)
+
+
+def test_async_twin_cases_cover_every_async_method():
+    owners = {
+        name: next(klass for klass in DatabaseCache.__mro__ if name in vars(klass))
+        for name in dir(DatabaseCache)
+        if inspect.iscoroutinefunction(getattr(DatabaseCache, name))
+        or inspect.isasyncgenfunction(getattr(DatabaseCache, name))
+    }
+    covered = {case[0] for case in _ASYNC_TWIN_CASES}
+    assert {name for name, owner in owners.items() if owner is not BaseCachex} == covered
