@@ -521,8 +521,10 @@ async def test_async_cluster_connects_through_a_later_location_url(
 
     with override_settings(CACHES={"default": {"BACKEND": backend, "LOCATION": location}}):
         cache = caches["default"]
-        await cache.aset("location-fallback", "value")
+        try:
+            await cache.aset("location-fallback", "value")
 
-        assert await cache.aget("location-fallback") == "value"
-        await cache.adelete("location-fallback")
-        await cache.aclose()
+            assert await cache.aget("location-fallback") == "value"
+            await cache.adelete("location-fallback")
+        finally:
+            await cache.aclose()

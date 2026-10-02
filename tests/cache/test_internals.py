@@ -391,8 +391,10 @@ def test_weak_key_dictionary_cleanup_on_loop_gc(redis_container: RedisContainerI
             return adapter._get_async_connection_pool(write=True)
 
         loop = asyncio.new_event_loop()
-        pool = loop.run_until_complete(create_pool())
-        loop.close()
+        try:
+            pool = loop.run_until_complete(create_pool())
+        finally:
+            loop.close()
         assert loop in async_pools
 
         loop_ref = weakref.ref(loop)
@@ -491,8 +493,10 @@ def test_sync_then_nested_async_run(redis_container: RedisContainerInfo):
                 await cache.aclose()
 
         loop = asyncio.new_event_loop()
-        loop.run_until_complete(async_work())
-        loop.close()
+        try:
+            loop.run_until_complete(async_work())
+        finally:
+            loop.close()
 
         assert cache.get("wsgi_key") == "wsgi_value"
         cache.delete("wsgi_key")
@@ -522,8 +526,10 @@ def test_multiple_sequential_event_loops(
         for index in (1, 2, 3):
             cache.set(f"sync_{index}", f"value_{index}")
             loop = asyncio.new_event_loop()
-            assert loop.run_until_complete(async_set_get(f"async_{index}", f"avalue_{index}")) == f"avalue_{index}"
-            loop.close()
+            try:
+                assert loop.run_until_complete(async_set_get(f"async_{index}", f"avalue_{index}")) == f"avalue_{index}"
+            finally:
+                loop.close()
 
         assert len(cache.adapter._async_pools) == 1
         assert cache.get("sync_1") == "value_1"

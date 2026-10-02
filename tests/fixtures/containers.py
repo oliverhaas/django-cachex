@@ -66,18 +66,32 @@ def _get_container_internal_ip(container: DockerContainer) -> str:
     raise RuntimeError(msg)
 
 
+def _start_container(container: DockerContainer, port: int) -> ContainerInfo:
+    """Start ``container`` and return the host address of its ``port``.
+
+    testcontainers leaves the container running when its wait strategy times
+    out, so a failed start stops it here.
+    """
+    try:
+        container.start()
+        return ContainerInfo(
+            host=container.get_container_host_ip(),
+            port=int(container.get_exposed_port(port)),
+            container=container,
+        )
+    except BaseException:
+        with suppress(Exception):
+            container.stop()
+        raise
+
+
 def _start_redis_container(image: str) -> ContainerInfo:
     """Start a Redis container with the given image."""
     container = DockerContainer(image)
     container.with_exposed_ports(6379)
     container.with_command("redis-server --protected-mode no")
     container.waiting_for(LogMessageWaitStrategy("Ready to accept connections"))
-    container.start()
-    return ContainerInfo(
-        host=container.get_container_host_ip(),
-        port=int(container.get_exposed_port(6379)),
-        container=container,
-    )
+    return _start_container(container, 6379)
 
 
 def _get_xdist_worker_id() -> int:
@@ -219,12 +233,7 @@ sentinel parallel-syncs mymaster 1
         f"sh -c 'echo \"{sentinel_conf}\" > /tmp/sentinel.conf && {sentinel_cmd} /tmp/sentinel.conf --port 26379'",
     )
     container.waiting_for(LogMessageWaitStrategy(r"\+monitor master"))
-    container.start()
-    return ContainerInfo(
-        host=container.get_container_host_ip(),
-        port=int(container.get_exposed_port(26379)),
-        container=container,
-    )
+    return _start_container(container, 26379)
 
 
 # Type alias for container factory functions
@@ -407,12 +416,7 @@ def _start_bitnami_master() -> ContainerInfo:
     container.with_env("REDIS_REPLICATION_MODE", "master")
     container.with_env("ALLOW_EMPTY_PASSWORD", "yes")
     container.waiting_for(LogMessageWaitStrategy("Ready to accept connections").with_startup_timeout(60))
-    container.start()
-    return ContainerInfo(
-        host=container.get_container_host_ip(),
-        port=int(container.get_exposed_port(6379)),
-        container=container,
-    )
+    return _start_container(container, 6379)
 
 
 def _start_bitnami_replica(master_internal_ip: str) -> ContainerInfo:
@@ -424,41 +428,45 @@ def _start_bitnami_replica(master_internal_ip: str) -> ContainerInfo:
     container.with_env("REDIS_MASTER_PORT_NUMBER", "6379")
     container.with_env("ALLOW_EMPTY_PASSWORD", "yes")
     container.waiting_for(LogMessageWaitStrategy("Ready to accept connections").with_startup_timeout(60))
-    container.start()
-    return ContainerInfo(
-        host=container.get_container_host_ip(),
-        port=int(container.get_exposed_port(6379)),
-        container=container,
-    )
+    return _start_container(container, 6379)
 
 
 @pytest.fixture(scope="session")
 def replica_container_factory() -> Generator[Callable[[], ReplicaSetContainerInfo]]:
-    """Session-scoped factory for master-replica Redis setup.
+    """Session-scoped factory for one bitnami/redis master and its replicas.
 
-    Creates one master and multiple replicas using bitnami/redis image.
+    A failed start stops the containers it started, and later calls raise
+    instead of starting another set.
     """
     cached_info: list[ReplicaSetContainerInfo | None] = [None]
+    start_error: list[BaseException] = []
 
     def get_containers() -> ReplicaSetContainerInfo:
         if cached_info[0] is not None:
             return cached_info[0]
+        if start_error:
+            msg = "The master-replica containers failed to start earlier in this session"
+            raise RuntimeError(msg) from start_error[0]
 
         containers: list[DockerContainer] = []
-
-        # Start master
-        master_info = _start_bitnami_master()
-        containers.append(master_info.container)
-        master_internal_ip = _get_container_internal_ip(master_info.container)
-
-        # Start replicas
         replica_hosts: list[str] = []
         replica_ports: list[int] = []
-        for _ in range(REPLICA_COUNT):
-            replica_info = _start_bitnami_replica(master_internal_ip)
-            containers.append(replica_info.container)
-            replica_hosts.append(replica_info.host)
-            replica_ports.append(replica_info.port)
+        try:
+            master_info = _start_bitnami_master()
+            containers.append(master_info.container)
+            master_internal_ip = _get_container_internal_ip(master_info.container)
+
+            for _ in range(REPLICA_COUNT):
+                replica_info = _start_bitnami_replica(master_internal_ip)
+                containers.append(replica_info.container)
+                replica_hosts.append(replica_info.host)
+                replica_ports.append(replica_info.port)
+        except BaseException as e:
+            start_error.append(e)
+            for container in containers:
+                with suppress(Exception):
+                    container.stop()
+            raise
 
         cached_info[0] = ReplicaSetContainerInfo(
             master_host=master_info.host,
