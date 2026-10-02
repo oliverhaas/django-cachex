@@ -164,10 +164,6 @@ class _ZSet(dict[Any, float]):
         """All ``(member, score)`` pairs in ``(score, str(member))`` order. O(N)."""
         return [(m, s) for s, _, m in self._sorted]
 
-    def reversed_members(self) -> list[tuple[Any, float]]:
-        """All ``(member, score)`` pairs in reverse sorted order. O(N)."""
-        return [(m, s) for s, _, m in reversed(self._sorted)]
-
     def rank_of(self, member: Any) -> int | None:
         """Rank of ``member`` (lowest score = 0). O(log N). ``None`` if missing."""
         if not super().__contains__(member):
