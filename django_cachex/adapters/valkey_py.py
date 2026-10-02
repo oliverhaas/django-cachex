@@ -221,6 +221,13 @@ def _connect_timeout_given(options: Mapping[str, Any], urls: Sequence[str] = ())
     return any({"socket_connect_timeout", "socket_timeout"} & parse_qs(urlsplit(url).query).keys() for url in urls)
 
 
+def _with_connect_timeout(options: dict[str, Any], url: str) -> dict[str, Any]:
+    """``options`` for a pool on ``url``, with the default connect timeout unless they or the URL query set one."""
+    if _connect_timeout_given(options, (url,)):
+        return options
+    return {**options, "socket_connect_timeout": _DEFAULT_SOCKET_CONNECT_TIMEOUT}
+
+
 def _strip_url_credentials(url: str, overridden: frozenset[str]) -> str:
     """Drop the ``username`` / ``password`` a URL carries when OPTIONS overrides them.
 
@@ -815,8 +822,6 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         for key, value in options.items():
             if key not in self._CLIENT_ONLY_OPTIONS:
                 self._pool_options[key] = value
-        if not _connect_timeout_given(self._pool_options, self._servers):
-            self._pool_options["socket_connect_timeout"] = _DEFAULT_SOCKET_CONNECT_TIMEOUT
 
         # parser_class is sync-only. Precomputed because the async path looks
         # its pool up on every awaited command.
@@ -869,7 +874,8 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         with _SYNC_POOLS_LOCK:
             pool = self._sync_pools.get(key)
             if pool is None:
-                pool = self._pool_class.from_url(self._servers[index], **_driver_copy(self._pool_options))
+                pool_options = _with_connect_timeout(self._pool_options, self._servers[index])
+                pool = self._pool_class.from_url(self._servers[index], **_driver_copy(pool_options))
                 self._sync_pools[key] = pool
         self._pools[index] = pool
         return pool
@@ -923,7 +929,8 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         slot = _loop_slot(self._async_pools, loop)
         pool = slot.get(key)
         if pool is None:
-            pool = self._async_pool_class.from_url(url, **_driver_copy(self._async_pool_options))
+            pool_options = _with_connect_timeout(self._async_pool_options, url)
+            pool = self._async_pool_class.from_url(url, **_driver_copy(pool_options))
             slot[key] = pool
         return pool
 
@@ -3839,7 +3846,7 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         with _SYNC_POOLS_LOCK:
             pool = self._sync_pools.get(key)
             if pool is None:
-                pool_options: dict[str, Any] = _driver_copy(self._pool_options)
+                pool_options: dict[str, Any] = _driver_copy(_with_connect_timeout(self._pool_options, clean_url))
                 pool_options.update(
                     service_name=service_name,
                     sentinel_manager=self._sentinel,
@@ -3903,7 +3910,7 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
                 service_name=service_name,
                 sentinel_manager=self._get_async_sentinel(),
                 is_master=is_master,
-                **self._async_sentinel_pool_options(),
+                **_with_connect_timeout(self._async_sentinel_pool_options(), clean_url),
             )
             tls_connection_class = self._tls_connection_class(clean_url, is_async=True)
             if tls_connection_class is not None:

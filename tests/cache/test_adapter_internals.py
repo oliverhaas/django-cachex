@@ -1377,6 +1377,29 @@ async def test_pools_connect_under_a_default_timeout(
         await adapter.aclose()
 
 
+@requires_valkey
+@pytest.mark.parametrize("adapter_class", _STANDALONE_DRIVERS)
+@pytest.mark.asyncio
+async def test_each_url_of_a_replica_list_connects_under_its_own_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    adapter_class: Any,
+):
+    monkeypatch.setattr(adapter_class, "_sync_pools", {})
+    monkeypatch.setattr(adapter_class, "_async_pools", weakref.WeakKeyDictionary())
+    adapter = adapter_class(["redis://primary:7000/0", "redis://replica:7000/0?socket_connect_timeout=2"])
+    try:
+        pools = [
+            adapter.get_client(write=True).connection_pool,
+            adapter.get_client(write=False).connection_pool,
+            (await adapter.get_async_client(write=True)).connection_pool,
+            (await adapter.get_async_client(write=False)).connection_pool,
+        ]
+
+        assert [pool.connection_kwargs.get("socket_connect_timeout") for pool in pools] == [5, 2, 5, 2]
+    finally:
+        await adapter.aclose()
+
+
 @pytest.mark.parametrize("adapter_class", SENTINEL_ADAPTERS)
 @pytest.mark.parametrize(
     ("url", "sentinel_kwargs"),
