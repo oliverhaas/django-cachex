@@ -268,6 +268,49 @@ def test_sync_pools_not_shared_across_sentinel_fleets(
     assert other.get_client(write=True).connection_pool is not client.connection_pool
 
 
+SENTINEL_ADAPTERS = [
+    pytest.param(ValkeyPySentinelAdapter, marks=requires_valkey, id="valkey-py"),
+    pytest.param(RedisPySentinelAdapter, id="redis-py"),
+]
+
+
+def _retrying_sentinel_options(retry_on_error: list[type[Exception]]) -> dict[str, Any]:
+    return {
+        "sentinels": [("sentinel-a", 26379), ("sentinel-b", 26379)],
+        "sentinel_kwargs": {"retry_on_timeout": True, "retry_on_error": retry_on_error},
+    }
+
+
+@pytest.mark.parametrize("adapter_class", SENTINEL_ADAPTERS)
+def test_sentinel_kwargs_retry_list_keeps_one_sync_pool(monkeypatch: pytest.MonkeyPatch, adapter_class: Any):
+    monkeypatch.setattr(adapter_class, "_sync_pools", {})
+    retry_on_error: list[type[Exception]] = [ConnectionError]
+    options = _retrying_sentinel_options(retry_on_error)
+    pool = adapter_class(["redis://mymaster/0"], **options).get_client(write=True).connection_pool
+
+    other = adapter_class(["redis://mymaster/0"], **options)
+
+    assert other.get_client(write=True).connection_pool is pool
+    assert retry_on_error == [ConnectionError]
+
+
+@pytest.mark.parametrize("adapter_class", SENTINEL_ADAPTERS)
+@pytest.mark.asyncio
+async def test_sentinel_kwargs_retry_list_keeps_one_async_pool(monkeypatch: pytest.MonkeyPatch, adapter_class: Any):
+    monkeypatch.setattr(adapter_class, "_async_pools", weakref.WeakKeyDictionary())
+    retry_on_error: list[type[Exception]] = [ConnectionError]
+    options = _retrying_sentinel_options(retry_on_error)
+    adapter = adapter_class(["redis://mymaster/0"], **options)
+    client = await adapter.get_async_client(write=True)
+    try:
+        other = adapter_class(["redis://mymaster/0"], **options)
+
+        assert (await other.get_async_client(write=True)).connection_pool is client.connection_pool
+        assert retry_on_error == [ConnectionError]
+    finally:
+        await adapter.aclose()
+
+
 @pytest.mark.asyncio
 async def test_reset_awaits_coroutine_reset():
     class StubPipeline:

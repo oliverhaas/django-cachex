@@ -192,6 +192,22 @@ def _options_key(options: Mapping[str, Any]) -> tuple[tuple[str, Any], ...]:
     return tuple((k, _stable_value(options[k])) for k in sorted(options))
 
 
+def _driver_copy(value: Any, depth: int = 0) -> Any:
+    """Copy the lists, dicts and sets of an option value for the driver; other objects stay shared.
+
+    The drivers append to ``retry_on_error`` per connection and Sentinel node,
+    which would grow OPTIONS and change the pool keys digested from it.
+    """
+    if depth < _OPTIONS_KEY_MAX_DEPTH:
+        if isinstance(value, list):
+            return [_driver_copy(item, depth + 1) for item in value]
+        if isinstance(value, dict):
+            return {k: _driver_copy(v, depth + 1) for k, v in value.items()}
+        if isinstance(value, set):
+            return set(value)
+    return value
+
+
 def _strip_url_credentials(url: str, overridden: frozenset[str]) -> str:
     """Drop the ``username`` / ``password`` a URL carries when OPTIONS overrides them.
 
@@ -838,7 +854,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         with _SYNC_POOLS_LOCK:
             pool = self._sync_pools.get(key)
             if pool is None:
-                pool = self._pool_class.from_url(self._servers[index], **self._pool_options)
+                pool = self._pool_class.from_url(self._servers[index], **_driver_copy(self._pool_options))
                 self._sync_pools[key] = pool
         self._pools[index] = pool
         return pool
@@ -892,7 +908,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         slot = _loop_slot(self._async_pools, loop)
         pool = slot.get(key)
         if pool is None:
-            pool = self._async_pool_class.from_url(url, **self._async_pool_options)
+            pool = self._async_pool_class.from_url(url, **_driver_copy(self._async_pool_options))
             slot[key] = pool
         return pool
 
@@ -3684,8 +3700,8 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
 
         # None, not {}: only then does the driver give sentinel clients the
         # connection's ``socket_*`` timeouts, bounding discovery.
-        sentinel_kwargs = self._options.get("sentinel_kwargs")
-        pool_options = dict(self._pool_options)
+        sentinel_kwargs = _driver_copy(self._options.get("sentinel_kwargs"))
+        pool_options = _driver_copy(self._pool_options)
 
         if self._sentinel_class is None:
             msg = "Subclasses must set _sentinel_class"
@@ -3796,7 +3812,7 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         with _SYNC_POOLS_LOCK:
             pool = self._sync_pools.get(key)
             if pool is None:
-                pool_options: dict[str, Any] = dict(self._pool_options)
+                pool_options: dict[str, Any] = _driver_copy(self._pool_options)
                 pool_options.update(
                     service_name=service_name,
                     sentinel_manager=self._sentinel,
@@ -3825,7 +3841,7 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
 
             sentinels = self._options.get("sentinels")
             # None, not {}: see the note in __init__ about socket_* inheritance.
-            sentinel_kwargs = self._options.get("sentinel_kwargs")
+            sentinel_kwargs = _driver_copy(self._options.get("sentinel_kwargs"))
 
             async_sentinel = self._async_sentinel_class(
                 sentinels,
@@ -3877,7 +3893,7 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         ``parser_class`` is sync-only and raises AttributeError on an async
         connection, so it is dropped here.
         """
-        return {k: v for k, v in self._pool_options.items() if k != "parser_class"}
+        return _driver_copy({k: v for k, v in self._pool_options.items() if k != "parser_class"})
 
     @cached_property
     def _fleet_key(self) -> tuple[Any, ...]:
@@ -4062,7 +4078,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
             built = _install_error_translation(
                 self._cluster.from_url(
                     self._servers[0],
-                    **cluster_options,
+                    **_driver_copy(cluster_options),
                     **self._startup_nodes(self._lib.cluster.ClusterNode),
                 ),
             )
@@ -4090,7 +4106,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         if cluster is None:
             cluster = self._async_cluster.from_url(
                 self._servers[0],
-                **cluster_options,
+                **_driver_copy(cluster_options),
                 **self._startup_nodes(self._lib.asyncio.cluster.ClusterNode),
             )
             slot[cache_key] = cluster

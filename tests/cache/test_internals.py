@@ -37,13 +37,18 @@ class _Priority(enum.IntEnum):
 
 
 @contextmanager
-def redis_cache(location: str | list[str], **options: Any) -> Iterator[RespCache]:
-    """Yield a RedisCache built from ``location``, outside the adapter matrix.
+def redis_cache(
+    location: str | list[str],
+    *,
+    backend: str = "django_cachex.cache.RedisCache",
+    **options: Any,
+) -> Iterator[RespCache]:
+    """Yield a cache (a RedisCache unless ``backend`` names another) built from ``location``, outside the adapter matrix.
 
     ``override_settings(CACHES=...)`` rebuilds Django's cache handler on entry
     and on exit, so the caller needs no teardown of its own.
     """
-    config: dict[str, Any] = {"BACKEND": "django_cachex.cache.RedisCache", "LOCATION": location}
+    config: dict[str, Any] = {"BACKEND": backend, "LOCATION": location}
     if options:
         config["OPTIONS"] = options
     with override_settings(CACHES={"default": config}):
@@ -264,6 +269,49 @@ def test_sync_pools_shared_across_per_thread_cache_instances(cache: RespCache):
 
     assert fresh.adapter.get_client(write=True) is write_client
     assert fresh.adapter.get_client(write=False) is read_client
+
+
+DRIVER_BACKENDS = ["django_cachex.cache.ValkeyCache", "django_cachex.cache.RedisCache"]
+
+
+@pytest.mark.parametrize("backend", DRIVER_BACKENDS)
+def test_retry_on_error_list_keeps_one_sync_pool_across_instances(redis_container: RedisContainerInfo, backend: str):
+    retry_on_error: list[type[Exception]] = [ConnectionError]
+    location = f"redis://{redis_container.host}:{redis_container.port}/1"
+
+    with redis_cache(location, backend=backend, retry_on_timeout=True, retry_on_error=retry_on_error) as cache:
+        cache.set("retry_list_sync", 1)
+        fresh = caches.create_connection("default")
+
+        assert fresh.adapter.get_client(write=True) is cache.adapter.get_client(write=True)
+        cache.delete("retry_list_sync")
+
+    assert retry_on_error == [ConnectionError]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend", DRIVER_BACKENDS)
+async def test_retry_on_error_list_keeps_one_async_pool_across_instances(
+    redis_container: RedisContainerInfo,
+    backend: str,
+):
+    retry_on_error: list[type[Exception]] = [ConnectionError]
+    location = f"redis://{redis_container.host}:{redis_container.port}/1"
+
+    with redis_cache(location, backend=backend, retry_on_timeout=True, retry_on_error=retry_on_error) as cache:
+        fresh = None
+        try:
+            await cache.aset("retry_list_async", 1)
+            fresh = caches.create_connection("default")
+
+            assert await fresh.adapter.get_async_client(write=True) is await cache.adapter.get_async_client(write=True)
+            await cache.adelete("retry_list_async")
+        finally:
+            await cache.aclose()
+            if fresh is not None:
+                await fresh.aclose()
+
+    assert retry_on_error == [ConnectionError]
 
 
 @pytest.mark.asyncio
