@@ -1421,7 +1421,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             count=count,
             _type=_type,
         )
-        decoded_keys = [k.decode() if isinstance(k, bytes) else k for k in keys]
+        decoded_keys = [k.decode(errors="backslashreplace") if isinstance(k, bytes) else k for k in keys]
         return next_cursor, decoded_keys
 
     async def ascan(
@@ -1443,7 +1443,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             count=count,
             _type=_type,
         )
-        decoded_keys = [k.decode() if isinstance(k, bytes) else k for k in keys]
+        decoded_keys = [k.decode(errors="backslashreplace") if isinstance(k, bytes) else k for k in keys]
         return next_cursor, decoded_keys
 
     def delete_pattern(self, pattern: str, itersize: int | None = None) -> int:

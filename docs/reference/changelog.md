@@ -22,6 +22,7 @@
 - The admin showed Add key to users with `add_key` but not `change_key`, then gave them a key page with no way to add the first value. `add_key` now creates a key that does not exist yet; editing an existing key still takes `change_key`.
 - The admin's Clear tool said it removes only the current cache version, but on `LocMemCache` and `DatabaseCache` it removes every version, and on `DatabaseCache` the whole table, which other aliases may share. Its confirmation and message now say what goes.
 - The admin's key page read and rendered a string value in full, so a 50 MB value blocked Redis and made a 50 MB page. On the Valkey and Redis backends, a string over 1 MiB now shows only its size; its TTL and Delete still work.
+- One key name that is not valid UTF-8 made `scan()` and `ascan()` raise `UnicodeDecodeError`, so the admin's key list showed an error instead of any key. They now return that name with its bad bytes escaped, as in `bad\xff`, next to the other keys.
 
 ### Documentation
 

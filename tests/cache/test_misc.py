@@ -60,6 +60,26 @@ def test_scan_empty(
     assert keys == []
 
 
+def test_scan_keeps_keys_next_to_an_undecodable_name(
+    cache: RespCache,
+    client_class: str,
+    sentinel_mode: str | bool,
+    resp_adapter: str,
+):
+    if _is_py_cluster(client_class, sentinel_mode, resp_adapter):
+        pytest.skip("SCAN raises on a redis-py or valkey-py cluster")
+    cache.set("scanbad_ok", 1)
+    cache.get_client(write=True).set(cache.make_key("scanbad_").encode() + b"\xff", b"raw")
+
+    cursor, keys = cache.scan(pattern="scanbad_*")
+    all_keys = set(keys)
+    while cursor != 0:
+        cursor, keys = cache.scan(cursor=cursor, pattern="scanbad_*")
+        all_keys.update(keys)
+
+    assert all_keys == {"scanbad_ok", "scanbad_\\xff"}
+
+
 def test_decr_version(cache: RespCache):
     # Use hash tag so versioned keys stay in same cluster slot
     cache.set("{dv}:key", "hello", version=2)
@@ -183,6 +203,27 @@ async def test_ascan_empty(
 
     _cursor, keys = await cache.ascan(pattern="nonexistent_pattern_xyz_*")
     assert keys == []
+
+
+@pytest.mark.asyncio
+async def test_ascan_keeps_keys_next_to_an_undecodable_name(
+    cache: RespCache,
+    client_class: str,
+    sentinel_mode: str | bool,
+    resp_adapter: str,
+):
+    if _is_py_cluster(client_class, sentinel_mode, resp_adapter):
+        pytest.skip("SCAN raises on a redis-py or valkey-py cluster")
+    cache.set("ascanbad_ok", 1)
+    cache.get_client(write=True).set(cache.make_key("ascanbad_").encode() + b"\xff", b"raw")
+
+    cursor, keys = await cache.ascan(pattern="ascanbad_*")
+    all_keys = set(keys)
+    while cursor != 0:
+        cursor, keys = await cache.ascan(cursor=cursor, pattern="ascanbad_*")
+        all_keys.update(keys)
+
+    assert all_keys == {"ascanbad_ok", "ascanbad_\\xff"}
 
 
 @pytest.fixture

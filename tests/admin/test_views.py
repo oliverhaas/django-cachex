@@ -2960,6 +2960,16 @@ def test_key_list_renders_with_broken_value(admin_client, test_cache):
     assert BROKEN_KEY in response.content.decode()
 
 
+def test_key_list_keeps_other_keys_next_to_an_undecodable_name(admin_client: Client, test_cache: RespCache):
+    test_cache.set("plain:key", "value")
+    test_cache.get_client(write=True).set(test_cache.make_key("bad:").encode() + b"\xff", b"raw")
+
+    response = admin_client.get(_key_list_url("default"))
+
+    assert response.status_code == 200
+    assert set(_result_column(response.content, "key_name")) == {"plain:key", "bad:\\xff"}
+
+
 def test_oversized_string_is_neither_read_nor_rendered(admin_client: Client, test_cache: RespCache, mocker):
     test_cache.set("big:string", "x" * (_MAX_STRING_BYTES + 1))
     read = mocker.patch.object(test_cache, "eval_script", wraps=test_cache.eval_script)
