@@ -3106,6 +3106,7 @@
 <li><code>KeyType</code>, which <code>type()</code> returns, was missing from the names that <code>django_cachex</code> exports, so <code>from django_cachex import KeyType</code> raised <code>ImportError</code>. It now works.</li>
 <li>On the Valkey and Redis backends, <code>semaphore()</code> and <code>asemaphore()</code> raised <code>TypeError</code> for a name that <code>scan()</code> returned for a key name that is not valid UTF-8. They now take that name, as <code>get()</code> and the other key commands do.</li>
 <li>On <code>LocMemCache</code> and <code>DatabaseCache</code>, <code>hincrbyfloat()</code> stored a whole result such as <code>5200.0</code> as a float, so a later <code>hincrby()</code> on the field raised <code>ValueError</code> and <code>hget()</code> returned <code>5200.0</code>. Redis stores it as <code>"5200"</code>, which <code>HINCRBY</code> takes and <code>hget()</code> returns as <code>5200</code>. Both backends now store a whole result as an integer.</li>
+<li>On <code>LocMemCache</code> and <code>DatabaseCache</code>, <code>scan()</code> with a <code>count</code> below 1 returned no keys and cursor 0, so a scan loop stopped as if no key matched. The server rejects <code>COUNT 0</code>. They now raise <code>ValueError</code>.</li>
 </ul>
 <h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
 <ul>
@@ -3541,7 +3542,7 @@
 <li><code>StreamCache</code> raises <code>NotSupportedError</code> rather than <code>AttributeError</code> for the cachex operations it does not implement, and <code>expire()</code> accepts a float.</li>
 <li><code>StreamCache</code> joins its consumer thread with a bound at interpreter exit; <code>close()</code> stays a no-op.</li>
 <li>Key patterns on <code>LocMemCache</code> and <code>StreamCache</code> match case-sensitively on Windows, like Redis globs.</li>
-<li><code>scan(count=0)</code> is honored on the <code>BaseCachex</code> default, <code>DatabaseCache</code> and <code>StreamCache</code>, which turned it into 100.</li>
+<li><code>scan(count=0)</code> on the <code>BaseCachex</code> default, <code>DatabaseCache</code> and <code>StreamCache</code> no longer turns the count into 100. It returns no keys and cursor 0, which ends a scan loop.</li>
 <li><code>OrmsgpackSerializer</code> accepts non-string mapping keys, like <code>MsgpackSerializer</code> with its <code>strict_map_key=False</code>.</li>
 <li><code>LocMemCache.info()</code> sizes modules, classes and functions opaquely instead of walking the import graph under the cache's lock; a value holding <code>sys</code> cost 11 ms and 2.4 MB.</li>
 <li>A LocMem or Database <code>BACKEND</code> no longer imports redis-py or valkey-py; names resolve on first access.</li>
