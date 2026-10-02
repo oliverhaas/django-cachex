@@ -245,15 +245,16 @@ def test_list_element_update_conflict_index_shifted(test_cache: RespCache):
     assert result == 0
 
 
-@pytest.mark.parametrize("count", [0, 1])
-def test_list_element_update_index_gone(test_cache: RespCache, count: int):
-    test_cache.rpush("cas_list", *["x"] * (count + 1))
+@pytest.mark.parametrize(("removal", "left"), [("delete", []), ("rpop", ["a"])])
+def test_list_element_update_index_gone(test_cache: RespCache, removal: str, left: list[str]):
+    test_cache.rpush("cas_list", "a", "b")
     sha1s = _list_sha1s(test_cache, "cas_list")
 
-    test_cache.delete("cas_list")
+    getattr(test_cache, removal)("cas_list")
 
-    result = cas_update_list_element(test_cache, "cas_list", count, sha1s[count], "updated")
+    result = cas_update_list_element(test_cache, "cas_list", 1, sha1s[1], "updated")
     assert result == -1
+    assert test_cache.lrange("cas_list", 0, -1) == left
 
 
 def test_list_element_update_first_and_last_elements(test_cache: RespCache):

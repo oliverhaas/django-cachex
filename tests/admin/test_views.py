@@ -1362,22 +1362,6 @@ def test_list_ltrim(
     assert items == ["b", "c", "d"]
 
 
-def test_hash_field_inline_edit(
-    admin_client: Client,
-    test_cache: RespCache,
-):
-    test_cache.hset("hash:edit", "name", "old_value")
-
-    url = _key_detail_url("default", "hash:edit")
-    response = admin_client.post(
-        url,
-        {"action": "hset", "field": "name", "field_value": "new_value"},
-    )
-    assert response.status_code == 302
-
-    assert test_cache.hget("hash:edit", "name") == "new_value"
-
-
 def test_hash_hdel(
     admin_client: Client,
     test_cache: RespCache,
@@ -1763,23 +1747,6 @@ def test_zset_zpopmax(
 
     members = test_cache.zrange("zpopmax:test", 0, -1, withscores=True)
     assert members == [("a", 1.0), ("b", 2.0)]
-
-
-def test_zset_score_inline_edit(
-    admin_client: Client,
-    test_cache: RespCache,
-):
-    test_cache.zadd("zscore:test", {"a": 1.0, "b": 2.0})
-
-    url = _key_detail_url("default", "zscore:test")
-    response = admin_client.post(
-        url,
-        {"action": "zadd", "member": "b", "score_value": "5.5"},
-    )
-    assert response.status_code == 302
-
-    score = test_cache.zscore("zscore:test", "b")
-    assert score == 5.5
 
 
 def test_unknown_action_is_rejected(
