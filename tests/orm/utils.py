@@ -11,9 +11,10 @@ from django.db import DEFAULT_DB_ALIAS, connections
 from django.db.models.sql.constants import MULTI
 from django.test.utils import CaptureQueriesContext, override_settings
 
+from django_cachex.orm.api import _table_keys
 from django_cachex.orm.settings import orm_settings
 from django_cachex.orm.store import LocMemStore, RespStore, _entry_key, _generation_key, get_store
-from django_cachex.orm.utils import _get_tables, get_query_cache_key, get_table_cache_key
+from django_cachex.orm.utils import _get_tables, query_key_and_tables
 from django_cachex.script import keys_only_pre
 
 if TYPE_CHECKING:
@@ -84,7 +85,7 @@ def orm_store() -> Any:
 def evict_generation(db_alias: str, table: str) -> None:
     """Drop the generation of ``table``, as a cache that runs out of memory would."""
     store = orm_store()
-    table_key = get_table_cache_key(db_alias, table)
+    [table_key] = _table_keys(db_alias, [table])
     if isinstance(store, LocMemStore):
         with store.cache._lock:  # ty: ignore[unresolved-attribute]
             store.state.generations.pop((db_alias, table_key), None)
@@ -95,7 +96,7 @@ def evict_generation(db_alias: str, table: str) -> None:
 def corrupt_entry(queryset: Any) -> None:
     """Replace the cached result of ``queryset`` with bytes that do not decode."""
     compiler = queryset.query.get_compiler(queryset.db)
-    query_key = f"{get_query_cache_key(compiler)}:{MULTI}"
+    query_key, _ = query_key_and_tables(compiler, MULTI)
     store = orm_store()
     if isinstance(store, LocMemStore):
         entry_key = store._entry_key(queryset.db, query_key)

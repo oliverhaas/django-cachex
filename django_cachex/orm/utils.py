@@ -19,17 +19,21 @@ from django.db.models.constants import LOOKUP_SEP
 from django.db.models.enums import Choices
 from django.db.models.expressions import RawSQL
 from django.db.models.functions import Now, Random
+from django.db.models.lookups import In
 from django.db.models.sql import AggregateQuery, Query
-from django.db.models.sql.where import ExtraWhere, NothingNode
+from django.db.models.sql.where import ExtraWhere, NothingNode, WhereNode
 from django.utils.tree import Node
 
-from django_cachex.orm.settings import ITERABLES, orm_settings
+from django_cachex.orm.settings import ITERABLES, SETTING_NAME, orm_settings
 
 # The on_delete of foreign keys the database enforces itself (Django 6.1+).
 _DATABASE_ON_DELETE: Any = getattr(deletion, "DatabaseOnDelete", None)
 
-# Where get_query_cache_key leaves the lowercased SQL of a compiler.
+# Where query_digest leaves the lowercased SQL of a compiler.
 _GENERATED_SQL = "_cachex_orm_generated_sql"
+
+# The length past which readable_query_key cuts the table names short.
+QUERY_KEY_PREFIX_MAX_LENGTH = 100
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -129,8 +133,8 @@ def _param_key(param: Any) -> str:
     raise UncachableQuery
 
 
-def get_query_cache_key(compiler: SQLCompiler) -> str:
-    """Return a cache key for the query of ``compiler``, specific to its SQL, parameters and database."""
+def query_digest(compiler: SQLCompiler) -> str:
+    """Return the SHA-1 hex digest of the database, SQL and parameters of the query of ``compiler``."""
     sql, params = compiler.as_sql()
     cache_key = f"{compiler.using!r}:{sql!r}:({', '.join(map(_param_key, params))})"
     # Kept for the final SQL check, which would otherwise call as_sql() again.
@@ -138,9 +142,24 @@ def get_query_cache_key(compiler: SQLCompiler) -> str:
     return sha1(cache_key.encode(), usedforsecurity=False).hexdigest()
 
 
-def get_table_cache_key(db_alias: str, table: str) -> str:
-    """Return a cache key for ``table`` of database ``db_alias``."""
-    return sha1(f"{db_alias}:{table}".encode(), usedforsecurity=False).hexdigest()
+def readable_query_key(*, compiler: SQLCompiler, tables: frozenset[str], digest: str) -> str:  # noqa: ARG001
+    """Return ``digest`` prefixed with the sorted names of ``tables``, cut short past QUERY_KEY_PREFIX_MAX_LENGTH."""
+    names = sorted(tables)
+    prefix = ".".join(names)
+    if len(names) > 1 and len(prefix) > QUERY_KEY_PREFIX_MAX_LENGTH:
+        # The longest run of leading names that fits with a count of the others; the first name in any case.
+        prefix = f"{names[0]}.+{len(names) - 1}more"
+        for kept in range(2, len(names)):
+            shortened = f"{'.'.join(names[:kept])}.+{len(names) - kept}more"
+            if len(shortened) > QUERY_KEY_PREFIX_MAX_LENGTH:
+                break
+            prefix = shortened
+    return f"{prefix}:{digest}"
+
+
+def readable_table_key(*, db_alias: str, table: str) -> str:  # noqa: ARG001
+    """Return ``table``: the database alias is the hash tag of the key already."""
+    return table
 
 
 def known_tables() -> set[str]:
@@ -240,7 +259,9 @@ class _TableFinder:
         """Visit ``node``, a part of a query, and the expressions it holds."""
         if isinstance(node, list | tuple):  # e.g. the right-hand side of __in or __range
             for item in node:
-                self.visit(item)
+                # Plain values, often thousands of __in values, hold no table or function.
+                if item.__class__ not in _REPR_KEYED_TYPES:
+                    self.visit(item)
         elif isinstance(node, Query | QuerySet):  # a subquery
             self.subqueries += 1
             self.add_query(node if isinstance(node, Query) else node.query)
@@ -270,7 +291,7 @@ def _get_tables(db_alias: str, query: Query, compiler: SQLCompiler | None = None
     finder.add_query(query)
     tables = finder.tables
     if finder.raw_sql or finder.check_final_sql:
-        # Stored by get_query_cache_key, saving another as_sql() call.
+        # Stored by query_digest, saving another as_sql() call.
         final_sql = getattr(compiler, _GENERATED_SQL, None)
         if final_sql is None:
             final_sql = query.get_compiler(db_alias).as_sql()[0].lower()
@@ -279,6 +300,50 @@ def _get_tables(db_alias: str, query: Query, compiler: SQLCompiler | None = None
     if not are_all_cachable(tables):
         raise UncachableQuery
     return tables
+
+
+def _sort_in_values(where: WhereNode) -> None:
+    nodes = [where]
+    while nodes:
+        node = nodes.pop()
+        for index, child in enumerate(node.children):
+            if isinstance(child, WhereNode):
+                nodes.append(child)
+            elif isinstance(child, In) and child.rhs_is_direct_value():
+                try:
+                    values = sorted(child.rhs)
+                except TypeError:
+                    # str orders mixed types, like the (None,) a prefetch over a nullable foreign key passes.
+                    values = sorted(child.rhs, key=str)
+                if values != child.rhs:
+                    # Clones of a query share its lookups, so a copy takes the sorted values.
+                    lookup = child.copy()
+                    lookup.rhs = values
+                    node.children[index] = lookup
+
+
+def query_key_and_tables(compiler: SQLCompiler, result_type: str) -> tuple[str, set[str]]:
+    """Return the cache key and tables of the query of ``compiler``; raise UncachableQuery if it is not cachable."""
+    query = compiler.query
+    # Compiling only adds tables, so an uncachable one here rules out caching before as_sql() runs.
+    tables = {*query.table_map, *query.extra_tables}
+    if meta := query.get_meta():
+        tables.add(meta.db_table)
+    if not are_all_cachable(tables):
+        raise UncachableQuery
+    # One set of __in values gets one key in any order, such as the order prefetch_related() passes.
+    _sort_in_values(query.where)
+    digest = query_digest(compiler)
+    # Compiled for its digest, the query has joined the tables select_related() and the ordering need.
+    tables = _get_tables(compiler.connection.alias, query, compiler)
+    if not tables:
+        raise UncachableQuery
+    query_key = orm_settings.QUERY_KEYGEN(compiler=compiler, tables=frozenset(tables), digest=digest)
+    if not isinstance(query_key, str):
+        msg = f"`{SETTING_NAME}['QUERY_KEYGEN']` must return a str, not {query_key!r}."
+        raise TypeError(msg)
+    # A SINGLE and a MULTI query can share their SQL but not their result.
+    return f"{query_key}:{result_type}", tables
 
 
 def models_of_tables(tables: set[str]) -> list[type[Model]]:

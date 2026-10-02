@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Improvements
+
+- ORM cache keys show their tables, as in `orm:{default}:q:shop_customer.shop_order:<digest>:multi` for a result and `orm:{default}:g:shop_order` for a generation. The new `QUERY_KEYGEN` and `TABLE_KEYGEN` settings take a callable, or its dotted path, that builds them instead (see [Cache keys](../user-guide/orm-cache.md#cache-keys)). While processes of 0.12.1 or earlier and newer ones run against one cache, neither sees the other's writes, so results can be stale. Stop the old processes before the first new one starts, run `invalidate_orm_cache` after the last old one has stopped, or keep the old table keys with the `hashed_table_key` example from the docs.
+- The ORM cache sorts the values of an `__in` filter before it keys a query, so a `prefetch_related()` under another order of its parent rows, or over a set of strings in another process, hits the cache. It compiles a query on an uncachable table once, not twice.
+- The ORM cache finds the tables of a query with 10,000 `__in` values in 0.2 ms instead of 8 ms.
+
 ## 0.12.1 (October 2026)
 
 ### Fixes

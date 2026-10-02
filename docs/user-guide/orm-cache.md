@@ -54,10 +54,12 @@ All settings live in the `CACHEX_ORM` dict, with upper-case keys. An unknown key
 | `UNCACHABLE_TABLES` | `()` | Queries reading one of these tables are not cached, and writes to them invalidate nothing. `django_migrations` is never cached. |
 | `ADDITIONAL_TABLES` | `()` | Tables no model covers, to look for in raw SQL. |
 | `FINAL_SQL_CHECK` | `False` | Also search the final SQL of every query for table names in double quotes, such as those in a `Func` template. |
+| `QUERY_KEYGEN` | `"django_cachex.orm.utils.readable_query_key"` | Callable, or its dotted path, that builds the key of a query's result (see [Cache keys](#cache-keys)). |
+| `TABLE_KEYGEN` | `"django_cachex.orm.utils.readable_table_key"` | Callable, or its dotted path, that builds the key of a table's generation and leases (see [Cache keys](#cache-keys)). |
 
 ## What is cached
 
-Queries the ORM compiles, such as querysets, `get()`, `count()`, `aggregate()` and their async forms, are cached when all the tables they read are cachable. A result is cached per database, SQL and parameters.
+Queries the ORM compiles, such as querysets, `get()`, `count()`, `aggregate()` and their async forms, are cached when all the tables they read are cachable. A result is cached per database, SQL and parameters. The values of an `__in` filter are sorted before the query runs, so one set of values gets one result in any order, such as the order of the parent rows a `prefetch_related()` passes. `__in` filters in subqueries, annotations and `FilteredRelation()` conditions keep their order.
 
 These are not cached:
 
@@ -80,7 +82,45 @@ A write holds a lease on its tables around the statement under autocommit, or ar
 
 A cached read costs one round trip to the cache and a miss two. A write under autocommit, or the commit of a transaction that wrote, also costs two.
 
-The keys are `orm:{<database alias>}:g:<table key>` for the generation of a table, `orm:{<database alias>}:l:<table key>` for its leases and `orm:{<database alias>}:q:<query key>` for a result, under the cache alias's `KEY_PREFIX` and `VERSION`. The database alias is the hash tag, so on a cluster all keys of one database live on one shard. The keys name database aliases, not databases. Projects or environments sharing a cache server need distinct `KEY_PREFIX`es or database numbers, or each serves the results the other read.
+### Cache keys
+
+A result is stored under `orm:{<database alias>}:q:<query key>:<result type>`, the generation of a table under `orm:{<database alias>}:g:<table key>` and its leases under `orm:{<database alias>}:l:<table key>`, all under the cache alias's `KEY_PREFIX` and `VERSION`. The database alias is the hash tag, so on a cluster all keys of one database live on one shard. The keys name database aliases, not databases. Projects or environments sharing a cache server need distinct `KEY_PREFIX`es or database numbers, or each serves the results the other read.
+
+By default the query key is the sorted names of the tables the query reads, joined with `.`, then `:` and the SHA-1 digest of the database alias, SQL and parameters. Past 100 characters, the names that do not fit are left out and counted, as in `shop_customer.+3more`. The table key is the table name:
+
+```text
+orm:{default}:q:shop_customer.shop_order:3f2a9c...:multi
+orm:{default}:g:shop_order
+orm:{default}:l:shop_order
+```
+
+`QUERY_KEYGEN` and `TABLE_KEYGEN` take a callable, or its dotted path, that builds these keys instead. Both are called with keyword arguments and return a `str`:
+
+- `QUERY_KEYGEN(*, compiler, tables, digest)` returns the query key. `compiler` is the `SQLCompiler` of the query, already compiled, `tables` a `frozenset` of the names of the tables it reads, and `digest` the SHA-1 hex digest of the database alias, SQL and parameters. The SQL is the SQL that runs, with its `__in` values sorted. The ORM cache appends the result type itself.
+- `TABLE_KEYGEN(*, db_alias, table)` returns the table key, for reads, writes, `invalidate()` and `table_generations()`.
+
+A custom keygen must follow these rules:
+
+- A table key depends on `db_alias` and `table` only, and is the same in every process and request. A key that also depends on the tenant of a request lets a write by one tenant leave the other tenants' results of a shared table stale.
+- Queries with different digests get different keys. Anything a query key adds, such as a tenant id, only splits entries further.
+- Tables can share a key. A write to one of them then invalidates the results of all of them.
+- `QUERY_KEYGEN` can raise `django_cachex.orm.utils.UncachableQuery` to leave a query uncached. Any other exception from either keygen propagates: a query, `invalidate()` or `table_generations()` fails with it, and a write behaves as one that cannot reach the cache (see [Failures](#failures)).
+- While processes run with different table keygens, each misses the writes of the others. Run `invalidate_orm_cache` after they all run the same one.
+
+This table keygen keeps the table keys of django-cachex 0.12.1 and earlier:
+
+```python
+# myproject/cache_keys.py
+from hashlib import sha1
+
+
+def hashed_table_key(*, db_alias: str, table: str) -> str:
+    return sha1(f"{db_alias}:{table}".encode(), usedforsecurity=False).hexdigest()
+```
+
+```python
+CACHEX_ORM = {"TABLE_KEYGEN": "myproject.cache_keys.hashed_table_key"}
+```
 
 ### Eviction
 

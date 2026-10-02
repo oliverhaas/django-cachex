@@ -8,6 +8,7 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.cache import DEFAULT_CACHE_ALIAS
 from django.core.checks import Error, Tags, Warning, run_checks  # noqa: A004
+from django.core.exceptions import ImproperlyConfigured
 from django.db import DEFAULT_DB_ALIAS, connection
 from django.db.migrations.recorder import MigrationRecorder
 from django.db.models.functions import Random
@@ -312,6 +313,20 @@ def test_table_settings_of_another_type():
         # Each counts as empty.
         assert {"django_migrations"} == orm_settings.UNCACHABLE_TABLES
         assert orm_settings.ADDITIONAL_TABLES == []
+
+
+@pytest.mark.parametrize("name", ["QUERY_KEYGEN", "TABLE_KEYGEN"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param("django_cachex.orm.utils.no_such_keygen", id="missing"),
+        pytest.param("keygen", id="not_a_path"),
+        pytest.param(42, id="not_callable"),
+    ],
+)
+def test_keygen_that_is_not_a_callable(name, value):
+    with pytest.raises(ImproperlyConfigured, match=name), override_orm_settings(**{name: value}):
+        pass
 
 
 def test_cache_checks():

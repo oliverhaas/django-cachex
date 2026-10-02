@@ -17,7 +17,9 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import OperationalError, ProgrammingError, connection, transaction
 from django.db.models import Case, Count, F, FilteredRelation, Q, Value, When
 from django.db.models.expressions import Exists, OuterRef, RawSQL, Subquery
+from django.db.models.fields.tuple_lookups import Tuple, TupleIn
 from django.db.models.functions import Coalesce, Now
+from django.db.models.sql.compiler import SQLCompiler
 from django.db.transaction import TransactionManagementError
 from django.test import override_settings
 
@@ -168,6 +170,38 @@ def test_exclude(rows):
     qs = Test.objects.exclude(name__in=["test2", "test72"])
     assert_tables(qs, Test)
     assert_query_cached(qs, [rows.t1])
+
+
+def test_in_values_in_any_order(rows):
+    orders = (
+        ["test2", "test1", "x"],
+        ["test1", "test2", "x"],
+        {"x", "test2", "test1"},
+        ["test2", "x", "test1", "test1"],
+        ["test2", None, "x", "test1"],
+    )
+    with assert_num_queries(1):
+        results = [list(Test.objects.filter(name__in=names)) for names in orders]
+    assert results == [[rows.t1, rows.t2]] * len(orders)
+
+
+def test_excluded_in_values_in_any_order(rows):
+    with assert_num_queries(1):
+        results = [list(Test.objects.exclude(name__in=names)) for names in (["x", "test2"], ["test2", "x"])]
+    assert results == [[rows.t1]] * 2
+
+
+def test_in_values_keep_their_order_in_other_querysets():
+    queryset = Test.objects.filter(pk__in=[3, 1, 2])
+    list(queryset.filter(public=False))
+    assert "IN (3, 1, 2)" in str(queryset.query)
+
+
+def test_uncachable_table_compiles_once(mocker):
+    as_sql = mocker.spy(SQLCompiler, "as_sql")
+    with override_orm_settings(UNCACHABLE_TABLES=("ormtest_test",)):
+        list(Test.objects.filter(name="test1"))
+    assert as_sql.call_count == 1
 
 
 @pytest.mark.usefixtures("final_sql_check")
@@ -618,6 +652,24 @@ def test_prefetch_related(rows):
         permissions8 = [p for t in data8 for g in t.owner.groups.all() for p in g.permissions.all()]
     assert permissions8 == permissions7
     assert permissions8 == rows.group__permissions
+
+
+def test_prefetch_related_under_another_order(rows):
+    Test.objects.create(name="test3")  # no owner: the prefetch passes (None,)
+    with assert_num_queries(2):
+        owners = [(t.name, t.owner) for t in Test.objects.order_by("name").prefetch_related("owner")]
+    with assert_num_queries(1):
+        reversed_owners = [(t.name, t.owner) for t in Test.objects.order_by("-name").prefetch_related("owner")]
+    assert reversed_owners == owners[::-1]
+
+
+def test_prefetch_related_many_to_many_under_another_order(rows):
+    users = User.objects.prefetch_related("user_permissions")
+    with assert_num_queries(2):
+        permissions = [(u.username, list(u.user_permissions.all())) for u in users.order_by("username")]
+    with assert_num_queries(1):
+        reversed_permissions = [(u.username, list(u.user_permissions.all())) for u in users.order_by("-username")]
+    assert reversed_permissions == permissions[::-1]
 
 
 @pytest.mark.usefixtures("final_sql_check")
@@ -1072,6 +1124,7 @@ def test_now_annotate():
             ).filter(past_tests__isnull=False),
             id="filtered_relation",
         ),
+        pytest.param(lambda: Test.objects.filter(TupleIn(Tuple("pk", "datetime"), [(1, Now())])), id="tuple_in"),
     ],
 )
 def test_now_nested(make_queryset):

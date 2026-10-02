@@ -115,7 +115,7 @@ CACHEX_ORM = {
 | `CACHALOT_TIMEOUT` | `TIMEOUT`, which defaults to the cache's default timeout, not `None` |
 | `CACHALOT_ONLY_CACHABLE_APPS`, `CACHALOT_UNCACHABLE_APPS` | Removed. List the apps' tables, many-to-many tables included, in `ONLY_CACHABLE_TABLES` or `UNCACHABLE_TABLES`. |
 | `CACHALOT_CACHE_RANDOM`, `CACHALOT_CACHE_ITERATORS`, `CACHALOT_INVALIDATE_RAW` | Removed. Random queries and the results of `iterator()` are never cached, and raw SQL writes always invalidate. |
-| `CACHALOT_QUERY_KEYGEN`, `CACHALOT_TABLE_KEYGEN` | Removed. Keys go through the cache alias's `KEY_FUNCTION`. If it tells tenants apart, a write to a table they share invalidates only the writing tenant's results, so list shared tables in `UNCACHABLE_TABLES`. |
+| `CACHALOT_QUERY_KEYGEN`, `CACHALOT_TABLE_KEYGEN` | `QUERY_KEYGEN`, `TABLE_KEYGEN`. They take keyword arguments, so a cachalot keygen needs adapting (see [Cache keys](user-guide/orm-cache.md#cache-keys)). The default query keys already start with their table names, and `__in` values are sorted before any keygen runs. Keys also go through the cache alias's `KEY_FUNCTION`. If it tells tenants apart, a write to a table they share invalidates only the writing tenant's results, so list shared tables in `UNCACHABLE_TABLES`. |
 | `CACHALOT_USE_UNSUPPORTED_DATABASE`, `CACHALOT_ADDITIONAL_SUPPORTED_DATABASES` | Removed. Only PostgreSQL and SQLite are cached. |
 | | `LEASE_TIMEOUT` has no cachalot counterpart (see [Failures](user-guide/orm-cache.md#failures)). |
 

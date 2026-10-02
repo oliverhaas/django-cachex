@@ -10,6 +10,7 @@ from django.core.cache import DEFAULT_CACHE_ALIAS
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.exceptions import ImproperlyConfigured
 from django.db.utils import load_backend
+from django.utils.module_loading import import_string
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -42,6 +43,9 @@ DEFAULTS: dict[str, Any] = {
     "UNCACHABLE_TABLES": (),
     "ADDITIONAL_TABLES": (),
     "FINAL_SQL_CHECK": False,
+    # Dotted paths, since django_cachex.orm.utils imports this module.
+    "QUERY_KEYGEN": "django_cachex.orm.utils.readable_query_key",
+    "TABLE_KEYGEN": "django_cachex.orm.utils.readable_table_key",
 }
 
 
@@ -87,11 +91,25 @@ def _convert_databases(value: Any) -> frozenset[str]:
     return frozenset(alias for alias in _items(value) if database_vendor(alias) in SUPPORTED_VENDORS)
 
 
+def _import_keygen(name: str, value: Any) -> Callable[..., str]:
+    # Raised, unlike the errors of other settings, because system checks do not run under a WSGI or ASGI server.
+    message = f"`{SETTING_NAME}['{name}']` must be a callable or the dotted path of one, not {value!r}."
+    try:
+        keygen = import_string(value) if isinstance(value, str) else value
+    except ImportError as e:
+        raise ImproperlyConfigured(message) from e
+    if not callable(keygen):
+        raise ImproperlyConfigured(message)
+    return keygen
+
+
 CONVERTERS: dict[str, Callable[[Any], Any]] = {
     "DATABASES": _convert_databases,
     "ONLY_CACHABLE_TABLES": lambda value: frozenset(_items(value)),
     "UNCACHABLE_TABLES": lambda value: frozenset(_items(value)) | ALWAYS_UNCACHABLE_TABLES,
     "ADDITIONAL_TABLES": lambda value: list(_items(value)),
+    "QUERY_KEYGEN": lambda value: _import_keygen("QUERY_KEYGEN", value),
+    "TABLE_KEYGEN": lambda value: _import_keygen("TABLE_KEYGEN", value),
 }
 
 
@@ -107,6 +125,8 @@ class OrmSettings:
     UNCACHABLE_TABLES: frozenset[str]
     ADDITIONAL_TABLES: list[str]
     FINAL_SQL_CHECK: bool
+    QUERY_KEYGEN: Callable[..., str]
+    TABLE_KEYGEN: Callable[..., str]
 
     def __init__(self) -> None:
         self.patched = False

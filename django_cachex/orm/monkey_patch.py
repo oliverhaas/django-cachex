@@ -24,12 +24,11 @@ from django_cachex.orm.settings import ITERABLES, orm_settings
 from django_cachex.orm.store import Store, get_store
 from django_cachex.orm.utils import (
     UncachableQuery,
-    _get_tables,
     _get_tables_from_sql,
     deletion_dependents,
     filter_cachable,
-    get_query_cache_key,
     models_of_tables,
+    query_key_and_tables,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,13 +77,8 @@ def _read(compiler: Any, result_type: Any, execute: Callable[[], Any]) -> Any:
     if ttl is not None and ttl <= 0:
         return execute()
     try:
-        # A SINGLE and a MULTI query can share their SQL but not their result.
-        query_key = f"{get_query_cache_key(compiler)}:{result_type}"
-        # Compiled for its key, the query has joined the tables select_related() and the ordering need.
-        tables = _get_tables(connection.alias, compiler.query, compiler)
+        query_key, tables = query_key_and_tables(compiler, result_type)
     except EmptyResultSet, UncachableQuery:
-        tables = set()
-    if not tables:
         return execute()
     if transaction.in_transaction(connection):
         if transaction.isolation(connection) == transaction.SNAPSHOT:
@@ -164,9 +158,10 @@ def _leased(connection: Any, tables: set[str], run: Callable[[], Any]) -> Any:
     if store is None:
         return run()
     db_alias = connection.alias
-    table_keys = _table_keys(db_alias, tables)
     token = uuid.uuid4().hex
     try:
+        # Inside the try, since atomic() rolls back a failed COMMIT on a DatabaseError like InvalidationError only.
+        table_keys = _table_keys(db_alias, tables)
         store.begin_write(db_alias, table_keys, token, orm_settings.LEASE_TIMEOUT)
     except Exception as e:  # noqa: BLE001
         _invalidation_failed(e, db_alias, tables)

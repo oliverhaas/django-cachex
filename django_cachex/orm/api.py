@@ -16,7 +16,7 @@ from django_cachex.orm import transaction
 from django_cachex.orm.exceptions import InvalidationError
 from django_cachex.orm.settings import orm_settings
 from django_cachex.orm.store import get_store
-from django_cachex.orm.utils import are_all_cachable, filter_cachable, get_table_cache_key, known_tables
+from django_cachex.orm.utils import are_all_cachable, filter_cachable, known_tables
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -38,7 +38,8 @@ def _table_names(tables_or_models: Iterable[Any]) -> Iterator[str]:
 
 
 def _table_keys(db_alias: str, tables: Iterable[str]) -> list[str]:
-    return [get_table_cache_key(db_alias, table) for table in sorted(tables)]
+    # Without duplicates when tables share a key.
+    return sorted({orm_settings.TABLE_KEYGEN(db_alias=db_alias, table=table) for table in tables})
 
 
 def _invalidation_failed(error: Exception, db_alias: str, tables: Iterable[str]) -> None:
@@ -106,8 +107,10 @@ def table_generations(*tables_or_models: Any, db_alias: str = DEFAULT_DB_ALIAS) 
     store = get_store(orm_settings.CACHE)
     if store is None:
         return None
+    # Outside the try, so a TABLE_KEYGEN error propagates instead of reading as a cache outage.
+    table_keys = [orm_settings.TABLE_KEYGEN(db_alias=db_alias, table=table) for table in tables]
     try:
-        generations = store.generations(db_alias, [get_table_cache_key(db_alias, table) for table in tables])
+        generations = store.generations(db_alias, table_keys)
     except Exception:
         logger.warning("Could not read table generations from the ORM cache.", exc_info=True)
         return None
