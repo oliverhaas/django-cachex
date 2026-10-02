@@ -3100,6 +3100,7 @@
 <li>On valkey-glide, a thread or task connecting to a slow or unreachable server held a lock that all aliases share, process-wide for sync calls and per event loop for async ones, so every other alias that had not connected yet waited until it gave up. Each configuration now connects under a lock of its own.</li>
 <li>On redis-py 7, with <code>OPTIONS["socket_timeout"] = None</code> on valkey-py, and in valkey-py's sync Sentinel lookups, a connect had no timeout, so an unreachable host held each call for the kernel's TCP timeout of about two minutes. A connect now gives up after 5 seconds unless <code>socket_connect_timeout</code> or <code>socket_timeout</code> says otherwise in <code>OPTIONS</code>, the <code>LOCATION</code> query or <code>sentinel_kwargs</code>.</li>
 <li>On <code>ValkeyGlideClusterCache</code>, the <code>ImproperlyConfigured</code> error for seed URLs that disagree on TLS, username or password called the <code>LOCATION</code> list a primary and its replicas. It now says that valkey-glide applies one set of these settings to every URL in the list.</li>
+<li><code>KeyType</code>, which <code>type()</code> returns, was missing from the names that <code>django_cachex</code> exports, so <code>from django_cachex import KeyType</code> raised <code>ImportError</code>. It now works.</li>
 </ul>
 <h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
 <ul>
