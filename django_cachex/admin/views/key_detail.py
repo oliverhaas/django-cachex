@@ -850,8 +850,12 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     except ValueError, TypeError:
         page = 1
 
+    may_view = request.user.has_perm("django_cachex.view_key") or request.user.has_perm("django_cachex.change_key")  # ty: ignore[unresolved-attribute]
+
     if request.method == "POST":
         action = request.POST.get("action")
+        if not may_view and action not in _CREATE_ACTIONS:
+            raise PermissionDenied
         try:
             _check_post_permission(request, action, cache, cache_name, key)
         except CacheUnavailableError as exc:
@@ -885,6 +889,12 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             if response is not None:
                 if key_type is not None and action in _EMPTYING_ACTIONS:
                     response = _stay_after_emptying(response, request, cache, cache_name, key, key_type)
+                if not may_view:
+                    exists = True
+                    with contextlib.suppress(Exception):
+                        exists = cache.has_key(key)
+                    if exists:
+                        return redirect("admin:index")
                 return response
         else:
             messages.error(request, f"Unknown action: {action!r}." if action else "No action specified.")
@@ -900,9 +910,11 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     # Anything outside ``KeyType`` would be rendered as a badge class/label and
     # interpolated into the help key, yielding an undefined-state page.
     create_type = requested_type if requested_type in {t.value for t in creatable_types(cache)} else ""
+    # Materializing a key is an add, so create mode needs ``add_key``.
+    may_create = not key_exists and create_type and request.user.has_perm("django_cachex.add_key")  # ty: ignore[unresolved-attribute]
+    if not (may_create or may_view):
+        raise PermissionDenied
     if not key_exists:
-        # Materializing a key is an add, so create mode needs ``add_key``.
-        may_create = create_type and request.user.has_perm("django_cachex.add_key")  # ty: ignore[unresolved-attribute]
         if may_create:
             create_mode = True
             messages.warning(

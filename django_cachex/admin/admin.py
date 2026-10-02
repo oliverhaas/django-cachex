@@ -253,7 +253,8 @@ class KeyAdmin(_NoObjectRoutesMixin, KeyAdminMixin, _KeyBase):  # type: ignore[m
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
         """View/edit a specific key."""
-        if not self.has_view_or_change_permission(request):
+        # ``key_detail_view`` limits ``add_key`` alone to creating a missing key.
+        if not (self.has_view_or_change_permission(request) or self.has_add_permission(request)):
             raise PermissionDenied
 
         cache_name, key_name = Key.parse_pk(unquote(object_id))

@@ -3294,6 +3294,66 @@ def test_add_perm_alone_cannot_edit_an_existing_key(db, test_cache: RespCache):
     assert test_cache.hget("perm:existing:key", "f") == "old"
 
 
+def test_add_perm_without_view_perm_opens_the_create_page(db, test_cache: RespCache):
+    client = _staff_client(["add_key"])
+
+    response = client.get(_key_detail_create_url("default", CREATE_KEY, "hash"))
+
+    assert response.status_code == 200
+    assert 'value="hset"' in response.content.decode()
+
+
+@pytest.mark.parametrize(
+    ("perms", "landing"),
+    [(["add_key"], "index"), (["view_key", "add_key"], "django_cachex_key_change")],
+)
+def test_first_write_lands_on_the_key_only_with_view_perm(db, test_cache: RespCache, perms, landing):
+    client = _staff_client(perms)
+
+    response = client.post(
+        _key_detail_create_url("default", CREATE_KEY, "hash"),
+        {"action": "hset", "field": "created-field", "field_value": "created-value"},
+        follow=True,
+    )
+
+    assert test_cache.hget(CREATE_KEY, "created-field") == "created-value"
+    assert response.status_code == 200
+    assert response.resolver_match.url_name == landing
+    assert "created-field" in response.content.decode()
+
+
+def test_add_perm_without_view_perm_cannot_open_an_existing_key(db, test_cache: RespCache):
+    test_cache.set("perm:existing:key", "classified-value")
+    client = _staff_client(["add_key"])
+
+    response = client.get(_key_detail_create_url("default", "perm:existing:key", "string"))
+
+    assert response.status_code == 403
+    assert "classified-value" not in response.content.decode()
+
+
+def test_add_and_delete_perms_without_view_perm_cannot_delete_a_key(db, test_cache: RespCache):
+    test_cache.set("perm:existing:key", "kept-value")
+    client = _staff_client(["add_key", "delete_key"])
+
+    response = client.post(_key_detail_url("default", "perm:existing:key"), {"action": "delete"})
+
+    assert response.status_code == 403
+    assert test_cache.get("perm:existing:key") == "kept-value"
+
+
+def test_add_form_keeps_a_user_without_view_perm_off_an_existing_key(db, test_cache: RespCache):
+    test_cache.set("perm:existing:key", "classified-value")
+    client = _staff_client(["add_key"])
+
+    response = client.post(_key_add_url("default"), {"key": "perm:existing:key", "type": "string"}, follow=True)
+
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert "already exists" in content
+    assert "classified-value" not in content
+
+
 def test_delete_button_hidden_in_create_mode(admin_client: Client, test_cache: RespCache):
     """The Delete link submits ``#delete-form``, which only exists once the
     key does. Rendering it in create mode gives a JS TypeError.

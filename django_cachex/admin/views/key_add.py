@@ -70,11 +70,14 @@ def key_add_view(
                 return redirect(cache_list_url())
             if exists:
                 messages.warning(request, f"Key '{key_name}' already exists.")
-                return redirect(key_detail_url(cache_name, key_name))
-            base_url = key_detail_url(cache_name, key_name)
-            params = urlencode({"type": key_type})
-            separator = "&" if "?" in base_url else "?"
-            return redirect(f"{base_url}{separator}{params}")
+                user = request.user
+                if user.has_perm("django_cachex.view_key") or user.has_perm("django_cachex.change_key"):  # ty: ignore[unresolved-attribute]
+                    return redirect(key_detail_url(cache_name, key_name))
+            else:
+                base_url = key_detail_url(cache_name, key_name)
+                params = urlencode({"type": key_type})
+                separator = "&" if "?" in base_url else "?"
+                return redirect(f"{base_url}{separator}{params}")
 
     prefill_key = request.GET.get("key", "")
     prefill_type = request.GET.get("type", KeyType.STRING)
