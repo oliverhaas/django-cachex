@@ -4,13 +4,14 @@ import asyncio
 import pickle
 import threading
 import weakref
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from django.core.cache import caches
 from django.test import override_settings
 from redis.cluster import RedisCluster
 
-from django_cachex.adapters import RedisPyClusterAdapter
+from django_cachex.adapters import RedisPyClusterAdapter, valkey_py
 from django_cachex.cache import RedisClusterCache
 from django_cachex.exceptions import NotSupportedError
 
@@ -61,6 +62,68 @@ def test_get_client_caches_cluster(mocker):
 
     assert result1 is result2
     assert mock_cluster_cls.from_url.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_repeated_commands_compute_the_cluster_key_once(mocker):
+    options_key = mocker.patch.object(valkey_py, "_options_key", wraps=valkey_py._options_key)
+    client = setup_cluster_client(mocker.MagicMock())
+    client._async_cluster_class = mocker.MagicMock()
+
+    for _ in range(3):
+        client.get_client()
+        await client.get_async_client()
+
+    assert options_key.call_count == 1
+
+
+def test_slow_cluster_discovery_does_not_block_another_config(mocker):
+    # Regression: discovery held the process-wide registry lock, stalling every other cluster alias.
+    discovering, released = threading.Event(), threading.Event()
+
+    def from_url(url, **kwargs):
+        if url == "redis://localhost:7000":
+            discovering.set()
+            released.wait(5)
+        return mocker.MagicMock()
+
+    cluster_class = mocker.MagicMock()
+    cluster_class.from_url.side_effect = from_url
+    slow, other = setup_cluster_client(cluster_class), setup_cluster_client(cluster_class)
+    other._servers = ["redis://localhost:7001"]
+    other._clusters, other._clusters_lock = slow._clusters, slow._clusters_lock
+    timer = threading.Timer(1, released.set)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(slow.get_client)
+        discovering.wait(5)
+        timer.start()
+        other.get_client()
+        waited = released.is_set()
+        timer.cancel()
+        released.set()
+
+    assert not waited
+
+
+def test_concurrent_first_lookups_keep_one_cluster(mocker):
+    both_discovering = threading.Barrier(2, timeout=2)
+    built = []
+
+    def from_url(url, **kwargs):
+        both_discovering.wait()
+        cluster = mocker.MagicMock()
+        built.append(cluster)
+        return cluster
+
+    cluster_class = mocker.MagicMock()
+    cluster_class.from_url.side_effect = from_url
+    first, second = setup_cluster_client(cluster_class), setup_cluster_client(cluster_class)
+    second._clusters, second._clusters_lock = first._clusters, first._clusters_lock
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first_client, second_client = executor.map(lambda adapter: adapter.get_client(), (first, second))
+
+    assert first_client is second_client
+    assert [cluster.close.called for cluster in built if cluster is not first_client] == [True]
 
 
 def test_get_many_uses_mget_nonatomic(mocker):

@@ -28,6 +28,7 @@
 - `LocMemCache`'s `aget()`, `aadd()`, `atouch()`, `adelete()`, `aget_or_set()`, `adelete_many()`, `aclear()` and `aclose()` went through `sync_to_async` and a worker thread, although the docs say its async methods call the sync method directly. They now do.
 - After a fork, as under gunicorn `--preload` or Celery prefork, the child's first `TrackingCache` write, `clear()` or `shutdown()` could hang for good when a thread of the parent, such as its listener, held the local store's lock at the fork. Writes now switch the child to a fresh store first, as reads already did.
 - The redis-py and valkey-py backends, Sentinel and cluster included, opened another connection pool once an object in `OPTIONS` changed state, such as a credential provider caching a renewed token or a `Retry` that the asyncio cluster client adds errors to, and the old pool stayed open. Such an object now keys the same pool for as long as it lives.
+- On the redis-py and valkey-py cluster backends, a thread connecting to a slow or unreachable cluster held a process-wide lock through node discovery, so every other cluster alias waited for it, and each command rebuilt the key of the shared cluster client. Discovery now runs outside the lock, and a cache instance looks its client up once.
 
 ### Documentation
 

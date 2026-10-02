@@ -120,7 +120,7 @@ def test_pool_and_parser_options_are_rejected(option: dict[str, str]):
 def test_plain_options_still_build():
     adapter = ValkeyPyClusterAdapter([SERVER_URL], socket_connect_timeout=3)
 
-    assert adapter._cluster_options()[0] == {"socket_connect_timeout": 3}
+    assert adapter._cluster_options[0] == {"socket_connect_timeout": 3}
 
 
 CLUSTER_LOCATION = ["redis://node-a:7000", "redis://node-b:7001/0", "redis://node-c:7002"]

@@ -4036,6 +4036,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
             raise RuntimeError(msg)
         return self._async_cluster_class
 
+    @cached_property
     def _cluster_options(self) -> tuple[dict[str, Any], tuple[Any, ...]]:
         """Build extra kwargs for ``from_url`` and a hashable cache key.
 
@@ -4047,28 +4048,42 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         }
         return cluster_options, (self._cluster_class, tuple(self._servers), _options_key(cluster_options))
 
+    @cached_property
+    def _cluster_client(self) -> Any:
+        """The process-wide sync Cluster client for this config.
+
+        Node discovery talks to the cluster, so it runs outside the registry
+        lock that every cluster alias takes.
+        """
+        cluster_options, cache_key = self._cluster_options
+        with self._clusters_lock:
+            cluster = self._clusters.get(cache_key)
+        if cluster is None:
+            built = _install_error_translation(
+                self._cluster.from_url(
+                    self._servers[0],
+                    **cluster_options,
+                    **self._startup_nodes(self._lib.cluster.ClusterNode),
+                ),
+            )
+            with self._clusters_lock:
+                cluster = self._clusters.setdefault(cache_key, built)
+            if cluster is not built:
+                built.close()
+        return cluster
+
     @override
     def get_client(self, key: str | None = None, *, write: bool = False) -> Any:
         """Get the Cluster client (shared process-wide per config)."""
         del key, write
-        cluster_options, cache_key = self._cluster_options()
-        with self._clusters_lock:
-            cluster = self._clusters.get(cache_key)
-            if cluster is None:
-                cluster = self._cluster.from_url(
-                    self._servers[0],
-                    **cluster_options,
-                    **self._startup_nodes(self._lib.cluster.ClusterNode),
-                )
-                self._clusters[cache_key] = cluster
-            return _install_error_translation(cluster)
+        return self._cluster_client
 
     @override
     async def get_async_client(self, key: str | None = None, *, write: bool = False) -> Any:
         """Get the async Cluster client for the current event loop (shared process-wide per loop)."""
         del key, write
         loop = asyncio.get_running_loop()
-        cluster_options, cache_key = self._cluster_options()
+        cluster_options, cache_key = self._cluster_options
 
         slot = _loop_slot(self._async_clusters, loop)
         cluster = slot.get(cache_key)
@@ -4394,7 +4409,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         with a different LOCATION or options keeps its client, one configured
         identically shares this client and reconnects lazily on its next command.
         """
-        cluster = _pop_loop_entry(self._async_clusters, asyncio.get_running_loop(), self._cluster_options()[1])
+        cluster = _pop_loop_entry(self._async_clusters, asyncio.get_running_loop(), self._cluster_options[1])
         if cluster is not None:
             await cluster.aclose()
         _evict_closed_loops(self._async_clusters)
