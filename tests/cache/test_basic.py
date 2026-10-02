@@ -5,8 +5,10 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
+from django_cachex.exceptions import NotSupportedError
 from django_cachex.serializers.json import JsonSerializer
 from django_cachex.serializers.msgpack import MsgpackSerializer
+from tests.fixtures.cache import server_version
 
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
@@ -35,6 +37,16 @@ def test_set_nx_creates_again_after_delete(cache: RespCache):
 
     assert cache.set("nx_recreate", "second", nx=True) is True
     assert cache.get("nx_recreate") == "second"
+
+
+def test_set_nx_get_raises_not_supported_before_redis_7(cache: RespCache):
+    server, version = server_version(cache)
+    if server == "valkey" or version >= (7, 0):
+        pytest.skip("the server accepts SET NX GET")
+    cache.set("nx_get_old_server", "original")
+    with pytest.raises(NotSupportedError):
+        cache.set("nx_get_old_server", "new", nx=True, get=True)
+    assert cache.get("nx_get_old_server") == "original"
 
 
 def test_set_get_returns_old_value(cache: RespCache):
@@ -585,6 +597,17 @@ async def test_aset_nx_creates_again_after_delete(cache: RespCache):
 
     assert await cache.aset("anx_recreate", "second", nx=True) is True
     assert await cache.aget("anx_recreate") == "second"
+
+
+@pytest.mark.asyncio
+async def test_aset_nx_get_raises_not_supported_before_redis_7(cache: RespCache):
+    server, version = server_version(cache)
+    if server == "valkey" or version >= (7, 0):
+        pytest.skip("the server accepts SET NX GET")
+    await cache.aset("anx_get_old_server", "original")
+    with pytest.raises(NotSupportedError):
+        await cache.aset("anx_get_old_server", "new", nx=True, get=True)
+    assert await cache.aget("anx_get_old_server") == "original"
 
 
 @pytest.mark.asyncio

@@ -14,6 +14,7 @@ import heapq
 import inspect
 import re
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from functools import cached_property
 from itertools import batched
@@ -34,7 +35,7 @@ if TYPE_CHECKING:
     from django_cachex.types import KeyType
 
 from django_cachex.cache.base import BaseCachex, CachexSupportLevel
-from django_cachex.exceptions import CompressorError, NotSupportedError, SerializerError
+from django_cachex.exceptions import CompressorError, NotSupportedError, SerializerError, maybe_wrap_set_nx_get
 from django_cachex.script import ScriptHelpers, reject_stray_encoded
 from django_cachex.utils import (
     _validate_linsert_where,
@@ -120,6 +121,18 @@ def _validate_lock_lease(lease: float | None) -> None:
     if lease is not None and lease * 1000 < 1:
         msg = "lease must be at least 1 ms"
         raise ValueError(msg)
+
+
+@contextmanager
+def _set_nx_get_translated(*, nx: bool, xx: bool, get: bool) -> Iterator[None]:
+    """Re-raise the server's rejection of ``SET ... NX GET`` (Redis before 7.0) as :class:`NotSupportedError`."""
+    try:
+        yield
+    except Exception as e:
+        wrapped = maybe_wrap_set_nx_get(e) if nx and get and not xx else e
+        if wrapped is e:
+            raise
+        raise wrapped from e
 
 
 # =============================================================================
@@ -577,15 +590,16 @@ class RespCache(BaseCachex):
         """
         key = self.make_and_validate_key(key, version=version)
         if nx or xx or get:
-            result = await self.adapter.aset_with_flags(
-                key,
-                self.encode(value),
-                self.get_backend_timeout(timeout),
-                nx=nx,
-                xx=xx,
-                get=get,
-                stampede_prevention=stampede_prevention,
-            )
+            with _set_nx_get_translated(nx=nx, xx=xx, get=get):
+                result = await self.adapter.aset_with_flags(
+                    key,
+                    self.encode(value),
+                    self.get_backend_timeout(timeout),
+                    nx=nx,
+                    xx=xx,
+                    get=get,
+                    stampede_prevention=stampede_prevention,
+                )
             # set_with_flags returns the previous value when get=True (bytes or None);
             # otherwise a bool indicating NX/XX success.
             if get:
@@ -621,15 +635,16 @@ class RespCache(BaseCachex):
         """
         key = self.make_and_validate_key(key, version=version)
         if nx or xx or get:
-            result = self.adapter.set_with_flags(
-                key,
-                self.encode(value),
-                self.get_backend_timeout(timeout),
-                nx=nx,
-                xx=xx,
-                get=get,
-                stampede_prevention=stampede_prevention,
-            )
+            with _set_nx_get_translated(nx=nx, xx=xx, get=get):
+                result = self.adapter.set_with_flags(
+                    key,
+                    self.encode(value),
+                    self.get_backend_timeout(timeout),
+                    nx=nx,
+                    xx=xx,
+                    get=get,
+                    stampede_prevention=stampede_prevention,
+                )
             if get:
                 return self.decode(result) if result is not None else None
             return result

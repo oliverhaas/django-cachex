@@ -12,7 +12,7 @@ from django_cachex.adapters.pipeline import AsyncPipeline, Pipeline
 from django_cachex.cache import RespCache
 from django_cachex.exceptions import KeyNotFoundError, NotSupportedError
 from django_cachex.types import KeyType
-from tests.fixtures.cache import skip_below_server
+from tests.fixtures.cache import server_version, skip_below_server
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1823,6 +1823,19 @@ def test_set_get_with_nx_and_xx(cache: RespCache):
     pipe.exists("pipe_set_get_xx")
 
     assert pipe.execute() == ["original", None, "original", False]
+
+
+def test_set_nx_get_raises_not_supported_before_redis_7(cache: RespCache):
+    server, version = server_version(cache)
+    if server == "valkey" or version >= (7, 0):
+        pytest.skip("the server accepts SET NX GET")
+    cache.set("pipe_set_get_nx_old_server", "original")
+
+    pipe = cache.pipeline()
+    pipe.set("pipe_set_get_nx_old_server", "new", nx=True, get=True)
+    with pytest.raises(NotSupportedError):
+        pipe.execute()
+    assert cache.get("pipe_set_get_nx_old_server") == "original"
 
 
 def test_set_get_with_timeout_keeps_the_ttl(cache: RespCache):

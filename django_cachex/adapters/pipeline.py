@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from django_cachex.adapters.protocols import RespAsyncPipelineProtocol, RespPipelineProtocol
     from django_cachex.stampede import StampedeConfig
 
-from django_cachex.exceptions import KeyNotFoundError, NotSupportedError, translate_server_error
+from django_cachex.exceptions import KeyNotFoundError, NotSupportedError, maybe_wrap_set_nx_get, translate_server_error
 from django_cachex.script import ScriptHelpers, reject_stray_encoded
 from django_cachex.types import KeyType
 from django_cachex.utils import _validate_zadd_flags, _validate_zrange_limit
@@ -172,6 +172,15 @@ class Pipeline:
         if value is None:
             return None
         return self._cache.decode(value)
+
+    def _decode_set_nx_get(self, value: Any) -> Any:
+        """Decode a ``SET ... NX GET`` reply; raise :class:`NotSupportedError` if the server rejects those flags."""
+        if isinstance(value, Exception):
+            wrapped = maybe_wrap_set_nx_get(value)
+            if wrapped is value:
+                _raise_translated(value)
+            raise wrapped from value
+        return self._decode_single(value)
 
     def _decode_values(self, value: Sequence[bytes | None]) -> list[Any]:
         """Decode a flat sequence of stored values, keeping ``None`` for misses."""
@@ -397,7 +406,10 @@ class Pipeline:
             kwargs["get"] = True
 
         self._pipeline_adapter.set(nkey, nvalue, **kwargs)
-        self._decoders.append(self._decode_single if get else bool)
+        if nx and get and not xx:
+            self._decoders.append(_ErrorAware(self._decode_set_nx_get))
+        else:
+            self._decoders.append(self._decode_single if get else bool)
         return self
 
     def get(self, key: str, default: Any = None, version: int | None = None) -> Self:

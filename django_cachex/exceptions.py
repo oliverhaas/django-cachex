@@ -190,6 +190,22 @@ def maybe_wrap_unknown_command(exc: BaseException) -> BaseException:
     return wrapped
 
 
+def maybe_wrap_set_nx_get(exc: BaseException) -> BaseException:
+    """Return :class:`NotSupportedError` if ``exc`` is the server's rejection of ``SET ... NX GET``.
+
+    Redis before 7.0 replies ``syntax error``. That reply names no command, so
+    call this only for a ``SET`` with ``NX`` and ``GET`` and without ``XX``.
+    """
+    if isinstance(exc, CachexError) or "syntax error" not in str(exc):
+        return exc
+    wrapped = NotSupportedError(
+        "set(nx=True, get=True)",
+        detail="the server rejects NX with GET (requires Redis 7.0+ or Valkey 7.2+)",
+    )
+    wrapped.__cause__ = exc
+    return wrapped
+
+
 def translate_server_error(exc: BaseException) -> BaseException:
     """Map a driver error onto the cachex exception it stands for, or return it unchanged."""
     return maybe_wrap_unknown_command(maybe_wrap_wrongtype(exc))
