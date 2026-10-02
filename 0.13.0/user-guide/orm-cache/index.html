@@ -1,0 +1,1735 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Valkey and Redis cache backend for Django, with a Django admin UI for cache inspection.">
+      
+      
+      
+        <link rel="canonical" href="https://oliverhaas.github.io/django-cachex/0.13.0/user-guide/orm-cache/">
+      
+      
+        <link rel="prev" href="../composite-backends/">
+      
+      
+        <link rel="next" href="../../recipes/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>ORM Cache - Django CacheX</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="red" data-md-color-accent="red">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#orm-cache" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Django CacheX" class="md-header__button md-logo" aria-label="Django CacheX" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Django CacheX
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              ORM Cache
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="red" data-md-color-accent="red"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="red" data-md-color-accent="red"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/oliverhaas/django-cachex" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    oliverhaas/django-cachex
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Django CacheX" class="md-nav__button md-logo" aria-label="Django CacheX" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Django CacheX
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/oliverhaas/django-cachex" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    oliverhaas/django-cachex
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../admin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cache Admin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../async/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Async Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../serializers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serializers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compression/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compression
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sentinel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sentinel
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../composite-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TrackingCache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ORM Cache
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ORM Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#caches-and-databases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Caches and databases
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-cached" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is cached
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-invalidation-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How invalidation works
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How invalidation works">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cache-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#eviction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Eviction
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#transactions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transactions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#failures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Failures
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="API">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#invalidate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        invalidate()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#orm_cache_disabled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        orm_cache_disabled()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#table_generations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        table_generations()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#management-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Management command
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#system-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        System checks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#caches-and-databases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Caches and databases
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-cached" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is cached
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-invalidation-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How invalidation works
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How invalidation works">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cache-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#eviction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Eviction
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#transactions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transactions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#failures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Failures
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="API">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#invalidate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        invalidate()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#orm_cache_disabled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        orm_cache_disabled()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#table_generations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        table_generations()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#management-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Management command
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#system-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        System checks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="orm-cache">ORM Cache<a class="headerlink" href="#orm-cache" title="Permanent link">&para;</a></h1>
+<p><code>django_cachex.orm</code> caches the results of Django ORM queries on PostgreSQL and SQLite. A write to a table invalidates every cached query that read it, in every process. The app is derived from <a href="https://github.com/noripyt/django-cachalot">django-cachalot</a> 2.9.1. For moving from cachalot, see <a href="../../migration/#from-django-cachalot">Migrating from django-cachalot</a>.</p>
+<p>Add the app to <code>INSTALLED_APPS</code>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">INSTALLED_APPS</span> <span class="o">=</span> <span class="p">[</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="c1"># ...</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="s2">"django_cachex.orm"</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="p">]</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="s2">"default"</span><span class="p">:</span> <span class="p">{</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        <span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.ValkeyCache"</span><span class="p">,</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>        <span class="s2">"LOCATION"</span><span class="p">:</span> <span class="s2">"valkey://127.0.0.1:6379/1"</span><span class="p">,</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="p">},</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="p">}</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="n">CACHEX_ORM</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="s2">"CACHE"</span><span class="p">:</span> <span class="s2">"default"</span><span class="p">,</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="s2">"TIMEOUT"</span><span class="p">:</span> <span class="mi">3600</span><span class="p">,</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="p">}</span>
+</span></code></pre></div>
+<p>Every process that writes to the database must run with the app installed.</p>
+<h2 id="caches-and-databases">Caches and databases<a class="headerlink" href="#caches-and-databases" title="Permanent link">&para;</a></h2>
+<p>The ORM cache works with these cache backends:</p>
+<ul>
+<li>The Redis and Valkey backends: standalone, Sentinel and Cluster on redis-py and valkey-py, standalone and Cluster on valkey-glide.</li>
+<li><code>TrackingCache</code> over one of them. Each process also keeps the results it read in a separate local LRU, bounded by the alias's <code>MAX_ENTRIES</code>. A local copy saves the transfer but not the round trip, and is never served after a write.</li>
+<li><code>LocMemCache</code>, Django's or django-cachex's. It keeps everything in the process, so a write in one process does not invalidate the others. Use it for tests and single-process setups.</li>
+</ul>
+<p>Other backends, such as Memcached, <code>DatabaseCache</code> or Django's own <code>RedisCache</code>, cache nothing (<code>cachex_orm.W001</code>).</p>
+<p>The cache's serializer must bring results back with their Python types, such as <code>Decimal</code>, <code>datetime</code> and tuples. The default pickle serializer does, and the JSON and MsgPack serializers fail the <code>cachex_orm.E004</code> check. Any compressor works.</p>
+<p>Only PostgreSQL and SQLite databases are cached.</p>
+<h2 id="settings">Settings<a class="headerlink" href="#settings" title="Permanent link">&para;</a></h2>
+<p>All settings live in the <code>CACHEX_ORM</code> dict, with upper-case keys. An unknown key is the <code>cachex_orm.W004</code> warning.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ENABLED</code></td>
+<td><code>True</code></td>
+<td>Serve and store query results. Writes invalidate the cache even while it is <code>False</code>.</td>
+</tr>
+<tr>
+<td><code>CACHE</code></td>
+<td><code>"default"</code></td>
+<td>Cache alias of the ORM cache.</td>
+</tr>
+<tr>
+<td><code>DATABASES</code></td>
+<td><code>"supported_only"</code></td>
+<td>Aliases whose queries are cached: <code>"supported_only"</code> for every PostgreSQL and SQLite alias except replicas (aliases with a <code>TEST["MIRROR"]</code>), or a list, tuple or set of aliases.</td>
+</tr>
+<tr>
+<td><code>TIMEOUT</code></td>
+<td>the cache's default timeout</td>
+<td>Seconds a result is kept. <code>None</code> keeps it until the cache evicts it, even after a write (see <a href="#eviction">Eviction</a>).</td>
+</tr>
+<tr>
+<td><code>LEASE_TIMEOUT</code></td>
+<td><code>60</code></td>
+<td>Seconds a write's lease lasts if the write cannot release it (see <a href="#failures">Failures</a>).</td>
+</tr>
+<tr>
+<td><code>ONLY_CACHABLE_TABLES</code></td>
+<td><code>()</code></td>
+<td>If set, only queries whose tables are all listed are cached.</td>
+</tr>
+<tr>
+<td><code>UNCACHABLE_TABLES</code></td>
+<td><code>()</code></td>
+<td>Queries reading one of these tables are not cached, and writes to them invalidate nothing. <code>django_migrations</code> is never cached.</td>
+</tr>
+<tr>
+<td><code>ADDITIONAL_TABLES</code></td>
+<td><code>()</code></td>
+<td>Tables no model covers, to look for in raw SQL.</td>
+</tr>
+<tr>
+<td><code>FINAL_SQL_CHECK</code></td>
+<td><code>False</code></td>
+<td>Also search the final SQL of every query for table names in double quotes, such as those in a <code>Func</code> template.</td>
+</tr>
+<tr>
+<td><code>QUERY_KEYGEN</code></td>
+<td><code>"django_cachex.orm.utils.readable_query_key"</code></td>
+<td>Callable, or its dotted path, that builds the key of a query's result (see <a href="#cache-keys">Cache keys</a>).</td>
+</tr>
+<tr>
+<td><code>TABLE_KEYGEN</code></td>
+<td><code>"django_cachex.orm.utils.readable_table_key"</code></td>
+<td>Callable, or its dotted path, that builds the key of a table's generation and leases (see <a href="#cache-keys">Cache keys</a>).</td>
+</tr>
+</tbody>
+</table>
+<h2 id="what-is-cached">What is cached<a class="headerlink" href="#what-is-cached" title="Permanent link">&para;</a></h2>
+<p>Queries the ORM compiles, such as querysets, <code>get()</code>, <code>count()</code>, <code>aggregate()</code> and their async forms, are cached when all the tables they read are cachable. A result is cached per database, SQL and parameters. The values of an <code>__in</code> filter are sorted before the query runs, so one set of values gets one result in any order, such as the order of the parent rows a <code>prefetch_related()</code> passes. <code>__in</code> filters in subqueries, annotations and <code>FilteredRelation()</code> conditions keep their order.</p>
+<p>These are not cached:</p>
+<ul>
+<li><code>select_for_update()</code> and <code>explain()</code>.</li>
+<li>Queries ordered by <code>"?"</code>.</li>
+<li>Queries calling <code>Now()</code>, <code>TransactionNow()</code>, <code>Random()</code>, <code>UUID4()</code>, <code>UUID7()</code> or <code>RandomUUID()</code> anywhere, subqueries included.</li>
+<li>The results of <code>iterator()</code> and <code>aiterator()</code>.</li>
+<li>Queries holding an expression without <code>get_source_expressions()</code>.</li>
+<li>Queries with a parameter the cache key cannot represent exactly, such as JSON, binary and range parameters under psycopg2.</li>
+<li>Raw SQL through <code>cursor.execute()</code> and <code>Manager.raw()</code>.</li>
+<li>Inside a transaction, queries reading a table it has written, unless it reads a snapshot (see <a href="#transactions">Transactions</a>).</li>
+</ul>
+<p>The ORM cache does not search SQL you write for functions, so it caches a query with <code>RawSQL("now()")</code> or <code>Func(function="NOW")</code>. Run such queries inside <a href="#orm_cache_disabled"><code>orm_cache_disabled()</code></a>.</p>
+<h2 id="how-invalidation-works">How invalidation works<a class="headerlink" href="#how-invalidation-works" title="Permanent link">&para;</a></h2>
+<p>Every table has a generation in the cache, and every committed write to the table changes it. A result is stored with the generations of the tables it read and served only while all of them are unchanged.</p>
+<p>A write holds a lease on its tables around the statement under autocommit, or around the <code>COMMIT</code> inside a transaction. While a table is leased, queries on it are neither served from the cache nor stored in it. A query running during a write therefore cannot cache a result the write makes stale.</p>
+<p>A cached read costs one round trip to the cache and a miss two. A write under autocommit, or the commit of a transaction that wrote, also costs two.</p>
+<h3 id="cache-keys">Cache keys<a class="headerlink" href="#cache-keys" title="Permanent link">&para;</a></h3>
+<p>A result is stored under <code>orm:{&lt;database alias&gt;}:q:&lt;query key&gt;:&lt;result type&gt;</code>, the generation of a table under <code>orm:{&lt;database alias&gt;}:g:&lt;table key&gt;</code> and its leases under <code>orm:{&lt;database alias&gt;}:l:&lt;table key&gt;</code>, all under the cache alias's <code>KEY_PREFIX</code> and <code>VERSION</code>. The database alias is the hash tag, so on a cluster all keys of one database live on one shard. The keys name database aliases, not databases. Projects or environments sharing a cache server need distinct <code>KEY_PREFIX</code>es or database numbers, or each serves the results the other read.</p>
+<p>By default the query key is the sorted names of the tables the query reads, joined with <code>.</code>, then <code>:</code> and the SHA-1 digest of the database alias, SQL and parameters. Past 100 characters, the names that do not fit are left out and counted, as in <code>shop_customer.+3more</code>. The table key is the table name:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>orm:{default}:q:shop_customer.shop_order:3f2a9c...:multi
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>orm:{default}:g:shop_order
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>orm:{default}:l:shop_order
+</span></code></pre></div>
+<p><code>QUERY_KEYGEN</code> and <code>TABLE_KEYGEN</code> take a callable, or its dotted path, that builds these keys instead. Both are called with keyword arguments and return a <code>str</code>:</p>
+<ul>
+<li><code>QUERY_KEYGEN(*, compiler, tables, digest)</code> returns the query key. <code>compiler</code> is the <code>SQLCompiler</code> of the query, already compiled, <code>tables</code> a <code>frozenset</code> of the names of the tables it reads, and <code>digest</code> the SHA-1 hex digest of the database alias, SQL and parameters. The SQL is the SQL that runs, with its <code>__in</code> values sorted. The ORM cache appends the result type itself.</li>
+<li><code>TABLE_KEYGEN(*, db_alias, table)</code> returns the table key, for reads, writes, <code>invalidate()</code> and <code>table_generations()</code>.</li>
+</ul>
+<p>A custom keygen must follow these rules:</p>
+<ul>
+<li>A table key depends on <code>db_alias</code> and <code>table</code> only, and is the same in every process and request. A key that also depends on the tenant of a request lets a write by one tenant leave the other tenants' results of a shared table stale.</li>
+<li>Queries with different digests get different keys. Anything a query key adds, such as a tenant id, only splits entries further.</li>
+<li>Tables can share a key. A write to one of them then invalidates the results of all of them.</li>
+<li><code>QUERY_KEYGEN</code> can raise <code>django_cachex.orm.utils.UncachableQuery</code> to leave a query uncached. Any other exception from either keygen propagates: a query, <code>invalidate()</code> or <code>table_generations()</code> fails with it, and a write behaves as one that cannot reach the cache (see <a href="#failures">Failures</a>).</li>
+<li>While processes run with different table keygens, each misses the writes of the others. Run <code>invalidate_orm_cache</code> after they all run the same one.</li>
+</ul>
+<p>This table keygen keeps the table keys of django-cachex 0.12.1 and earlier:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># myproject/cache_keys.py</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">hashlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">sha1</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">hashed_table_key</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">db_alias</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">table</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="k">return</span> <span class="n">sha1</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">db_alias</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">table</span><span class="si">}</span><span class="s2">"</span><span class="o">.</span><span class="n">encode</span><span class="p">(),</span> <span class="n">usedforsecurity</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()</span>
+</span></code></pre></div>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">CACHEX_ORM</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"TABLE_KEYGEN"</span><span class="p">:</span> <span class="s2">"myproject.cache_keys.hashed_table_key"</span><span class="p">}</span>
+</span></code></pre></div>
+<p>This query keygen adds the django-tenants schema to the query key, so tenants do not share results (see <a href="#limits">Limits</a>):</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># myproject/cache_keys.py</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex.orm.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">readable_query_key</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">tenant_query_key</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">compiler</span><span class="p">,</span> <span class="n">tables</span><span class="p">,</span> <span class="n">digest</span><span class="p">):</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">query_key</span> <span class="o">=</span> <span class="n">readable_query_key</span><span class="p">(</span><span class="n">compiler</span><span class="o">=</span><span class="n">compiler</span><span class="p">,</span> <span class="n">tables</span><span class="o">=</span><span class="n">tables</span><span class="p">,</span> <span class="n">digest</span><span class="o">=</span><span class="n">digest</span><span class="p">)</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="k">return</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">compiler</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">schema_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">query_key</span><span class="si">}</span><span class="s2">"</span>
+</span></code></pre></div>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">CACHEX_ORM</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"QUERY_KEYGEN"</span><span class="p">:</span> <span class="s2">"myproject.cache_keys.tenant_query_key"</span><span class="p">}</span>
+</span></code></pre></div>
+<p>The table keys stay the same in every schema, so a write to a table in one schema invalidates that table's results in all of them. Give the ORM cache an alias without a tenant-aware <code>KEY_FUNCTION</code> such as <code>django_tenants.cache.make_key</code>, which would put the tenant into the table keys too.</p>
+<h3 id="eviction">Eviction<a class="headerlink" href="#eviction" title="Permanent link">&para;</a></h3>
+<p>A write does not delete the results it invalidates, so they stay in the cache until they expire or are evicted. What a full Redis or Valkey server evicts depends on its <code>maxmemory-policy</code>:</p>
+<ul>
+<li><code>volatile-*</code> policies evict only keys with an expiry, which only results with a <code>TIMEOUT</code> have. Set a <code>TIMEOUT</code> with them, or they act like <code>noeviction</code>.</li>
+<li><code>allkeys-*</code> policies also evict generations, which is safe, and leases. An evicted lease acts like one that expired early (see <a href="#failures">Failures</a>).</li>
+<li>Under <code>noeviction</code>, the default, a full server refuses writes, so every database write to a cached table fails with <code>InvalidationError</code> until memory is freed.</li>
+</ul>
+<h2 id="transactions">Transactions<a class="headerlink" href="#transactions" title="Permanent link">&para;</a></h2>
+<p><code>READ COMMITTED</code>, PostgreSQL's default, and SQLite's default rollback journal let a transaction use the shared cache. Under <code>REPEATABLE READ</code> and <code>SERIALIZABLE</code>, and on SQLite in WAL mode, a transaction reads a snapshot that can be older than the shared cache. It caches up to 16 MiB of pickled results for itself instead, and drops them when it ends.</p>
+<p>The ORM cache reads the isolation level per connection, from the <code>isolation_level</code> option or the server, and again after raw SQL changes the session default. Other SQL naming an isolation level, such as <code>SET TRANSACTION ISOLATION LEVEL</code>, makes the connection cache per transaction until it reconnects.</p>
+<h2 id="failures">Failures<a class="headerlink" href="#failures" title="Permanent link">&para;</a></h2>
+<p>A write that cannot take its lease, for example because the cache server is down, raises <code>django_cachex.orm.exceptions.InvalidationError</code> before the statement or <code>COMMIT</code> runs. The error is a <code>DatabaseError</code>, so <code>atomic()</code> rolls the transaction back. To keep writing through a cache outage, set <code>CACHEX_ORM["ENABLED"] = False</code>. A write that cannot reach the cache then logs a warning and goes ahead. Run <code>invalidate_orm_cache</code> before enabling it again.</p>
+<p>If a write cannot release its lease or its process dies, queries on its tables run against the database until the lease expires after <code>LEASE_TIMEOUT</code>. A failed release, lookup or store logs a warning to the <code>django_cachex.orm</code> logger and does not raise.</p>
+<p><code>LEASE_TIMEOUT</code> must outlast the longest write statement and <code>COMMIT</code>. Keep it above the database's <code>statement_timeout</code>. A lease that expires while its write still runs lets another process store what it read before the commit. That result is served until the write releases the lease, or until the result expires if the release fails.</p>
+<h2 id="api">API<a class="headerlink" href="#api" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex.orm.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">invalidate</span><span class="p">,</span> <span class="n">orm_cache_disabled</span><span class="p">,</span> <span class="n">table_generations</span>
+</span></code></pre></div>
+<h3 id="invalidate">invalidate()<a class="headerlink" href="#invalidate" title="Permanent link">&para;</a></h3>
+<p><code>invalidate(*tables_or_models, cache_alias=None, db_alias=None)</code> invalidates the cached queries of the given tables, models or <code>"app_label.ModelName"</code> strings, or of every table when none are given. <code>cache_alias</code> and <code>db_alias</code> narrow it to one cache or database. Call it after changing data the ORM cache cannot see, such as a bulk load through another client.</p>
+<p>If a cache cannot be reached, it still invalidates the others, then raises one <code>InvalidationError</code> naming the caches and databases that failed.</p>
+<h3 id="orm_cache_disabled">orm_cache_disabled()<a class="headerlink" href="#orm_cache_disabled" title="Permanent link">&para;</a></h3>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">with</span> <span class="n">orm_cache_disabled</span><span class="p">():</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">orders</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">Order</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">status</span><span class="o">=</span><span class="s2">"open"</span><span class="p">))</span>
+</span></code></pre></div>
+<p>Queries in the block run against the database, and writes in it still invalidate the cache. It applies to the current thread or asyncio task.</p>
+<h3 id="table_generations">table_generations()<a class="headerlink" href="#table_generations" title="Permanent link">&para;</a></h3>
+<p><code>table_generations(*tables_or_models, db_alias="default")</code> returns the current generations of the given tables as a tuple of strings. Every committed write to one of the tables changes the tuple, so a value computed from the tables can be cached under it:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex.orm.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">table_generations</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">open_order_total</span><span class="p">():</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="n">generations</span> <span class="o">=</span> <span class="n">table_generations</span><span class="p">(</span><span class="n">Order</span><span class="p">,</span> <span class="n">OrderLine</span><span class="p">)</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>    <span class="k">if</span> <span class="n">generations</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>        <span class="k">return</span> <span class="n">compute_open_order_total</span><span class="p">()</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    <span class="n">key</span> <span class="o">=</span> <span class="s2">"open-order-total:"</span> <span class="o">+</span> <span class="s2">":"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">generations</span><span class="p">)</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>    <span class="n">total</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>    <span class="k">if</span> <span class="n">total</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>        <span class="n">total</span> <span class="o">=</span> <span class="n">compute_open_order_total</span><span class="p">()</span>
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>        <span class="n">cache</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">total</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">3600</span><span class="p">)</span>
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>    <span class="k">return</span> <span class="n">total</span>
+</span></code></pre></div>
+<p>Read the generations before computing the value, and name every table the computation reads. <code>table_generations()</code> returns <code>None</code> when a value computed now must not be cached:</p>
+<ul>
+<li>While a write to one of the tables holds its lease.</li>
+<li>When the ORM cache is disabled or would not cache a query of these tables.</li>
+<li>Inside a transaction that has written one of the tables or reads a snapshot.</li>
+</ul>
+<h3 id="management-command">Management command<a class="headerlink" href="#management-command" title="Permanent link">&para;</a></h3>
+<div class="language-console highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="go">python manage.py invalidate_orm_cache                    # every table</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="go">python manage.py invalidate_orm_cache shop               # an app's models, many-to-many tables included</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="go">python manage.py invalidate_orm_cache shop.Order --cache default --db default</span>
+</span></code></pre></div>
+<h2 id="system-checks">System checks<a class="headerlink" href="#system-checks" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cachex_orm.W001</code></td>
+<td>The cache backend cannot hold the ORM cache, so nothing is cached.</td>
+</tr>
+<tr>
+<td><code>cachex_orm.W002</code></td>
+<td>None of the databases are PostgreSQL or SQLite.</td>
+</tr>
+<tr>
+<td><code>cachex_orm.W003</code></td>
+<td><code>DATABASES</code> is empty.</td>
+</tr>
+<tr>
+<td><code>cachex_orm.W004</code></td>
+<td><code>CACHEX_ORM</code> has unknown keys.</td>
+</tr>
+<tr>
+<td><code>cachex_orm.W005</code></td>
+<td>A database listed in <code>DATABASES</code> has a <code>TEST["MIRROR"]</code>, so it looks like a replica.</td>
+</tr>
+<tr>
+<td><code>cachex_orm.E001</code></td>
+<td><code>DATABASES</code> names an alias missing from Django's <code>DATABASES</code>.</td>
+</tr>
+<tr>
+<td><code>cachex_orm.E002</code></td>
+<td><code>DATABASES</code> is neither <code>"supported_only"</code> nor a list, tuple or set.</td>
+</tr>
+<tr>
+<td><code>cachex_orm.E003</code></td>
+<td><code>CACHE</code> names an alias missing from <code>CACHES</code>.</td>
+</tr>
+<tr>
+<td><code>cachex_orm.E004</code></td>
+<td>The cache's serializer does not bring query results back unchanged.</td>
+</tr>
+<tr>
+<td><code>cachex_orm.E005</code></td>
+<td>The cache could not be loaded.</td>
+</tr>
+<tr>
+<td><code>cachex_orm.E006</code></td>
+<td>A database listed in <code>DATABASES</code> is neither PostgreSQL nor SQLite. It is not cached.</td>
+</tr>
+<tr>
+<td><code>cachex_orm.E007</code></td>
+<td>A table setting is not a list, tuple or set, like <code>("django_session")</code> without its comma. The value counts as empty.</td>
+</tr>
+<tr>
+<td><code>cachex_orm.E008</code></td>
+<td><code>LEASE_TIMEOUT</code> is not a positive number of seconds.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="limits">Limits<a class="headerlink" href="#limits" title="Permanent link">&para;</a></h2>
+<ul>
+<li>The ORM cache does not see writes by other applications and database clients, triggers and rules, <code>COPY</code>, or stored procedures run with <code>callproc()</code>. Call <code>invalidate()</code> or <code>invalidate_orm_cache</code> after them. Deletes follow the foreign keys that Django declares with a database-level <code>on_delete</code> (<code>DB_CASCADE</code>, <code>DB_SET_NULL</code>, <code>DB_SET_DEFAULT</code>). <code>TRUNCATE ... CASCADE</code> follows every table that references a truncated one.</li>
+<li>Raw SQL writes are recognized by keyword (<code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>, <code>TRUNCATE</code>, <code>ALTER</code>, <code>CREATE</code>, <code>DROP</code>, <code>REFRESH</code>, <code>REPLACE INTO</code>, <code>MERGE INTO</code>) and their tables by name. Tables without a model are found only when listed in <code>ADDITIONAL_TABLES</code>. Transactions opened with a raw <code>BEGIN</code> are not seen, so use <code>atomic()</code>.</li>
+<li>Results read from a view are cached under the view's name, so writes to the tables behind it do not invalidate them. List views in <code>UNCACHABLE_TABLES</code>, or <code>invalidate()</code> them after such writes. <code>REFRESH MATERIALIZED VIEW</code> invalidates the view it names.</li>
+<li>A result is keyed by the database alias, SQL and parameters. If the same SQL returns other rows depending on session state, such as django-tenants' per-tenant <code>search_path</code> or a row-level security policy reading a session setting, one tenant is served another's rows. Add that state to the query key (see <a href="#cache-keys">Cache keys</a>).</li>
+<li>Leave replicas out of <code>DATABASES</code>. Writes to the primary do not invalidate what was cached from a replica's alias.</li>
+<li>A failover of the cache server can lose the latest generation changes, which makes stale results current again. Run <code>invalidate_orm_cache</code> after a failover.</li>
+<li>Writes made while the app was uninstalled, a database was left out of <code>DATABASES</code> or <code>CACHE</code> named another alias did not invalidate the cache. Run <code>invalidate_orm_cache</code> before switching back.</li>
+<li><code>migrate</code> invalidates every model after applying a migration, and so does <code>flush</code>. Migrations take leases like any write, so they need the cache too, or <code>ENABLED</code> off followed by <code>invalidate_orm_cache</code>.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.sections", "navigation.expand", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
