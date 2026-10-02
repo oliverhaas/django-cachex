@@ -1,6 +1,7 @@
 """Tests for compressor fallback functionality."""
 
 import gzip
+import pickle
 import zlib
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
@@ -64,6 +65,14 @@ def test_list_config_writes_with_the_first_compressor(redis_container):
         assert cache.adapter.get(cache.make_key("test_key"))[:2] == b"\x1f\x8b"
         assert cache.get("test_key") == "test_value" * 100
         cache.delete("test_key")
+
+
+def test_tuple_config_writes_with_the_first_compressor():
+    cache_obj = make_cache(compressor=tuple(GZIP_THEN_ZLIB))
+    value = "test_value" * 100
+
+    assert cache_obj.encode(value)[:2] == b"\x1f\x8b"
+    assert cache_obj.decode(zlib.compress(pickle.dumps(value))) == value
 
 
 def test_small_and_large_value_roundtrip(redis_container):

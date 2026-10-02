@@ -16,6 +16,7 @@
 - On Redis before 7.0, `set(nx=True, get=True)` and its pipeline form raised the driver's `syntax error`. They now raise `NotSupportedError`, as the [requirements](../getting-started/installation.md#requirements) say.
 - On valkey-glide, `flush_db()`, `aflush_db()` and the admin's Flush database button sent `FLUSHDB SYNC`, so a large flush blocked the server and raised `TimeoutError` after `request_timeout` (250 ms by default), though the flush went through. They now send a plain `FLUSHDB`, as redis-py and valkey-py do, and the server's `lazyfree-lazy-user-flush` decides whether to free the keys in the background.
 - With stampede prevention on, `set(key, value, nx=True)` wrote nothing while the old value sat in its stampede buffer, where `get()` already returns `None`, so the refill after a miss failed and every request recomputed the value for up to `buffer` seconds. `nx=True` without `xx` or `get` now counts that key as absent, as `add()` does.
+- A tuple in `OPTIONS["serializer"]` or `OPTIONS["compressor"]` was taken as one codec instead of a fallback chain, so the first write or read raised `AttributeError`. A tuple now works like a list.
 
 ### Documentation
 

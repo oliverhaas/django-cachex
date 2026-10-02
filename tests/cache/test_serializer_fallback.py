@@ -49,6 +49,13 @@ def test_list_config_with_fallback():
     assert cache_obj._serializers[1].__class__.__name__ == "PickleSerializer"
 
 
+def test_tuple_config_with_fallback():
+    cache_obj = make_cache(serializer=tuple(JSON_THEN_PICKLE))
+
+    assert json.loads(cache_obj.encode({"data": "from_json"})) == {"data": "from_json"}
+    assert cache_obj.decode(pickle.dumps({"data": "from_pickle"})) == {"data": "from_pickle"}
+
+
 def test_empty_serializer_list_rejected_at_init():
     """An empty serializer list fails at construction, not at first use."""
     with pytest.raises(ImproperlyConfigured):
