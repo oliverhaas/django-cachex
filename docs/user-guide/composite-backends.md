@@ -14,7 +14,7 @@ CACHES = {
         "OPTIONS": {
             "transport": "redis",  # a redis-py or valkey-py alias, standalone or Sentinel
             "coherence": "tracking",  # or "ttl", see below
-            "MAX_ENTRIES": 1000,  # size of the local LRU store
+            "MAX_ENTRIES": 300,  # size of the local LRU store
             "local_timeout": None,  # longest time in seconds a value stays local
             "prefixes": None,  # tracked key prefixes, derived from the transport by default
             "poll_timeout": 1.0,  # seconds the listener blocks before it checks for shutdown
