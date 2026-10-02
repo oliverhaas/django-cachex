@@ -360,7 +360,7 @@ def _check_uniform_servers(servers: list[str], options: dict[str, Any], *, check
             msg = (
                 f"LOCATION URLs must agree on {', '.join(differing)}: "
                 f"{servers[0]!r} and {raw!r} differ. valkey-glide applies one "
-                f"connection setting to the whole primary-plus-replicas list."
+                f"set of these settings to every URL in the list."
             )
             raise ImproperlyConfigured(msg)
 

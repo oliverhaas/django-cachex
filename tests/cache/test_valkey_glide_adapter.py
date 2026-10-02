@@ -1720,6 +1720,20 @@ def test_config_kwargs_cluster_tolerates_a_database_mismatch():
     assert "database_id" not in kwargs
 
 
+def test_cluster_seed_urls_that_disagree_are_not_called_replicas(mocker):
+    import django_cachex.adapters.valkey_glide as vg
+
+    mocker.patch.dict(vg._GLIDE_SYNC_CLUSTER_CLIENTS, clear=True)
+    mocker.patch.dict(vg._GLIDE_SYNC_CLUSTER_CREATE_LOCKS, clear=True)
+    mocker.patch.object(vg, "GlideClusterClient")
+    adapter = ValkeyGlideClusterAdapter(["redis://a:7000", "rediss://b:7001"])
+
+    with pytest.raises(ImproperlyConfigured, match="TLS") as excinfo:
+        adapter.get_client()
+
+    assert "replica" not in str(excinfo.value)
+
+
 def test_sync_client_passes_every_url_as_an_address(mocker):
     # Regression: only servers[0] reached glide, so documented replica URLs
     # were dropped without a word.

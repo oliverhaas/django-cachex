@@ -39,6 +39,7 @@
 - On the redis-py and valkey-py cluster backends, a thread connecting to a slow or unreachable cluster held a process-wide lock through node discovery, so every other cluster alias waited for it, and each command rebuilt the key of the shared cluster client. Discovery now runs outside the lock, and a cache instance looks its client up once.
 - On valkey-glide, a thread or task connecting to a slow or unreachable server held a lock that all aliases share, process-wide for sync calls and per event loop for async ones, so every other alias that had not connected yet waited until it gave up. Each configuration now connects under a lock of its own.
 - On redis-py 7, with `OPTIONS["socket_timeout"] = None` on valkey-py, and in valkey-py's sync Sentinel lookups, a connect had no timeout, so an unreachable host held each call for the kernel's TCP timeout of about two minutes. A connect now gives up after 5 seconds unless `socket_connect_timeout` or `socket_timeout` says otherwise in `OPTIONS`, the `LOCATION` query or `sentinel_kwargs`.
+- On `ValkeyGlideClusterCache`, the `ImproperlyConfigured` error for seed URLs that disagree on TLS, username or password called the `LOCATION` list a primary and its replicas. It now says that valkey-glide applies one set of these settings to every URL in the list.
 
 ### Documentation
 
