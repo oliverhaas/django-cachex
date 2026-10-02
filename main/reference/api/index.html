@@ -1775,7 +1775,7 @@
 </tr>
 <tr>
 <td><code>scan(cursor=0, pattern="*", count=None, version=None, key_type=None)</code></td>
-<td>Single SCAN iteration. <code>key_type</code> keeps only keys of that type. A key name that is not valid UTF-8 comes back with its bad bytes escaped, as in <code>bad\xff</code></td>
+<td>Single SCAN iteration. <code>key_type</code> keeps only keys of that type. A key name that is not valid UTF-8 comes back decoded with the <code>surrogateescape</code> error handler, as from <code>os.listdir()</code>, and the key commands take it back as is</td>
 </tr>
 <tr>
 <td><code>delete_pattern(pattern)</code></td>
