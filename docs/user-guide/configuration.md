@@ -328,6 +328,11 @@ The `stampede_prevention=` keyword overrides the option for one call. It takes
 original write used, because it decides whether the new TTL includes the
 buffer.
 
+Counters and data structures get the buffer too. `expire()` and its relatives
+add it to any key, and `incr()` keeps counting on a key that `get()` already
+reports as expired. Pass `stampede_prevention=False` to the calls that write
+and expire them, or keep them on an alias without the option.
+
 A pipelined `get()` skips the early-recompute check. It returns the stored
 value until the key expires, up to `buffer` seconds after its timeout.
 
