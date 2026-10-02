@@ -42,8 +42,7 @@ def _table_keys(db_alias: str, tables: Iterable[str]) -> list[str]:
     return sorted({orm_settings.TABLE_KEYGEN(db_alias=db_alias, table=table) for table in tables})
 
 
-def _invalidation_failed(error: Exception, db_alias: str, tables: Iterable[str]) -> None:
-    message = f"Could not invalidate the ORM cache of {', '.join(sorted(tables))} in database {db_alias!r}"
+def _invalidation_failed(error: Exception, message: str) -> None:
     if orm_settings.ENABLED:
         raise InvalidationError(message) from error
     # Nothing is served from the cache while it is disabled; the docs say to
@@ -62,6 +61,9 @@ def invalidate(
     tables = set(_table_names(tables_or_models))
     cache_aliases = list(settings.CACHES) if cache_alias is None else [cache_alias]
     db_aliases = list(settings.DATABASES) if db_alias is None else [db_alias]
+    # A failing cache does not keep the others from being invalidated.
+    failed_dbs: dict[str, list[str]] = {}
+    error: Exception | None = None
     for db in db_aliases:
         db_tables = filter_cachable(tables or known_tables().union(connections[db].introspection.table_names()))
         if not db_tables:
@@ -74,11 +76,18 @@ def invalidate(
             try:
                 store.bump(db, table_keys)
             except Exception as e:  # noqa: BLE001
-                _invalidation_failed(e, db, db_tables)
+                failed_dbs.setdefault(alias, []).append(db)
+                error = error or e
         connection = connections[db]
         if db in orm_settings.DATABASES and transaction.in_transaction(connection):
             # The transaction can still write to the tables: its commit bumps them again.
             transaction.mark_written(connection, db_tables)
+    if error is not None:
+        where = "; ".join(
+            f"in cache {alias!r} for database{'' if len(dbs) == 1 else 's'} {', '.join(map(repr, dbs))}"
+            for alias, dbs in failed_dbs.items()
+        )
+        _invalidation_failed(error, f"Could not invalidate the ORM cache {where}")
 
 
 def table_generations(*tables_or_models: Any, db_alias: str = DEFAULT_DB_ALIAS) -> tuple[str, ...] | None:

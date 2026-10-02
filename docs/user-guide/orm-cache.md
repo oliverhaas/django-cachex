@@ -154,6 +154,8 @@ from django_cachex.orm.api import invalidate, orm_cache_disabled, table_generati
 
 `invalidate(*tables_or_models, cache_alias=None, db_alias=None)` invalidates the cached queries of the given tables, models or `"app_label.ModelName"` strings, or of every table when none are given. `cache_alias` and `db_alias` narrow it to one cache or database. Call it after changing data the ORM cache cannot see, such as a bulk load through another client.
 
+If a cache cannot be reached, it still invalidates the others, then raises one `InvalidationError` naming the caches and databases that failed.
+
 ### orm_cache_disabled()
 
 ```python

@@ -164,7 +164,8 @@ def _leased(connection: Any, tables: set[str], run: Callable[[], Any]) -> Any:
         table_keys = _table_keys(db_alias, tables)
         store.begin_write(db_alias, table_keys, token, orm_settings.LEASE_TIMEOUT)
     except Exception as e:  # noqa: BLE001
-        _invalidation_failed(e, db_alias, tables)
+        message = f"Could not invalidate the ORM cache of {', '.join(sorted(tables))} in database {db_alias!r}"
+        _invalidation_failed(e, message)
         return run()
     try:
         return run()

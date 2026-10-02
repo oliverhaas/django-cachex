@@ -460,4 +460,4 @@ All exceptions below are importable from `django_cachex` and subclass `CachexErr
 | `SemaphoreError` | A semaphore operation failed, such as re-acquiring before release. |
 | `SemaphoreTimeoutError` | `timeout` elapsed before the semaphore could be acquired. Subclass of `SemaphoreError`. |
 
-The [ORM cache](../user-guide/orm-cache.md#failures) raises `django_cachex.orm.exceptions.InvalidationError` when a write cannot invalidate the cache. It subclasses `CachexError` and Django's `DatabaseError`, so `atomic()` rolls the transaction back.
+The [ORM cache](../user-guide/orm-cache.md#failures) raises `django_cachex.orm.exceptions.InvalidationError` when a write or `invalidate()` cannot invalidate the cache. It subclasses `CachexError` and Django's `DatabaseError`, so `atomic()` rolls the transaction back.

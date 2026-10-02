@@ -13,7 +13,7 @@ from django.contrib.auth.models import Permission, User
 from django.core.cache import DEFAULT_CACHE_ALIAS
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.db import DEFAULT_DB_ALIAS, connection, connections, models, transaction
-from django.test.utils import isolate_apps
+from django.test.utils import isolate_apps, override_settings
 
 from django_cachex.exceptions import CachexError
 from django_cachex.orm import transaction as orm_transaction
@@ -431,6 +431,18 @@ def test_failed_invalidate(mocker, caplog):
     with override_orm_settings(ENABLED=False), caplog.at_level(logging.WARNING, logger="django_cachex.orm"):
         invalidate(Test, cache_alias=orm_settings.CACHE)
     assert {record.name for record in caplog.records} == {"django_cachex.orm.api"}
+
+
+@pytest.mark.django_db(transaction=True)
+def test_failed_invalidate_of_another_cache():
+    assert_query_cached(Test.objects.all(), [])
+    unreachable = {"BACKEND": "django_cachex.cache.RedisCache", "LOCATION": "redis://127.0.0.1:1"}
+    with (
+        override_settings(CACHES={"unreachable": unreachable, **settings.CACHES}),
+        pytest.raises(InvalidationError, match=re.escape("in cache 'unreachable' for databases")),
+    ):
+        invalidate(Test)
+    assert_query_cached(Test.objects.all(), [])
 
 
 @pytest.mark.django_db(transaction=True)
