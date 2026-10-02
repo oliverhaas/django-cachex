@@ -9,6 +9,7 @@ import copy
 import inspect
 import pickle
 import time
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import pytest
@@ -1555,6 +1556,39 @@ def test_zadd_mixed_member_types_with_equal_str(locmem_cache: LocMemCache):
     assert set(locmem_cache.zrange("k", 0, -1)) == {1, "1"}
     assert locmem_cache.zrem("k", 1) == 1
     assert locmem_cache.zrange("k", 0, -1) == ["1"]
+
+
+@pytest.mark.parametrize("alias", [1, True, Decimal(1)])
+def test_zadd_updates_an_equal_member_whose_str_differs(locmem_cache: LocMemCache, alias: object):
+    # Regression: the zset matched members by equality but its sorted index
+    # by str(member), so updating 1.0 through 1 raised ValueError.
+    locmem_cache.zadd("k", {1.0: 1.0, "b": 2.0})
+    assert locmem_cache.zadd("k", {alias: 3.0}) == 0
+    assert locmem_cache.zcard("k") == 2
+    assert locmem_cache.zscore("k", alias) == 3.0
+    assert locmem_cache.zrange("k", 0, -1, withscores=True) == [("b", 2.0), (1.0, 3.0)]
+
+
+@pytest.mark.parametrize("alias", [1, True, Decimal(1)])
+def test_zincrby_updates_an_equal_member_whose_str_differs(locmem_cache: LocMemCache, alias: object):
+    locmem_cache.zadd("k", {1.0: 1.0, "b": 2.0})
+    assert locmem_cache.zincrby("k", 2.0, alias) == 3.0
+    assert locmem_cache.zrange("k", 0, -1, withscores=True) == [("b", 2.0), (1.0, 3.0)]
+
+
+@pytest.mark.parametrize("alias", [1, True, Decimal(1)])
+def test_zrem_removes_an_equal_member_whose_str_differs(locmem_cache: LocMemCache, alias: object):
+    locmem_cache.zadd("k", {1.0: 1.0, "b": 2.0})
+    assert locmem_cache.zrem("k", alias) == 1
+    assert locmem_cache.zcard("k") == 1
+    assert locmem_cache.zrange("k", 0, -1) == ["b"]
+
+
+@pytest.mark.parametrize("alias", [1, True, Decimal(1)])
+def test_zrank_finds_an_equal_member_whose_str_differs(locmem_cache: LocMemCache, alias: object):
+    locmem_cache.zadd("k", {1.0: 1.0, "b": 2.0})
+    assert locmem_cache.zrank("k", alias) == 0
+    assert locmem_cache.zrevrank("k", alias) == 1
 
 
 def test_zadd_coerces_scores_to_float(locmem_cache: LocMemCache):

@@ -105,7 +105,7 @@ class _ZSet(dict[Any, float]):
     The sidecar is a :class:`sortedcontainers.SortedList` of
     ``(score, str(member), member)`` triples keyed by :func:`_zset_sort_key`,
     giving O(log N) ``zrange``/``zrank``/``zpopmin``/``zpopmax``; the raw
-    member rides along only to disambiguate ``remove``/``index`` on ties.
+    member rides along only to disambiguate lookups on ties.
     """
 
     def __init__(self, items: Any = None) -> None:
@@ -118,24 +118,35 @@ class _ZSet(dict[Any, float]):
             key=_zset_sort_key,
         )
 
+    def _index(self, member: Any) -> int:
+        """Sidecar position of a present ``member``. O(log N) when its str matches the stored member's."""
+        score = super().__getitem__(member)
+        try:
+            return self._sorted.index((score, str(member), member))
+        except ValueError:
+            # The dict matches an equal member with another str form (1 for a
+            # stored 1.0), so look for it among the members tied on score.
+            start = self._sorted.bisect_key_left((score, ""))
+            for i, (_, _, m) in enumerate(self._sorted.islice(start), start):
+                if m == member:
+                    return i
+            raise
+
     def __setitem__(self, member: Any, score: float) -> None:
         if super().__contains__(member):
-            old = super().__getitem__(member)
-            self._sorted.remove((old, str(member), member))
+            # The dict keeps its stored member, so the sidecar must too.
+            _, _, member = self._sorted.pop(self._index(member))
         super().__setitem__(member, score)
         self._sorted.add((score, str(member), member))
 
     def __delitem__(self, member: Any) -> None:
-        old = super().__getitem__(member)
+        del self._sorted[self._index(member)]
         super().__delitem__(member)
-        self._sorted.remove((old, str(member), member))
 
     def pop(self, member: Any, *args: Any) -> Any:
         if super().__contains__(member):
-            old = super().__getitem__(member)
-            super().__delitem__(member)
-            self._sorted.remove((old, str(member), member))
-            return old
+            del self._sorted[self._index(member)]
+            return super().pop(member)
         if args:
             return args[0]
         raise KeyError(member)
@@ -161,8 +172,7 @@ class _ZSet(dict[Any, float]):
         """Rank of ``member`` (lowest score = 0). O(log N). ``None`` if missing."""
         if not super().__contains__(member):
             return None
-        score = super().__getitem__(member)
-        return self._sorted.index((score, str(member), member))
+        return self._index(member)
 
     def revrank_of(self, member: Any) -> int | None:
         """Reverse rank (highest score = 0). O(log N). ``None`` if missing."""
