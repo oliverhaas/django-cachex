@@ -4,7 +4,9 @@ on interpreters without a glide wheel, e.g. free-threaded cp314t)."""
 import asyncio
 import datetime
 import inspect
+import threading
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -957,7 +959,7 @@ def test_aclose_closes_and_drops_the_per_loop_client(mocker):
     async def scenario():
         loop = asyncio.get_running_loop()
         vg._GLIDE_ASYNC_CLIENTS[loop] = {("cfg",): client}
-        vg._GLIDE_ASYNC_LOCKS[loop] = asyncio.Lock()
+        vg._GLIDE_ASYNC_LOCKS[loop] = {("cfg",): asyncio.Lock()}
         await adapter.aclose()
         return loop in vg._GLIDE_ASYNC_CLIENTS, loop in vg._GLIDE_ASYNC_LOCKS
 
@@ -983,7 +985,7 @@ def test_cluster_aclose_uses_the_cluster_registry(mocker):
     async def scenario():
         loop = asyncio.get_running_loop()
         vg._GLIDE_ASYNC_CLUSTER_CLIENTS[loop] = {("cfg",): client}
-        vg._GLIDE_ASYNC_CLUSTER_LOCKS[loop] = asyncio.Lock()
+        vg._GLIDE_ASYNC_CLUSTER_LOCKS[loop] = {("cfg",): asyncio.Lock()}
         await adapter.aclose()
         return loop in vg._GLIDE_ASYNC_CLUSTER_CLIENTS, loop in vg._GLIDE_ASYNC_CLUSTER_LOCKS
 
@@ -1002,7 +1004,7 @@ def test_aclose_keeps_the_loop_entries_while_another_config_remains(mocker):
     async def scenario():
         loop = asyncio.get_running_loop()
         vg._GLIDE_ASYNC_CLIENTS[loop] = {("cfg",): mocker.AsyncMock(), ("other",): other}
-        vg._GLIDE_ASYNC_LOCKS[loop] = asyncio.Lock()
+        vg._GLIDE_ASYNC_LOCKS[loop] = {("cfg",): asyncio.Lock()}
         await adapter.aclose()
         return vg._GLIDE_ASYNC_CLIENTS.get(loop), loop in vg._GLIDE_ASYNC_LOCKS
 
@@ -1023,10 +1025,10 @@ def test_aclose_keeps_the_loop_entries_while_a_create_holds_the_lock(mocker):
         loop = asyncio.get_running_loop()
         lock = asyncio.Lock()
         vg._GLIDE_ASYNC_CLIENTS[loop] = {("cfg",): client}
-        vg._GLIDE_ASYNC_LOCKS[loop] = lock
+        vg._GLIDE_ASYNC_LOCKS[loop] = {("cfg",): lock}
         async with lock:
             await adapter.aclose()
-            kept = vg._GLIDE_ASYNC_CLIENTS.get(loop), vg._GLIDE_ASYNC_LOCKS.get(loop) is lock
+            kept = vg._GLIDE_ASYNC_CLIENTS.get(loop), vg._GLIDE_ASYNC_LOCKS.get(loop) == {("cfg",): lock}
         vg._GLIDE_ASYNC_CLIENTS.pop(loop, None)
         vg._GLIDE_ASYNC_LOCKS.pop(loop, None)
         return kept
@@ -1052,7 +1054,7 @@ def test_get_async_client_restarts_after_aclose_dropped_its_loop_entries(mocker)
         loop = asyncio.get_running_loop()
         lock = asyncio.Lock()
         vg._GLIDE_ASYNC_CLIENTS[loop] = {("other",): mocker.AsyncMock()}
-        vg._GLIDE_ASYNC_LOCKS[loop] = lock
+        vg._GLIDE_ASYNC_LOCKS[loop] = {("cfg",): lock}
         await lock.acquire()
         getter = asyncio.ensure_future(adapter.get_async_client())
         await asyncio.sleep(0)  # the getter now waits on ``lock``
@@ -1065,6 +1067,63 @@ def test_get_async_client_restarts_after_aclose_dropped_its_loop_entries(mocker)
     client, sub = asyncio.run(scenario())
     assert client._glide_client is created
     assert sub == {("cfg",): client}
+
+
+@pytest.mark.parametrize("adapter_class", [ValkeyGlideAdapter, ValkeyGlideClusterAdapter])
+def test_slow_connect_does_not_block_another_config(mocker, monkeypatch, adapter_class):
+    import django_cachex.adapters.valkey_glide as vg
+
+    mocker.patch.dict(vg._GLIDE_SYNC_CLIENTS, clear=True)
+    mocker.patch.dict(vg._GLIDE_SYNC_CLUSTER_CLIENTS, clear=True)
+    slow, other = adapter_class(["redis://slow:6379"]), adapter_class(["redis://other:6379"])
+    connecting, released = threading.Event(), threading.Event()
+
+    def create_client(adapter, **config):
+        if adapter is slow:
+            connecting.set()
+            released.wait(5)
+        return mocker.Mock()
+
+    monkeypatch.setattr(adapter_class, "_create_client", create_client)
+    timer = threading.Timer(1, released.set)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(slow.get_client)
+        connecting.wait(5)
+        timer.start()
+        other.get_client()
+        waited = released.is_set()
+        timer.cancel()
+        released.set()
+
+    assert not waited
+
+
+def test_slow_async_connect_does_not_block_another_config(mocker, monkeypatch):
+    slow, other = ValkeyGlideAdapter(["redis://slow:6379"]), ValkeyGlideAdapter(["redis://other:6379"])
+    other_client = mocker.AsyncMock()
+
+    async def scenario():
+        connecting, released = asyncio.Event(), asyncio.Event()
+
+        async def create_async_client(adapter, **config):
+            if adapter is not slow:
+                return other_client
+            connecting.set()
+            await released.wait()
+            return mocker.AsyncMock()
+
+        monkeypatch.setattr(ValkeyGlideAdapter, "_create_async_client", create_async_client)
+        pending = asyncio.ensure_future(slow.get_async_client())
+        await connecting.wait()
+        try:
+            return await asyncio.wait_for(other.get_async_client(), timeout=1)
+        finally:
+            released.set()
+            await pending
+            await slow.aclose()
+            await other.aclose()
+
+    assert asyncio.run(scenario())._glide_client is other_client
 
 
 # ------------------------------------------------------- LOCATION validation

@@ -207,16 +207,21 @@ class _WrongTypeClient:
 # asyncio task, so these registries share one per loop (async) or config (sync).
 
 _GLIDE_SYNC_CLIENTS: dict[tuple[Any, ...], Any] = {}
+# Guards ``_GLIDE_SYNC_CREATE_LOCKS``. Each config gets a create-lock of its
+# own, so a slow or unreachable server stalls only the callers of its config.
 _GLIDE_SYNC_LOCK = threading.Lock()
+_GLIDE_SYNC_CREATE_LOCKS: dict[tuple[Any, ...], threading.Lock] = {}
 # Idle clients for sync blocking commands, by adapter class, config and request timeout.
 _GLIDE_SYNC_BLOCKING_CLIENTS: dict[tuple[Any, ...], list[Any]] = {}
 _GLIDE_SYNC_BLOCKING_LOCK = threading.Lock()
 _GLIDE_ASYNC_CLIENTS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]] = (
     weakref.WeakKeyDictionary()
 )
-# Per-loop async-create locks: without them two tasks both miss the registry,
-# both create a client, and the loser's is dropped without ``close()``.
-_GLIDE_ASYNC_LOCKS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = weakref.WeakKeyDictionary()
+# Per-loop async-create locks, one per config: without them two tasks both miss
+# the registry, both create a client, and the loser's is dropped without ``close()``.
+_GLIDE_ASYNC_LOCKS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], asyncio.Lock]] = (
+    weakref.WeakKeyDictionary()
+)
 # Guards the sweep, which iterates the registries while other threads insert.
 # Matches :mod:`~django_cachex.adapters.valkey_py`'s ``_ASYNC_REGISTRY_LOCK``.
 _GLIDE_ASYNC_REGISTRY_LOCK = threading.RLock()
@@ -1721,6 +1726,8 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         if client is not None:
             return client
         with _GLIDE_SYNC_LOCK:
+            create_lock = _GLIDE_SYNC_CREATE_LOCKS.setdefault(self._config_key, threading.Lock())
+        with create_lock:
             client = _GLIDE_SYNC_CLIENTS.get(self._config_key)
             if client is None:
                 client = _WrongTypeClient(self._create_client())
@@ -1745,7 +1752,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return _GLIDE_ASYNC_CLIENTS
 
     @staticmethod
-    def _async_locks() -> weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]:
+    def _async_locks() -> weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], asyncio.Lock]]:
         """The per-loop create-locks for this topology, swept alongside the clients."""
         return _GLIDE_ASYNC_LOCKS
 
@@ -1798,15 +1805,19 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
                 if sub is None:
                     sub = {}
                     registry[loop] = sub
-                lock = locks.get(loop)
+                loop_locks = locks.get(loop)
+                if loop_locks is None:
+                    loop_locks = {}
+                    locks[loop] = loop_locks
+                lock = loop_locks.get(self._config_key)
                 if lock is None:
                     lock = asyncio.Lock()
-                    locks[loop] = lock
+                    loop_locks[self._config_key] = lock
             client = sub.get(self._config_key)
             if client is not None:
                 return client
             async with lock:
-                if locks.get(loop) is not lock:
+                if locks.get(loop) is not loop_locks:
                     # ``aclose`` ran while we waited for the lock; start over.
                     continue
                 client = sub.get(self._config_key)
@@ -3075,9 +3086,8 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             sub = registry.get(loop)
             client = sub.pop(self._config_key, None) if sub else None
             # Drop the loop's own entries once it holds no client, unless a
-            # create is in flight under its lock and about to insert one.
-            lock = locks.get(loop)
-            if not sub and (lock is None or not lock.locked()):
+            # create is in flight under one of its locks and about to insert one.
+            if not sub and not any(lock.locked() for lock in locks.get(loop, {}).values()):
                 registry.pop(loop, None)
                 locks.pop(loop, None)
         if client is not None:
@@ -3933,12 +3943,14 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 # different config classes and must not be mixed for the same address.
 _GLIDE_SYNC_CLUSTER_CLIENTS: dict[tuple[Any, ...], Any] = {}
 _GLIDE_SYNC_CLUSTER_LOCK = threading.Lock()
+_GLIDE_SYNC_CLUSTER_CREATE_LOCKS: dict[tuple[Any, ...], threading.Lock] = {}
 _GLIDE_ASYNC_CLUSTER_CLIENTS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]] = (
     weakref.WeakKeyDictionary()
 )
-_GLIDE_ASYNC_CLUSTER_LOCKS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = (
-    weakref.WeakKeyDictionary()
-)
+_GLIDE_ASYNC_CLUSTER_LOCKS: weakref.WeakKeyDictionary[
+    asyncio.AbstractEventLoop,
+    dict[tuple[Any, ...], asyncio.Lock],
+] = weakref.WeakKeyDictionary()
 
 
 class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
@@ -4026,6 +4038,8 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
         if client is not None:
             return client
         with _GLIDE_SYNC_CLUSTER_LOCK:
+            create_lock = _GLIDE_SYNC_CLUSTER_CREATE_LOCKS.setdefault(self._config_key, threading.Lock())
+        with create_lock:
             client = _GLIDE_SYNC_CLUSTER_CLIENTS.get(self._config_key)
             if client is None:
                 client = _WrongTypeClient(self._create_client())
@@ -4050,7 +4064,7 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
         return _GLIDE_ASYNC_CLUSTER_CLIENTS
 
     @staticmethod
-    def _async_locks() -> weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]:
+    def _async_locks() -> weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], asyncio.Lock]]:
         return _GLIDE_ASYNC_CLUSTER_LOCKS
 
     async def _create_async_client(self, **config: Any) -> Any:

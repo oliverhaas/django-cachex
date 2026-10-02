@@ -35,6 +35,7 @@
 - The redis-py and valkey-py backends, Sentinel and cluster included, opened another connection pool once an object in `OPTIONS` changed state, such as a credential provider caching a renewed token or a `Retry` that the asyncio cluster client adds errors to, and the old pool stayed open. Such an object now keys the same pool for as long as it lives.
 - With `retry_on_timeout=True`, the redis-py and valkey-py backends, Sentinel included, let the driver add `TimeoutError` to the list in `OPTIONS["retry_on_error"]` (or in `sentinel_kwargs`) for each new connection, so the next cache instance, as in each new thread, opened another connection pool and the old ones stayed open. The drivers now get their own copies of the lists, dicts and sets in `OPTIONS`, which stay as given.
 - On the redis-py and valkey-py cluster backends, a thread connecting to a slow or unreachable cluster held a process-wide lock through node discovery, so every other cluster alias waited for it, and each command rebuilt the key of the shared cluster client. Discovery now runs outside the lock, and a cache instance looks its client up once.
+- On valkey-glide, a thread or task connecting to a slow or unreachable server held a lock that all aliases share, process-wide for sync calls and per event loop for async ones, so every other alias that had not connected yet waited until it gave up. Each configuration now connects under a lock of its own.
 
 ### Documentation
 
