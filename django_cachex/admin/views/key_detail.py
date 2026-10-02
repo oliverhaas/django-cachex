@@ -241,6 +241,12 @@ def _handle_set_ttl(request: HttpRequest, cache: Any, cache_name: str, key: str,
         return _redirect_to_key(request, cache_name, key, page)
     try:
         ttl_str = request.POST.get("ttl_value", "").strip()
+        # A key inside its stampede buffer shows as 0, and 0 removes the
+        # expiry, so an untouched form must not reach ``persist``.
+        original_ttl = request.POST.get("original_ttl")
+        if original_ttl is not None and ttl_str == original_ttl.strip():
+            messages.info(request, "TTL unchanged.")
+            return _redirect_to_key(request, cache_name, key, page)
         # Compare the parsed int: "00" and "+0" also mean no expiry, and a
         # string match let them reach ``expire(key, 0)``, deleting the key.
         ttl_int = int(ttl_str) if ttl_str else 0

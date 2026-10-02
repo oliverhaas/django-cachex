@@ -4059,6 +4059,56 @@ def test_value_survives_a_recompute_signal(admin_client: Client, test_cache):
     assert ">null</textarea>" not in content
 
 
+@pytest.fixture
+def buffered_key(test_cache: RespCache):
+    config = {
+        "BACKEND": "django_cachex.cache.ValkeyCache",
+        "LOCATION": settings.CACHES["default"]["LOCATION"],
+        "OPTIONS": {"stampede_prevention": True},
+    }
+    with _extra_cache("stampede", config):
+        cache = caches["stampede"]
+        cache.set("stampede:ttl", "value", timeout=300)
+        cache.expire("stampede:ttl", 50, stampede_prevention=False)
+        yield cache, _key_detail_url("stampede", "stampede:ttl")
+        caches.close_all()
+
+
+def _ttl_form_data(content: bytes) -> dict[str, str]:
+    soup = BeautifulSoup(content, "html.parser")
+    action = soup.find("input", attrs={"name": "action", "value": "set_ttl"})
+    assert action is not None
+    form = action.find_parent("form")
+    assert form is not None
+    return {
+        field["name"]: field.get("value", "")
+        for field in form.find_all("input", attrs={"name": True})
+        if field["name"] != "csrfmiddlewaretoken"
+    }
+
+
+def test_untouched_ttl_form_keeps_the_expiry_of_a_key_in_the_stampede_buffer(admin_client: Client, buffered_key):
+    cache, url = buffered_key
+    form = _ttl_form_data(admin_client.get(url).content)
+
+    response = admin_client.post(url, form, follow=True)
+
+    assert form["ttl_value"] == "0"
+    assert cache.ttl("stampede:ttl", stampede_prevention=False) in range(1, 51)
+    assert response.status_code == 200
+    assert "unchanged" in response.content.decode()
+
+
+def test_emptied_ttl_form_removes_the_expiry_of_a_key_in_the_stampede_buffer(admin_client: Client, buffered_key):
+    cache, url = buffered_key
+    form = _ttl_form_data(admin_client.get(url).content)
+
+    response = admin_client.post(url, {**form, "ttl_value": ""})
+
+    assert response.status_code == 302
+    assert cache.ttl("stampede:ttl", stampede_prevention=False) is None
+
+
 # unknown is this package's label, not a server-side type name, so SCAN ... TYPE unknown matched nothing.
 def test_unknown_type_is_not_pushed_into_scan(admin_client: Client, test_cache: RespCache, mocker):
     test_cache.set("scan:plain", "value")

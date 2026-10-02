@@ -57,6 +57,7 @@
             <form method="post" style="display: inline;">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="set_ttl">
+                <input type="hidden" name="original_ttl" value="{% if ttl is not None and ttl >= 0 %}{{ ttl|unlocalize }}{% endif %}">
                 <input
                     type="number"
                     id="id_ttl"
