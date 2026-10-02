@@ -541,6 +541,26 @@ async def test_aget_and_aadd_agree_on_a_key_in_its_last_half_second(stampede_cac
     assert await stampede_cache.aget("asp_last_ms") == "fresh"
 
 
+@pytest.mark.parametrize(
+    ("method", "flags", "expected"),
+    [("add", {}, True), ("set", {"xx": True}, False), ("set", {"get": True}, None)],
+    ids=["add", "set_xx", "set_get"],
+)
+def test_zero_buffer_writes_agree_with_get_on_a_key_in_its_last_half_second(
+    stampede_cache: RespCache,
+    method: str,
+    flags: dict[str, bool],
+    expected: bool | None,
+):
+    config = StampedeConfig(buffer=0)
+    stampede_cache.set("sp_zero_buf", "stale", timeout=300, stampede_prevention=config)
+    stampede_cache.pexpire("sp_zero_buf", 400, stampede_prevention=False)
+
+    assert stampede_cache.get("sp_zero_buf", stampede_prevention=config) is None
+    write = getattr(stampede_cache, method)
+    assert write("sp_zero_buf", "fresh", 300, stampede_prevention=config, **flags) == expected
+
+
 def test_pipeline_set_get(stampede_cache: RespCache):
     with stampede_cache.pipeline() as pipe:
         pipe.set("sp_pipe1", "value1", timeout=300)

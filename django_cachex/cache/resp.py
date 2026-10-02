@@ -413,10 +413,10 @@ class RespCache(BaseCachex):
         # Non-positive values will cause the key to be deleted.
         return None if timeout is None else max(0, int(timeout))
 
-    def _stampede_buffer(self, stampede_prevention: bool | StampedeConfig | None = None) -> int:
-        """Effective stampede buffer in seconds; ``0`` when prevention is off."""
+    def _stampede_buffer(self, stampede_prevention: bool | StampedeConfig | None = None) -> int | None:
+        """Effective stampede buffer in seconds; ``None`` when prevention is off, ``0`` is a real buffer."""
         config = self.adapter.resolve_stampede(stampede_prevention)
-        return config.buffer if config is not None else 0
+        return config.buffer if config is not None else None
 
     def _stampede_set_argv(
         self,
@@ -555,7 +555,7 @@ class RespCache(BaseCachex):
         """
         key = self.make_and_validate_key(key, version=version)
         buffer_s = self._stampede_buffer(stampede_prevention)
-        if buffer_s:
+        if buffer_s is not None:
             timeout_s = self.adapter.get_timeout_with_buffer(self.get_backend_timeout(timeout), stampede_prevention)
             timeout_arg = -1 if timeout_s is None else timeout_s
             return bool(self.adapter.eval(_STAMPEDE_ADD_LUA, 1, key, self.encode(value), timeout_arg, buffer_s))
@@ -579,7 +579,7 @@ class RespCache(BaseCachex):
         """Set a value only if the key doesn't exist, asynchronously. See :meth:`add`."""
         key = self.make_and_validate_key(key, version=version)
         buffer_s = self._stampede_buffer(stampede_prevention)
-        if buffer_s:
+        if buffer_s is not None:
             timeout_s = self.adapter.get_timeout_with_buffer(self.get_backend_timeout(timeout), stampede_prevention)
             timeout_arg = -1 if timeout_s is None else timeout_s
             return bool(await self.adapter.aeval(_STAMPEDE_ADD_LUA, 1, key, self.encode(value), timeout_arg, buffer_s))
@@ -642,13 +642,13 @@ class RespCache(BaseCachex):
         prevention active, the flags count a key inside the buffer as absent,
         as :meth:`aadd` does.
         """
-        buffer_s = self._stampede_buffer(stampede_prevention) if nx or xx or get else 0
-        if nx and not (xx or get) and buffer_s:
+        buffer_s = self._stampede_buffer(stampede_prevention) if nx or xx or get else None
+        if nx and not (xx or get) and buffer_s is not None:
             return await self.aadd(key, value, timeout, version, stampede_prevention=stampede_prevention)
         key = self.make_and_validate_key(key, version=version)
         if nx or xx or get:
             with _set_nx_get_translated(nx=nx, xx=xx, get=get):
-                if buffer_s and not (nx and xx):
+                if buffer_s is not None and not (nx and xx):
                     argv = self._stampede_set_argv(value, timeout, buffer_s, stampede_prevention, nx=nx, xx=xx, get=get)
                     result = await self.adapter.aeval(_STAMPEDE_SET_LUA, 1, key, *argv)
                 else:
@@ -694,13 +694,13 @@ class RespCache(BaseCachex):
         otherwise. With stampede prevention active, the flags count a key
         inside the buffer as absent, as :meth:`add` does.
         """
-        buffer_s = self._stampede_buffer(stampede_prevention) if nx or xx or get else 0
-        if nx and not (xx or get) and buffer_s:
+        buffer_s = self._stampede_buffer(stampede_prevention) if nx or xx or get else None
+        if nx and not (xx or get) and buffer_s is not None:
             return self.add(key, value, timeout, version, stampede_prevention=stampede_prevention)
         key = self.make_and_validate_key(key, version=version)
         if nx or xx or get:
             with _set_nx_get_translated(nx=nx, xx=xx, get=get):
-                if buffer_s and not (nx and xx):
+                if buffer_s is not None and not (nx and xx):
                     argv = self._stampede_set_argv(value, timeout, buffer_s, stampede_prevention, nx=nx, xx=xx, get=get)
                     result = self.adapter.eval(_STAMPEDE_SET_LUA, 1, key, *argv)
                 else:
