@@ -459,6 +459,20 @@ def test_key_list_results_count(
     assert "3 keys shown" in response.content.decode()
 
 
+def test_key_list_key_column_is_not_sortable(
+    admin_client: Client,
+    test_cache: RespCache,
+):
+    """SCAN order is all the key list has, so the Key header must not offer a sort link."""
+    test_cache.set("unsorted:key", "value")
+
+    response = admin_client.get(_key_list_url("default"))
+    assert response.status_code == 200
+    header = BeautifulSoup(response.content, "html.parser").select_one("#result_list th.column-key_name")
+    assert header is not None
+    assert "sortable" not in header["class"]
+
+
 def test_key_list_type_filter(
     admin_client: Client,
     test_cache: RespCache,

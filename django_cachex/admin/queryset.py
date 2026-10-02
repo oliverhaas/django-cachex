@@ -590,7 +590,7 @@ def _describe_keys(cache: Any, cache_name: str, keys: list[str], type_filter: st
     return rows
 
 
-@admin.display(description=_("key name"), ordering="key_name")
+@admin.display(description=_("key name"))
 def key_name(obj: Key) -> str:
     """List the name through ``key_display``; the string ``"key_name"`` would render the raw model field."""
     return key_display(obj.key_name)
@@ -612,6 +612,8 @@ class KeyAdminMixin:
     search_fields: ClassVar[Any] = ["key_name"]
     actions: ClassVar[Any] = ["delete_selected_keys"]
     list_per_page: ClassVar[int] = 10000
+    # Rows come in SCAN order and ``KeyQuerySet.order_by`` cannot change it.
+    sortable_by: ClassVar[Any] = ()
     show_facets = ShowFacets.NEVER
     show_full_result_count: ClassVar[bool] = False
 
