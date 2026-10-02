@@ -83,7 +83,7 @@ def full_encode_pre(
     keys: Sequence[Any],
     args: Sequence[Any],
 ) -> tuple[list[Any], list[Any]]:
-    return helpers.make_keys(keys), helpers.encode_values(args)
+    return helpers.make_keys(keys), helpers.encode_values([a.value if isinstance(a, Encoded) else a for a in args])
 
 
 def encoded_pre(

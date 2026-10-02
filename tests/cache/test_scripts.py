@@ -475,6 +475,19 @@ def test_encoded_pre_round_trip_through_eval_script(cache: RespCache):
     assert cache.get("enc") == {"n": 1}
 
 
+def test_full_encode_pre_unwraps_encoded_args(cache: RespCache):
+    result = cache.eval_script(
+        SET_AND_GET,
+        keys=["fenc"],
+        args=[Encoded({"n": 1})],
+        pre_hook=full_encode_pre,
+        post_hook=decode_single_post,
+    )
+
+    assert result == {"n": 1}
+    assert cache.get("fenc") == {"n": 1}
+
+
 def test_wrapped_value_reads_back_and_bare_scalar_parses_in_lua(cache: RespCache, compressors):
     """The 1000-byte value is above every compressor's ``min_length``, so it is genuinely compressed."""
     value = "x" * 1000
