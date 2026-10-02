@@ -28,7 +28,7 @@
         <form method="post" style="display: inline;">
             {% csrf_token %}
             <input type="hidden" name="action" value="zpopmin">
-            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" aria-label="{% trans "Count" %}">
+            <input type="number" name="pop_count" value="1" min="1" max="{{ max_pop_count|unlocalize }}" class="vIntegerField" style="width: 50px;" aria-label="{% trans "Count" %}">
             {% translate "Pop the lowest-scored members? They will be removed from the set." as confirm_popmin %}
             <button type="submit" class="button btn-small" onclick="return confirm('{{ confirm_popmin|escapejs }}');">{% trans "Pop" %}</button>
         </form>
@@ -38,7 +38,7 @@
         <form method="post" style="display: inline;">
             {% csrf_token %}
             <input type="hidden" name="action" value="zpopmax">
-            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" aria-label="{% trans "Count" %}">
+            <input type="number" name="pop_count" value="1" min="1" max="{{ max_pop_count|unlocalize }}" class="vIntegerField" style="width: 50px;" aria-label="{% trans "Count" %}">
             {% translate "Pop the highest-scored members? They will be removed from the set." as confirm_popmax %}
             <button type="submit" class="button btn-small" onclick="return confirm('{{ confirm_popmax|escapejs }}');">{% trans "Pop" %}</button>
         </form>

@@ -20,6 +20,7 @@ from django_cachex.admin.cas import (
     supports_cas,
 )
 from django_cachex.admin.helpers import (
+    PAGE_SIZE,
     RENDERABLE_TYPES,
     CacheUnavailableError,
     creatable_types,
@@ -94,15 +95,36 @@ def _stay_after_emptying(
     return redirect(key_detail_url(cache_name, key) + "?" + urlencode({"type": key_type.value}))
 
 
-def _parse_count(request: HttpRequest, field: str, *, default: int = 1, min_value: int = 1) -> int:
-    """Parse an integer count from a POST field, defaulting on invalid input."""
+# A pop lists what it removed, so it takes at most one page of items.
+_MAX_POP_COUNT = PAGE_SIZE
+# The pop message names this many items and counts the rest.
+_POPPED_SHOWN = 3
+
+
+def _parse_count(
+    request: HttpRequest,
+    field: str,
+    *,
+    default: int = 1,
+    min_value: int = 1,
+    max_value: int = _MAX_POP_COUNT,
+) -> int:
+    """Parse an integer count from a POST field, defaulting on invalid input and clamping it to the bounds."""
     raw = request.POST.get(field, "").strip()
     if not raw:
         return default
     try:
-        return max(min_value, int(raw))
+        return min(max_value, max(min_value, int(raw)))
     except ValueError:
         return default
+
+
+def _popped_summary(items: list[str]) -> str:
+    """Join the first popped items and say how many more there were."""
+    shown = ", ".join(items[:_POPPED_SHOWN])
+    if len(items) > _POPPED_SHOWN:
+        return f"{shown} (+{len(items) - _POPPED_SHOWN} more)"
+    return shown
 
 
 # ZADD takes its members as dict keys, so a JSON array/object member would
@@ -182,7 +204,7 @@ def _report_pop(request: HttpRequest, result: Any, *, on_empty: str, kind: str) 
     elif len(result) == 1:
         messages.success(request, f"Popped: {next(iter(result))}")
     else:
-        messages.success(request, f"Popped {len(result)} {kind}: {result}")
+        messages.success(request, f"Popped {len(result)} {kind}: {_popped_summary([str(item) for item in result])}")
 
 
 # -- POST action handlers -------------------------------------------------------
@@ -669,7 +691,7 @@ def _handle_zpop(
             messages.success(request, f"Popped: {member} (score: {score})")
         else:
             members = [f"{m} ({s})" for m, s in result]
-            messages.success(request, f"Popped {len(result)} member(s): {', '.join(members)}")
+            messages.success(request, f"Popped {len(result)} member(s): {_popped_summary(members)}")
     except Exception as e:  # noqa: BLE001
         messages.error(request, f"Could not pop from the sorted set: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
@@ -1052,6 +1074,7 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             "opaque_type": opaque_type,
             "ttl": ttl,
             "type_data": type_data,
+            "max_pop_count": _MAX_POP_COUNT,
             "can_mutate": can_mutate,
             "can_change": can_change,
             "can_delete": can_delete,

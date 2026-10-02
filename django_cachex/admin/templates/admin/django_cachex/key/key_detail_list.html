@@ -36,7 +36,7 @@
         <form method="post" style="display: inline;">
             {% csrf_token %}
             <input type="hidden" name="action" value="lpop">
-            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" aria-label="{% trans "Count" %}">
+            <input type="number" name="pop_count" value="1" min="1" max="{{ max_pop_count|unlocalize }}" class="vIntegerField" style="width: 50px;" aria-label="{% trans "Count" %}">
             <button type="submit" class="button btn-small">{% trans "Pop" %}</button>
         </form>
     </div>
@@ -45,7 +45,7 @@
         <form method="post" style="display: inline;">
             {% csrf_token %}
             <input type="hidden" name="action" value="rpop">
-            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" aria-label="{% trans "Count" %}">
+            <input type="number" name="pop_count" value="1" min="1" max="{{ max_pop_count|unlocalize }}" class="vIntegerField" style="width: 50px;" aria-label="{% trans "Count" %}">
             <button type="submit" class="button btn-small">{% trans "Pop" %}</button>
         </form>
     </div>

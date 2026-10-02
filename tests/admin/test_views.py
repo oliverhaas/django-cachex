@@ -25,6 +25,7 @@ from django.urls import reverse
 from django.utils import translation
 
 from django_cachex.adapters.pipeline import Pipeline
+from django_cachex.admin.helpers import get_size
 from django_cachex.admin.models import Cache, Key
 from django_cachex.admin.views.key_detail import _MAX_STRING_BYTES
 from django_cachex.exceptions import NotSupportedError
@@ -1426,6 +1427,41 @@ def test_list_lpop_with_count(
 
     items = test_cache.lrange("lpop:count:test", 0, -1)
     assert items == ["d", "e"]
+
+
+@pytest.mark.parametrize(
+    ("action", "key_type"),
+    [
+        ("lpop", KeyType.LIST),
+        ("rpop", KeyType.LIST),
+        ("spop", KeyType.SET),
+        ("zpopmin", KeyType.ZSET),
+        ("zpopmax", KeyType.ZSET),
+    ],
+)
+def test_pop_takes_at_most_one_page(
+    admin_client: Client,
+    test_cache: RespCache,
+    action: str,
+    key_type: KeyType,
+):
+    members = [f"m{i:03d}" for i in range(150)]
+    if key_type == KeyType.ZSET:
+        test_cache.zadd("pop:page", dict.fromkeys(members, 1.0))
+    elif key_type == KeyType.SET:
+        test_cache.sadd("pop:page", *members)
+    else:
+        test_cache.rpush("pop:page", *members)
+
+    response = admin_client.post(
+        _key_detail_url("default", "pop:page"),
+        {"action": action, "pop_count": "150"},
+        follow=True,
+    )
+
+    assert response.status_code == 200
+    assert get_size(test_cache, "pop:page", key_type) == 50
+    assert "97 more" in response.content.decode()
 
 
 def test_list_rpop(

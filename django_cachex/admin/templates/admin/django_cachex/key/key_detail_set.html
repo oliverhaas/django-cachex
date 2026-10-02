@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n l10n %}
 {% with input_tpl="admin/django_cachex/key/key_detail_value_input.html#value-input" %}
 {% if can_mutate %}
 <!-- Set Operations -->
@@ -23,7 +23,7 @@
         <form method="post" style="display: inline;">
             {% csrf_token %}
             <input type="hidden" name="action" value="spop">
-            <input type="number" name="pop_count" value="1" min="1" class="vIntegerField" style="width: 50px;" aria-label="{% trans "Count" %}">
+            <input type="number" name="pop_count" value="1" min="1" max="{{ max_pop_count|unlocalize }}" class="vIntegerField" style="width: 50px;" aria-label="{% trans "Count" %}">
             {% translate "Pop random members? They will be removed from the set." as confirm_spop %}
             <button type="submit" class="button btn-small" onclick="return confirm('{{ confirm_spop|escapejs }}');">{% trans "Random" %}</button>
         </form>
