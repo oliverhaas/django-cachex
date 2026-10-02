@@ -43,6 +43,7 @@ from django_cachex.utils import (
     _validate_pop_count,
     _validate_zadd_flags,
     _validate_zrange_limit,
+    _wire_key,
 )
 
 # Alias for the `set` builtin shadowed by the `set` method (PEP 649 defers
@@ -86,17 +87,6 @@ def _hash_tag(key: str) -> str | None:
     if close_idx <= open_idx + 1:
         return None
     return key[open_idx + 1 : close_idx]
-
-
-def _wire_key(made_key: str) -> Any:
-    """Return the made key for the driver: its original bytes when it holds surrogates from :meth:`RespCache.scan`."""
-    if made_key.isascii():
-        return made_key
-    try:
-        made_key.encode()
-    except UnicodeEncodeError:
-        return made_key.encode(errors="surrogateescape")
-    return made_key
 
 
 def _load_codec(config: str | type | Any) -> Any:

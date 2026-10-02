@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from django_cachex.adapters.protocols import RespAsyncPipelineProtocol, RespPipelineProtocol
     from django_cachex.stampede import StampedeConfig
 
-from django_cachex.cache.resp import _wire_key
 from django_cachex.exceptions import KeyNotFoundError, NotSupportedError, maybe_wrap_set_nx_get, translate_server_error
 from django_cachex.script import ScriptHelpers, reject_stray_encoded
 from django_cachex.types import KeyType
@@ -36,6 +35,7 @@ from django_cachex.utils import (
     _validate_pop_count,
     _validate_zadd_flags,
     _validate_zrange_limit,
+    _wire_key,
 )
 
 # Alias for the ``set`` builtin shadowed by the ``set`` method (PEP 649

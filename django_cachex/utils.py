@@ -140,6 +140,17 @@ def _glob_to_like(pattern: str, escape: Callable[[str], str]) -> str:
     return "".join(out)
 
 
+def _wire_key(made_key: str) -> Any:
+    """Return the made key for the driver: its original bytes when it holds surrogates from :meth:`RespCache.scan`."""
+    if made_key.isascii():
+        return made_key
+    try:
+        made_key.encode()
+    except UnicodeEncodeError:
+        return made_key.encode(errors="surrogateescape")
+    return made_key
+
+
 def _as_score(value: Any) -> float:
     """Coerce a sorted-set score the way Redis parses one."""
     msg = "value is not a valid float"

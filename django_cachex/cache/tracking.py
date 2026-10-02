@@ -17,10 +17,10 @@ from django.core.exceptions import ImproperlyConfigured
 
 from django_cachex.cache._delegation import DelegatingCacheMixin
 from django_cachex.cache.base import BaseCachex, CachexSupportLevel
-from django_cachex.cache.resp import RespCache, _wire_key
+from django_cachex.cache.resp import RespCache
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.stampede import should_recompute, should_recompute_remaining
-from django_cachex.utils import _glob_to_regex
+from django_cachex.utils import _glob_to_regex, _wire_key
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
