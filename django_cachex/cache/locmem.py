@@ -344,6 +344,16 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 return False
             return internal_key in self._cache or internal_key in self._collections
 
+    def delete(self, key: str, version: int | None = None) -> bool:
+        # Django's ``delete`` skips the expiry check, so it reported an expired
+        # key as deleted; ``DEL`` counts only live keys.
+        internal_key = self.make_and_validate_key(key, version=version)
+        with self._lock:
+            if self._has_expired(internal_key):
+                self._delete(internal_key)
+                return False
+            return self._delete(internal_key)
+
     def _internal_key(self, key: str, version: int | None = None) -> str:
         """Resolve a user key (with version) to the internal cache-dict key."""
         return self.make_and_validate_key(str(key), version=version)

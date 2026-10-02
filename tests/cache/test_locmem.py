@@ -286,6 +286,20 @@ def test_delete(locmem_cache: LocMemCache):
     assert locmem_cache.get("key1") is None
 
 
+def test_delete_reports_an_expired_key_as_missing(locmem_cache: LocMemCache):
+    # Regression: Django's delete() skips the expiry check, so it returned
+    # True for a key that get() no longer saw.
+    locmem_cache.set("gone", "v", timeout=-1)
+    locmem_cache.rpush("gone-list", "x")
+    locmem_cache.expire("gone-list", -1)
+    assert locmem_cache.delete("gone") is False
+    assert locmem_cache.delete("gone-list") is False
+    # Both are still evicted.
+    assert not locmem_cache._cache
+    assert not locmem_cache._collections
+    assert not locmem_cache._expire_info
+
+
 def test_clear(locmem_cache: LocMemCache):
     locmem_cache.set("key1", "value1")
     locmem_cache.set("key2", "value2")
