@@ -8,6 +8,7 @@ from django.contrib.postgres.fields import (
     IntegerRangeField,
 )
 from django.db.models import (
+    CASCADE,
     PROTECT,
     SET_NULL,
     BinaryField,
@@ -19,6 +20,7 @@ from django.db.models import (
     DurationField,
     FloatField,
     ForeignKey,
+    ForeignObject,
     GenericIPAddressField,
     IntegerField,
     JSONField,
@@ -74,6 +76,22 @@ class TestChild(TestParent):
 
     public = BooleanField(default=False)
     permissions = ManyToManyField("auth.Permission", blank=True)
+
+
+class MultiColumnRelationModel(Model):
+    """A relation over two columns: the natural key of a permission."""
+
+    content_type = ForeignKey("contenttypes.ContentType", on_delete=CASCADE)
+    codename = CharField(max_length=100)
+    permission = ForeignObject(
+        "auth.Permission",
+        on_delete=CASCADE,
+        from_fields=("content_type", "codename"),
+        to_fields=("content_type", "codename"),
+    )
+
+    def __str__(self) -> str:
+        return self.codename
 
 
 class MixedCaseModel(Model):

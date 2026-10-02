@@ -313,8 +313,11 @@ def _sort_in_values(where: WhereNode) -> None:
                 try:
                     values = sorted(child.rhs)
                 except TypeError:
-                    # str orders mixed types, like the (None,) a prefetch over a nullable foreign key passes.
-                    values = sorted(child.rhs, key=str)
+                    # Mixed types order by their keys; model instances, which have none, keep their order.
+                    try:
+                        values = sorted(child.rhs, key=_param_key)
+                    except UncachableQuery:
+                        continue
                 if values != child.rhs:
                     # Clones of a query share its lookups, so a copy takes the sorted values.
                     lookup = child.copy()

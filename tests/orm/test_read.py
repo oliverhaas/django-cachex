@@ -24,7 +24,15 @@ from django.db.transaction import TransactionManagementError
 from django.test import override_settings
 
 from django_cachex.orm.utils import UncachableQuery
-from tests.orm.app.models import MixedCaseModel, SomeChoices, Test, TestChild, TestParent, UnmanagedModel
+from tests.orm.app.models import (
+    MixedCaseModel,
+    MultiColumnRelationModel,
+    SomeChoices,
+    Test,
+    TestChild,
+    TestParent,
+    UnmanagedModel,
+)
 from tests.orm.utils import (
     assert_num_queries,
     assert_query_cached,
@@ -195,6 +203,20 @@ def test_in_values_keep_their_order_in_other_querysets():
     queryset = Test.objects.filter(pk__in=[3, 1, 2])
     list(queryset.filter(public=False))
     assert "IN (3, 1, 2)" in str(queryset.query)
+
+
+def test_in_instances_of_a_multi_column_relation_are_cached(monkeypatch):
+    def unprintable(self: Permission) -> str:
+        raise AssertionError(f"str() of permission {self.pk}")
+
+    permissions = list(Permission.objects.order_by("pk")[:2])
+    references = [
+        MultiColumnRelationModel.objects.create(content_type_id=p.content_type_id, codename=p.codename)
+        for p in permissions
+    ]
+    monkeypatch.setattr(Permission, "__str__", unprintable)
+    qs = MultiColumnRelationModel.objects.filter(permission__in=permissions[::-1]).order_by("pk")
+    assert_query_cached(qs, references)
 
 
 def test_uncachable_table_compiles_once(mocker):
