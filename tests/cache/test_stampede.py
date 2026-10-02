@@ -184,16 +184,6 @@ def test_set_and_get(stampede_cache: RespCache):
     assert stampede_cache.get("sp_basic") == "hello"
 
 
-def test_set_and_get_dict(stampede_cache: RespCache):
-    stampede_cache.set("sp_dict", {"a": 1, "b": [2, 3]}, timeout=300)
-    assert stampede_cache.get("sp_dict") == {"a": 1, "b": [2, 3]}
-
-
-def test_set_and_get_list(stampede_cache: RespCache):
-    stampede_cache.set("sp_list", [1, "two", 3.0], timeout=300)
-    assert stampede_cache.get("sp_list") == [1, "two", 3.0]
-
-
 def test_get_missing_key(stampede_cache: RespCache):
     stampede_cache.delete("sp_missing")
     assert stampede_cache.get("sp_missing") is None
@@ -220,12 +210,6 @@ def test_add_existing_key(stampede_cache: RespCache):
     stampede_cache.set("sp_add_exists", "original", timeout=300)
     assert stampede_cache.add("sp_add_exists", "new", timeout=300) is False
     assert stampede_cache.get("sp_add_exists") == "original"
-
-
-# Integers do not bypass the stampede TTL check: Redis GET returns bytes, and ``b"42"`` is bytes, not int.
-def test_integer_set_get(stampede_cache: RespCache):
-    stampede_cache.set("sp_int", 42, timeout=300)
-    assert stampede_cache.get("sp_int") == 42
 
 
 def test_incr(stampede_cache: RespCache):

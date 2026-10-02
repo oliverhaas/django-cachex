@@ -26,16 +26,11 @@ def test_increment_chain(cache: RespCache):
     assert cache.get("chain") == 10
 
 
-def test_increment_persistent_key(cache: RespCache):
+def test_increment_keeps_a_persistent_key_persistent(cache: RespCache):
     cache.set("persistent", 100, timeout=None)
-    cache.incr("persistent")
-    assert cache.get("persistent") == 101
-
-
-def test_increment_persistent_by_amount(cache: RespCache):
-    cache.set("persistent2", 50, timeout=None)
-    cache.incr("persistent2", 25)
-    assert cache.get("persistent2") == 75
+    cache.incr("persistent", 25)
+    assert cache.get("persistent") == 125
+    assert cache.ttl("persistent") is None
 
 
 # Redis rounds TTL to the nearest second, so a slow round trip may read 299.
