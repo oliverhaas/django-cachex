@@ -666,12 +666,15 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         self._process_state().discard([self.make_key(key, version=version) for key in keys])
 
     def _evict_pattern(self, pattern: str, version: int | None) -> None:
-        """Evict the made keys the transport's server-side glob matches: the same keys the server deleted."""
-        matcher = _glob_to_regex(self._transport.make_pattern(pattern, version=version))
+        """Evict the made keys whose bytes the server-side glob matches: the same keys the server deleted."""
+        made_pattern = self._transport.make_pattern(pattern, version=version)
+        matcher = _glob_to_regex(made_pattern.encode(errors="surrogateescape").decode("latin-1"))
         state = self._process_state()
         with state.lock:
             candidates = set(state.store) | set(state.pending)
-        state.discard([made_key for made_key in candidates if matcher.match(made_key)])
+        state.discard(
+            [key for key in candidates if matcher.match(key.encode(errors="surrogateescape").decode("latin-1"))],
+        )
 
     # -- Reads --
 

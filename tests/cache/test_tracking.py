@@ -885,6 +885,15 @@ def test_delete_pattern_reads_the_pattern_as_a_redis_glob(tracking_cache):
     assert tracking_cache.get("user1x") is None
 
 
+@TTL_MODE
+def test_delete_pattern_evicts_a_name_the_glob_matches_by_its_bytes(tracking_cache):
+    tracking_cache.set("café", "local copy")
+    assert tracking_cache.get("café") == "local copy"
+
+    assert tracking_cache.delete_pattern("caf??") == 1
+    assert tracking_cache.get("café") is None
+
+
 @BOTH_MODES
 def test_delete_pattern_evicts_under_a_custom_key_function(
     redis_container: RedisContainerInfo,
