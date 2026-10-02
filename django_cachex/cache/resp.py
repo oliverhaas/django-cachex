@@ -115,6 +115,36 @@ end
 return 1
 """
 
+# KEYS[1]: key. ARGV: value, timeout (-1 persists, 0 expires on arrival), stampede buffer, SET flags.
+# A key inside the buffer counts as absent, as in ``add()``, and SET's WRONGTYPE and NX GET errors hold.
+_STAMPEDE_SET_LUA = """
+local ttl = redis.call('TTL', KEYS[1])
+local set = {'SET', KEYS[1], ARGV[1], unpack(ARGV, 4)}
+local timeout = tonumber(ARGV[2])
+if timeout == 0 then
+    set[#set + 1] = 'PXAT'
+    set[#set + 1] = '1'
+elseif timeout > 0 then
+    set[#set + 1] = 'EX'
+    set[#set + 1] = ARGV[2]
+end
+if ttl < 0 or ttl > tonumber(ARGV[3]) then
+    return redis.call(unpack(set))
+end
+if ARGV[4] == 'XX' then
+    if ARGV[5] == 'GET' then
+        redis.call('GET', KEYS[1])
+    end
+    return false
+end
+redis.call(unpack(set))
+if ARGV[4] == 'NX' then
+    table.remove(set, 4)
+    redis.call(unpack(set))
+end
+return false
+"""
+
 
 def _validate_lock_lease(lease: float | None) -> None:
     """The drivers send ``PX int(lease * 1000)``; below 1 ms that is ``PX 0`` (or a bare ``PX`` on glide)."""
@@ -386,6 +416,22 @@ class RespCache(BaseCachex):
         config = self.adapter.resolve_stampede(stampede_prevention)
         return config.buffer if config is not None else 0
 
+    def _stampede_set_argv(
+        self,
+        value: Any,
+        timeout: float | None,
+        buffer_s: int,
+        stampede_prevention: bool | StampedeConfig | None,
+        *,
+        nx: bool,
+        xx: bool,
+        get: bool,
+    ) -> list[Any]:
+        """``ARGV`` for ``_STAMPEDE_SET_LUA``, flags in the order the script reads them."""
+        timeout_s = self.adapter.get_timeout_with_buffer(self.get_backend_timeout(timeout), stampede_prevention)
+        flags = [flag for flag, on in (("NX", nx), ("XX", xx), ("GET", get)) if on]
+        return [self.encode(value), -1 if timeout_s is None else timeout_s, buffer_s, *flags]
+
     def _buffered_timeout(
         self,
         timeout: int | timedelta,
@@ -587,28 +633,32 @@ class RespCache(BaseCachex):
 
         ``nx=True`` only sets if key doesn't exist, ``xx=True`` only sets
         if key exists, ``get=True`` returns the old value. With stampede
-        prevention active, a bare ``nx=True`` writes like :meth:`aadd`: a key
-        inside the buffer counts as absent.
+        prevention active, the flags count a key inside the buffer as absent,
+        as :meth:`aadd` does.
         """
-        if nx and not (xx or get) and self._stampede_buffer(stampede_prevention):
+        buffer_s = self._stampede_buffer(stampede_prevention) if nx or xx or get else 0
+        if nx and not (xx or get) and buffer_s:
             return await self.aadd(key, value, timeout, version, stampede_prevention=stampede_prevention)
         key = self.make_and_validate_key(key, version=version)
         if nx or xx or get:
             with _set_nx_get_translated(nx=nx, xx=xx, get=get):
-                result = await self.adapter.aset_with_flags(
-                    key,
-                    self.encode(value),
-                    self.get_backend_timeout(timeout),
-                    nx=nx,
-                    xx=xx,
-                    get=get,
-                    stampede_prevention=stampede_prevention,
-                )
-            # set_with_flags returns the previous value when get=True (bytes or None);
-            # otherwise a bool indicating NX/XX success.
+                if buffer_s and not (nx and xx):
+                    argv = self._stampede_set_argv(value, timeout, buffer_s, stampede_prevention, nx=nx, xx=xx, get=get)
+                    result = await self.adapter.aeval(_STAMPEDE_SET_LUA, 1, key, *argv)
+                else:
+                    result = await self.adapter.aset_with_flags(
+                        key,
+                        self.encode(value),
+                        self.get_backend_timeout(timeout),
+                        nx=nx,
+                        xx=xx,
+                        get=get,
+                        stampede_prevention=stampede_prevention,
+                    )
+            # The previous value (bytes or None) when get=True, else the NX/XX outcome.
             if get:
                 return self.decode(result) if result is not None else None
-            return result
+            return bool(result)
         await self.adapter.aset(
             key,
             self.encode(value),
@@ -635,26 +685,31 @@ class RespCache(BaseCachex):
         ``nx=True`` only sets if key doesn't exist, ``xx=True`` only sets
         if key exists, ``get=True`` returns the old value. Returns ``bool``
         when ``nx``/``xx`` is used, the old value when ``get=True``, ``None``
-        otherwise. With stampede prevention active, a bare ``nx=True`` writes
-        like :meth:`add`: a key inside the buffer counts as absent.
+        otherwise. With stampede prevention active, the flags count a key
+        inside the buffer as absent, as :meth:`add` does.
         """
-        if nx and not (xx or get) and self._stampede_buffer(stampede_prevention):
+        buffer_s = self._stampede_buffer(stampede_prevention) if nx or xx or get else 0
+        if nx and not (xx or get) and buffer_s:
             return self.add(key, value, timeout, version, stampede_prevention=stampede_prevention)
         key = self.make_and_validate_key(key, version=version)
         if nx or xx or get:
             with _set_nx_get_translated(nx=nx, xx=xx, get=get):
-                result = self.adapter.set_with_flags(
-                    key,
-                    self.encode(value),
-                    self.get_backend_timeout(timeout),
-                    nx=nx,
-                    xx=xx,
-                    get=get,
-                    stampede_prevention=stampede_prevention,
-                )
+                if buffer_s and not (nx and xx):
+                    argv = self._stampede_set_argv(value, timeout, buffer_s, stampede_prevention, nx=nx, xx=xx, get=get)
+                    result = self.adapter.eval(_STAMPEDE_SET_LUA, 1, key, *argv)
+                else:
+                    result = self.adapter.set_with_flags(
+                        key,
+                        self.encode(value),
+                        self.get_backend_timeout(timeout),
+                        nx=nx,
+                        xx=xx,
+                        get=get,
+                        stampede_prevention=stampede_prevention,
+                    )
             if get:
                 return self.decode(result) if result is not None else None
-            return result
+            return bool(result)
         self.adapter.set(
             key,
             self.encode(value),

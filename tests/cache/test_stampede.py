@@ -9,9 +9,10 @@ from typing import TYPE_CHECKING
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
+from django_cachex.exceptions import NotSupportedError, WrongTypeError
 from django_cachex.stampede import StampedeConfig, make_stampede_config, should_recompute, should_recompute_remaining
 from tests.cache.support import make_cache
-from tests.fixtures.cache import skip_below_server
+from tests.fixtures.cache import server_version, skip_below_server
 
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
@@ -947,3 +948,84 @@ async def test_aset_nx_refills_a_logically_expired_key(stampede_cache: RespCache
     assert await stampede_cache.aset("asp_nx_stale", "fresh", timeout=300, nx=True) is True
     assert await stampede_cache.aset("asp_nx_stale", "late", timeout=300, nx=True) is False
     assert await stampede_cache.aget("asp_nx_stale") == "fresh"
+
+
+_FLAGS_ON_A_LOGICALLY_EXPIRED_KEY = pytest.mark.parametrize(
+    ("flags", "reply", "stored", "raw_ttl"),
+    [
+        ({"nx": True, "get": True}, None, "fresh", 360),
+        ({"xx": True}, False, "stale", 50),
+        ({"xx": True, "get": True}, None, "stale", 50),
+        ({"get": True}, None, "fresh", 360),
+    ],
+    ids=["nx-get", "xx", "xx-get", "get"],
+)
+
+
+@_FLAGS_ON_A_LOGICALLY_EXPIRED_KEY
+def test_flagged_set_counts_a_logically_expired_key_as_absent(
+    stampede_cache: RespCache,
+    flags: dict[str, bool],
+    reply: bool | None,
+    stored: str,
+    raw_ttl: int,
+):
+    if flags.get("nx"):
+        skip_below_server(stampede_cache, redis=(7, 0), feature="SET NX GET")
+    stampede_cache.set("sp_flags_stale", "stale", timeout=300)
+    stampede_cache.expire("sp_flags_stale", 50, stampede_prevention=False)
+
+    assert stampede_cache.set("sp_flags_stale", "fresh", timeout=300, **flags) is reply
+    assert stampede_cache.get("sp_flags_stale", stampede_prevention=False) == stored
+    ttl = stampede_cache.ttl("sp_flags_stale", stampede_prevention=False)
+    assert ttl is not None
+    assert raw_ttl - 10 < ttl <= raw_ttl
+
+
+@pytest.mark.asyncio
+@_FLAGS_ON_A_LOGICALLY_EXPIRED_KEY
+async def test_flagged_aset_counts_a_logically_expired_key_as_absent(
+    stampede_cache: RespCache,
+    flags: dict[str, bool],
+    reply: bool | None,
+    stored: str,
+    raw_ttl: int,
+):
+    if flags.get("nx"):
+        skip_below_server(stampede_cache, redis=(7, 0), feature="SET NX GET")
+    await stampede_cache.aset("asp_flags_stale", "stale", timeout=300)
+    await stampede_cache.aexpire("asp_flags_stale", 50, stampede_prevention=False)
+
+    assert await stampede_cache.aset("asp_flags_stale", "fresh", timeout=300, **flags) is reply
+    assert await stampede_cache.aget("asp_flags_stale", stampede_prevention=False) == stored
+    ttl = await stampede_cache.attl("asp_flags_stale", stampede_prevention=False)
+    assert ttl is not None
+    assert raw_ttl - 10 < ttl <= raw_ttl
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [{"get": True}, {"xx": True, "get": True}, {"nx": True, "get": True}],
+    ids=["get", "xx-get", "nx-get"],
+)
+def test_set_get_on_a_logically_expired_list_raises_wrongtype(stampede_cache: RespCache, flags: dict[str, bool]):
+    if flags.get("nx"):
+        skip_below_server(stampede_cache, redis=(7, 0), feature="SET NX GET")
+    stampede_cache.rpush("sp_list_stale", "x")
+    stampede_cache.expire("sp_list_stale", 50, stampede_prevention=False)
+
+    with pytest.raises(WrongTypeError):
+        stampede_cache.set("sp_list_stale", "v", timeout=300, **flags)
+    assert stampede_cache.lrange("sp_list_stale", 0, -1) == ["x"]
+
+
+def test_set_nx_get_on_a_logically_expired_key_raises_not_supported_before_redis_7(stampede_cache: RespCache):
+    server, version = server_version(stampede_cache)
+    if server == "valkey" or version >= (7, 0):
+        pytest.skip("the server accepts SET NX GET")
+    stampede_cache.set("sp_nx_get_old_server", "stale", timeout=300)
+    stampede_cache.expire("sp_nx_get_old_server", 50, stampede_prevention=False)
+
+    with pytest.raises(NotSupportedError):
+        stampede_cache.set("sp_nx_get_old_server", "fresh", timeout=300, nx=True, get=True)
+    assert stampede_cache.get("sp_nx_get_old_server", stampede_prevention=False) == "stale"
