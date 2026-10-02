@@ -15,9 +15,9 @@ from django_cachex.admin.helpers import (
 )
 from django_cachex.admin.views.base import (
     ViewConfig,
-    cache_list_url,
+    cache_list_redirect,
     key_detail_url,
-    key_list_url,
+    key_list_redirect,
     list_hrefs,
     show_help,
 )
@@ -48,12 +48,12 @@ def key_add_view(
         cache = get_cache(cache_name)
     except CacheUnavailableError as exc:
         messages.error(request, str(exc))
-        return redirect(cache_list_url())
+        return cache_list_redirect(request)
 
     offered_types = creatable_types(cache)
     if not offered_types:
         messages.info(request, unknown_type_message(cache, KeyType.STRING.value))
-        return redirect(key_list_url(cache_name))
+        return key_list_redirect(request, cache_name)
     if request.method == "POST":
         key_name = request.POST.get("key", "").strip()
         key_type = request.POST.get("type", KeyType.STRING).strip()
@@ -68,7 +68,7 @@ def key_add_view(
                 exists = cache.has_key(key_name)
             except Exception as exc:  # noqa: BLE001
                 messages.error(request, unreachable_message(cache_name, exc))
-                return redirect(cache_list_url())
+                return cache_list_redirect(request)
             if exists:
                 messages.warning(request, f"Key '{key_name}' already exists.")
                 user = request.user

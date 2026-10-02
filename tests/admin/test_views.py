@@ -4342,6 +4342,99 @@ def test_key_add_post_unreachable_cache_redirects(admin_client: Client, test_cac
     _assert_redirected_with_masked_error(response)
 
 
+_FIRST_WRITE = {"action": "update", "value": '"x"'}
+
+
+@pytest.mark.parametrize(
+    ("send", "down", "list_url"),
+    [
+        pytest.param(
+            lambda client: client.get(_key_add_url("no-such-cache")),
+            (),
+            _cache_list_url,
+            id="add form, unknown alias",
+        ),
+        pytest.param(
+            lambda client: client.get(_key_detail_url("no-such-cache", "down:key")),
+            (),
+            _cache_list_url,
+            id="key page, unknown alias",
+        ),
+        pytest.param(
+            lambda client: client.get(reverse("admin:django_cachex_key_change", args=["no-separator"])),
+            (),
+            _cache_list_url,
+            id="key page, pk without an alias",
+        ),
+        pytest.param(
+            lambda client: client.get(_key_add_url("broken")),
+            (),
+            _cache_list_url,
+            id="add form, backend fails to build",
+        ),
+        pytest.param(
+            lambda client: client.get(_key_detail_create_url("broken", "down:key")),
+            (),
+            _cache_list_url,
+            id="key page, backend fails to build",
+        ),
+        pytest.param(
+            lambda client: client.get(_key_add_url("stock")),
+            (),
+            lambda: _key_list_url("stock"),
+            id="add form, no type to create",
+        ),
+        pytest.param(
+            lambda client: client.post(_key_add_url("default"), {"key": "down:key", "type": "string"}),
+            ("has_key",),
+            _cache_list_url,
+            id="add form post, server down",
+        ),
+        pytest.param(
+            lambda client: client.get(_key_detail_create_url("default", "down:key")),
+            ("has_key",),
+            _cache_list_url,
+            id="create page, server down",
+        ),
+        pytest.param(
+            lambda client: client.post(_key_detail_create_url("default", "down:key"), _FIRST_WRITE),
+            ("has_key",),
+            _cache_list_url,
+            id="first write, server down",
+        ),
+        pytest.param(
+            lambda client: client.post(_key_detail_create_url("default", "down:key"), _FIRST_WRITE),
+            ("type",),
+            _cache_list_url,
+            id="first write, type lookup fails",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("perms", "can_open_list"),
+    [(["add_key"], False), (["view_cache", "view_key", "add_key"], True)],
+)
+def test_an_error_redirects_to_the_list_only_when_the_user_can_open_it(
+    db,
+    test_cache: RespCache,
+    mocker,
+    send,
+    down,
+    list_url,
+    perms,
+    can_open_list,
+):
+    for method in down:
+        mocker.patch.object(type(test_cache), method, side_effect=_DOWN)
+    client = _staff_client(perms, aliases=("default", "broken", "stock"))
+
+    with _extra_cache("broken", {"BACKEND": "django_cachex.cache.NoSuchCache"}), _stock_alias():
+        response = send(client)
+
+    assert response.status_code == 302
+    assert response.url == (list_url() if can_open_list else reverse("admin:index"))
+
+
 # A form rendered for one type must not write through to a key that has since been recreated as another type.
 def test_string_update_does_not_overwrite_a_hash(admin_client: Client, test_cache: RespCache):
     test_cache.hset("retyped:key", "field", "kept")
@@ -4852,7 +4945,7 @@ def test_key_list_of_an_unknown_alias_still_says_not_found(db, test_cache):
     response = client.get(_key_list_url("nonexistent"))
 
     assert response.status_code == 302
-    assert response.url == _cache_list_url()
+    assert response.url == reverse("admin:index")
 
 
 def test_key_queryset_refuses_an_alias_without_permission(db, test_cache, rf):

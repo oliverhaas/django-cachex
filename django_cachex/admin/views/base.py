@@ -4,13 +4,15 @@ from typing import TYPE_CHECKING
 
 from django.contrib import messages
 from django.contrib.admin.utils import quote
+from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.http import urlencode
 
+from django_cachex.admin.helpers import can_view_caches, can_view_keys
 from django_cachex.admin.models import Key
 
 if TYPE_CHECKING:
-    from django.http import HttpRequest
+    from django.http import HttpRequest, HttpResponse
 
 
 # =============================================================================
@@ -39,13 +41,18 @@ def list_hrefs(request: HttpRequest, cache_name: str) -> dict[str, str]:
     A list the user cannot open gets "", so its breadcrumb is plain text and
     the page has no Back link to it, as in Django's admin.
     """
-    user = request.user
-    may_view_caches = user.has_perm("django_cachex.view_cache") or user.has_perm("django_cachex.change_cache")  # ty: ignore[unresolved-attribute]
-    may_view_keys = user.has_perm("django_cachex.view_key") or user.has_perm("django_cachex.change_key")  # ty: ignore[unresolved-attribute]
     return {
-        "cache_list_href": cache_list_url() if may_view_caches else "",
-        "key_list_href": key_list_url(cache_name) if may_view_keys else "",
+        "cache_list_href": cache_list_url() if can_view_caches(request) else "",
+        "key_list_href": key_list_url(cache_name) if can_view_keys(request) else "",
     }
+
+
+def cache_list_redirect(request: HttpRequest) -> HttpResponse:
+    return redirect(cache_list_url() if can_view_caches(request) else reverse("admin:index"))
+
+
+def key_list_redirect(request: HttpRequest, cache_name: str) -> HttpResponse:
+    return redirect(key_list_url(cache_name) if can_view_keys(request) else reverse("admin:index"))
 
 
 # =============================================================================

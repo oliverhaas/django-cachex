@@ -37,7 +37,7 @@ from django_cachex.admin.helpers import (
 )
 from django_cachex.admin.views.base import (
     ViewConfig,
-    cache_list_url,
+    cache_list_redirect,
     key_detail_url,
     key_list_url,
     list_hrefs,
@@ -843,7 +843,7 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         cache = get_cache(cache_name)
     except CacheUnavailableError as exc:
         messages.error(request, str(exc))
-        return redirect(cache_list_url())
+        return cache_list_redirect(request)
 
     # Read pagination state (query string is preserved on POST to current URL)
     try:
@@ -861,7 +861,7 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             _check_post_permission(request, action, cache, cache_name, key)
         except CacheUnavailableError as exc:
             messages.error(request, str(exc))
-            return redirect(cache_list_url())
+            return cache_list_redirect(request)
         handler = _POST_HANDLERS.get(action) if action else None
         key_type = None
         if handler is not None and action not in _TYPE_AGNOSTIC_ACTIONS:
@@ -875,7 +875,7 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 return _redirect_to_key(request, cache_name, key, page)
             except Exception as exc:  # noqa: BLE001
                 messages.error(request, unreachable_message(cache_name, exc))
-                return redirect(cache_list_url())
+                return cache_list_redirect(request)
         if key_type is not None and key_type not in RENDERABLE_TYPES:
             messages.error(request, "This key has a type the cache admin cannot edit.")
         elif key_type is not None and action in _ACTION_TYPES and key_type != _ACTION_TYPES[action]:
@@ -904,7 +904,7 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         key_exists = cache.has_key(key)
     except Exception as exc:  # noqa: BLE001
         messages.error(request, unreachable_message(cache_name, exc))
-        return redirect(cache_list_url())
+        return cache_list_redirect(request)
 
     create_mode = False
     requested_type = request.GET.get("type", "").strip().lower()

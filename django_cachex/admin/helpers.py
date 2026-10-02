@@ -221,6 +221,18 @@ def can_flush(request: HttpRequest) -> bool:
     return bool(admin_settings.get("ALLOW_FLUSH")) and request.user.has_perm("django_cachex.change_cache")  # ty: ignore[unresolved-attribute]
 
 
+def can_view_caches(request: HttpRequest) -> bool:
+    """Report whether ``request`` can open the cache list and the cache pages."""
+    user = request.user
+    return user.has_perm("django_cachex.view_cache") or user.has_perm("django_cachex.change_cache")  # ty: ignore[unresolved-attribute]
+
+
+def can_view_keys(request: HttpRequest) -> bool:
+    """Report whether ``request`` can open the key list of an alias it can access."""
+    user = request.user
+    return user.has_perm("django_cachex.view_key") or user.has_perm("django_cachex.change_key")  # ty: ignore[unresolved-attribute]
+
+
 def _backend_class(alias: str) -> type | None:
     """Import the ``BACKEND`` class of ``alias`` without building the cache, or return None."""
     try:
@@ -286,14 +298,15 @@ def requested_cache(request: HttpRequest) -> str:
 
 
 def check_cache_access(request: HttpRequest, cache_name: str) -> HttpResponse | None:
-    """Redirect to the cache list for an alias missing from ``CACHES``, else return None.
+    """Redirect to the cache list or the admin index for an alias missing from ``CACHES``, else return None.
 
     Raises ``PermissionDenied`` for an alias the user cannot access. The lookup
     runs first, so a mistyped alias reads as a mistake rather than a missing grant.
     """
     if cache_name not in settings.CACHES:
         messages.error(request, f"Cache '{cache_name}' not found.")
-        return HttpResponseRedirect(reverse("admin:django_cachex_cache_changelist"))
+        target = "admin:django_cachex_cache_changelist" if can_view_caches(request) else "admin:index"
+        return HttpResponseRedirect(reverse(target))
     if not can_access_cache(request, cache_name):
         raise PermissionDenied
     return None
