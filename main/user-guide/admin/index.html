@@ -569,6 +569,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Permissions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sessions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sessions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1156,6 +1173,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Permissions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sessions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sessions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1289,19 +1323,46 @@
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="p">]</span>
 </span></code></pre></div>
 <h2 id="permissions">Permissions<a class="headerlink" href="#permissions" title="Permanent link">&para;</a></h2>
-<p>Superusers have every permission. Staff users need these Django permissions:</p>
+<p>Superusers have every permission. Staff users need Django permissions of two kinds: the model permissions say what they can do, and one permission per cache says where.</p>
 <ul>
 <li><code>django_cachex.view_cache</code> / <code>view_key</code>: view caches and keys.</li>
 <li><code>django_cachex.change_cache</code>: the cache list's Flush action, the key browser's Clear tool and the cache info page's danger zone, once <a href="#flushing-caches">turned on</a>. All three delete keys.</li>
 <li><code>django_cachex.add_key</code>: create keys.</li>
 <li><code>django_cachex.change_key</code>: edit values and TTLs and run the type operations on the key detail page. Without it, the page shows no edit controls.</li>
 <li><code>django_cachex.delete_key</code>: delete keys.</li>
+<li><code>django_cachex.access_&lt;alias&gt;</code>, one per alias in <code>CACHES</code>, shown as "Can access keys in cache '<alias>'": use the permissions above on that cache's keys.</li>
 </ul>
+<p>Every key operation needs both kinds, so <code>view_key</code> with <code>access_default</code> lists the keys of the <code>default</code> cache and of no other. A <code>TrackingCache</code> alias keeps its keys in its transport alias, so its key operations also need the transport's permission.</p>
+<p>Some operations reach past one alias and need the permission of every alias in <code>CACHES</code>:</p>
+<ul>
+<li>The danger zone's Flush database runs <code>FLUSHDB</code>, which removes every key in the database, whichever alias wrote it.</li>
+<li>The Clear tool and the Flush action on Django's own <code>RedisCache</code>, which clears with <code>FLUSHDB</code>, and on the memcached backends, which clear with <code>flush_all</code>.</li>
+<li>The slow log on the cache info page covers the whole server, and its arguments hold the key names and values of every client. Without every alias, it shows the command names only.</li>
+</ul>
+<p>The permissions do not check other aliases that share a cache's storage. On <code>LocMemCache</code>, <code>DatabaseCache</code> and <code>FileBasedCache</code>, the Clear tool and the Flush action delete every key at the <code>LOCATION</code>, and on the Valkey and Redis backends, Clear all versions deletes every version under the <code>KEY_PREFIX</code>. Give each alias a <code>LOCATION</code> of its own.</p>
+<p>The cache list and the cache info page's configuration and server statistics need only <code>view_cache</code>.</p>
+<p><code>migrate</code> creates the <code>access_&lt;alias&gt;</code> permissions. After adding an alias to <code>CACHES</code>, run <code>migrate</code> again; until then, only superusers can use that cache's keys.</p>
+<h3 id="sessions">Sessions<a class="headerlink" href="#sessions" title="Permanent link">&para;</a></h3>
+<p>The key of a cached session holds the session id, the value of the session cookie, so whoever can list those keys can take over the sessions. Django's <code>SESSION_CACHE_ALIAS</code> defaults to <code>"default"</code>, which puts sessions next to everything else. Point it at a cache of its own and grant that cache's permission only to staff who can be trusted with session ids:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">CACHES</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="s2">"default"</span><span class="p">:</span> <span class="p">{</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>        <span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.ValkeyCache"</span><span class="p">,</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>        <span class="s2">"LOCATION"</span><span class="p">:</span> <span class="s2">"valkey://127.0.0.1:6379/0"</span><span class="p">,</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="p">},</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="s2">"sessions"</span><span class="p">:</span> <span class="p">{</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>        <span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.ValkeyCache"</span><span class="p">,</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>        <span class="s2">"LOCATION"</span><span class="p">:</span> <span class="s2">"valkey://127.0.0.1:6379/1"</span><span class="p">,</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="p">},</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="p">}</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="n">SESSION_ENGINE</span> <span class="o">=</span> <span class="s2">"django.contrib.sessions.backends.cache"</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="n">SESSION_CACHE_ALIAS</span> <span class="o">=</span> <span class="s2">"sessions"</span>
+</span></code></pre></div>
+<p>The key list of an alias shows the keys under its <code>KEY_PREFIX</code> and <code>VERSION</code> at its <code>LOCATION</code>, so two aliases that share all three list each other's keys.</p>
 <h2 id="flushing-caches">Flushing Caches<a class="headerlink" href="#flushing-caches" title="Permanent link">&para;</a></h2>
 <p>The Flush action, the Clear tool and the danger zone delete keys in bulk, so they are off by default, for superusers too. To turn them on, set:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">CACHEX_ADMIN</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"ALLOW_FLUSH"</span><span class="p">:</span> <span class="kc">True</span><span class="p">}</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">CACHEX_ADMIN</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"ALLOW_FLUSH"</span><span class="p">:</span> <span class="kc">True</span><span class="p">}</span>
 </span></code></pre></div>
-<p>They still need the <code>change_cache</code> permission. While they are off, the admin hides them and refuses their requests.</p>
+<p>They still need the <code>change_cache</code> permission and the <a href="#permissions">permission of the cache</a>, or that of every cache where they empty a whole database or server. While they are off, the admin hides them and refuses their requests.</p>
 <h2 id="support-levels">Support Levels<a class="headerlink" href="#support-levels" title="Permanent link">&para;</a></h2>
 <p>The cache list badges each cache "cachex" or "limited". The Valkey and Redis backends, <code>LocMemCache</code> and <code>DatabaseCache</code> are "cachex" and get the features in <a href="#backend-abilities">Backend Abilities</a>. Stock Django backends (<code>django.core.cache.backends.*</code>), custom backends and <code>TrackingCache</code> are "limited", with no key browsing.</p>
 <p>Switch Django's stock <code>LocMemCache</code> or <code>DatabaseCache</code> to <code>django_cachex.cache.LocMemCache</code> or <code>django_cachex.cache.DatabaseCache</code>, their drop-in replacements, for full support. To replace Django's stock Redis backend with <code>ValkeyCache</code> or <code>RedisCache</code>, follow the <a href="../../migration/">migration guide</a>.</p>
@@ -1312,7 +1373,7 @@
 <h3 id="caches">Caches<a class="headerlink" href="#caches" title="Permanent link">&para;</a></h3>
 <p>In the cache list, a cache's name opens its info page, and its List Keys link opens the key browser. The info page shows the configuration and, where the backend reports them, the server, memory, clients, statistics, keyspace and slow log sections.</p>
 <p><img alt="The cache list with each alias's backend and support level" src="../../assets/screenshot-cache-list.png" /></p>
-<p>The Flush action calls <code>cache.clear()</code> on the selected caches. On the Valkey and Redis backends, <code>clear()</code> deletes only the keys that match the alias's <code>KEY_PREFIX</code> and <code>VERSION</code>. On <code>LocMemCache</code> and <code>DatabaseCache</code>, it deletes every key of every version, along with those of any other alias with the same <code>LOCATION</code>. To run <code>FLUSHDB</code>, use the danger zone on the cache info page. Django's own <code>RedisCache</code> runs <code>FLUSHDB</code> in <code>clear()</code>, so Flush on it empties the whole database.</p>
+<p>The Flush action calls <code>cache.clear()</code> on the selected caches. On the Valkey and Redis backends, <code>clear()</code> deletes only the keys that match the alias's <code>KEY_PREFIX</code> and <code>VERSION</code>. On <code>LocMemCache</code> and <code>DatabaseCache</code>, it deletes every key of every version, along with those of any other alias with the same <code>LOCATION</code>. To run <code>FLUSHDB</code>, use the danger zone on the cache info page. Django's own <code>RedisCache</code> runs <code>FLUSHDB</code> in <code>clear()</code>, so Flush on it empties the whole database, and the memcached backends run <code>flush_all</code>, which empties the whole server.</p>
 <p>The admin masks the password of every connection URL it shows as <code>***</code>, on pages and in messages.</p>
 <h3 id="key-browser">Key Browser<a class="headerlink" href="#key-browser" title="Permanent link">&para;</a></h3>
 <p>The key browser pages through a cache's keys with their type, TTL and size. Search with <code>*</code> as a wildcard, as in <code>user:*</code>. Select keys to delete them in bulk.</p>
