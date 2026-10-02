@@ -124,6 +124,10 @@ def _pop_loop_entry(registry: AsyncPoolsRegistry, loop: asyncio.AbstractEventLoo
 # How deep ``_stable_value`` walks a nested option value before giving up.
 _OPTIONS_KEY_MAX_DEPTH = 4
 
+# id() of each option object digested so far -> (a weak reference to it, or
+# the object itself when it takes none, and its digest).
+_OBJECT_KEYS: dict[int, tuple[Any, Any]] = {}
+
 
 def _stable_value(value: Any, depth: int = 0) -> Any:
     """Reduce an option value to a hashable digest that doesn't vary per instance.
@@ -134,17 +138,39 @@ def _stable_value(value: Any, depth: int = 0) -> Any:
     """
     if isinstance(value, (type, str, bytes, int, float, bool)) or value is None:
         return value
+    if not isinstance(value, (list, tuple, set, frozenset, dict)):
+        return _object_key(value, depth)
     if depth < _OPTIONS_KEY_MAX_DEPTH:
         if isinstance(value, (list, tuple)):
             return tuple(_stable_value(item, depth + 1) for item in value)
         if isinstance(value, (set, frozenset)):
             return frozenset(_stable_value(item, depth + 1) for item in value)
-        if isinstance(value, dict):
-            return tuple((k, _stable_value(value[k], depth + 1)) for k in sorted(value, key=repr))
-        state = _attribute_state(value)
-        if state is not None:
-            return (type(value), tuple((k, _stable_value(v, depth + 1)) for k, v in state))
+        return tuple((k, _stable_value(value[k], depth + 1)) for k in sorted(value, key=repr))
     return (type(value), repr(value))
+
+
+def _object_key(value: Any, depth: int) -> Any:
+    """Digest an option object once and return that digest for its lifetime.
+
+    Retry policies and credential providers change state in use, and a
+    digest of the live state would key a second pool for the same object.
+    """
+    ident = id(value)
+    entry = _OBJECT_KEYS.get(ident)
+    if entry is not None:
+        return entry[1]
+    state = _attribute_state(value) if depth < _OPTIONS_KEY_MAX_DEPTH else None
+    if state is None:
+        digest: tuple[Any, ...] = (type(value), repr(value))
+    else:
+        digest = (type(value), tuple((k, _stable_value(v, depth + 1)) for k, v in state))
+    try:
+        # The callback runs before the object's memory is freed, so no other
+        # object can take its id while the entry stands.
+        ref: Any = weakref.ref(value, lambda _ref: _OBJECT_KEYS.pop(ident, None))
+    except TypeError:
+        ref = value
+    return _OBJECT_KEYS.setdefault(ident, (ref, digest))[1]
 
 
 def _attribute_state(value: Any) -> list[tuple[str, Any]] | None:

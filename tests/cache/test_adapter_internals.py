@@ -896,6 +896,19 @@ def test_self_referencing_value_does_not_recurse_forever():
 
 
 @requires_valkey
+@pytest.mark.parametrize("factory", [_Retry, _SlottedRetry])
+def test_option_object_keeps_its_sync_pool_after_its_state_changes(monkeypatch: pytest.MonkeyPatch, factory: Any):
+    # Regression: a provider caching its renewed token keyed a second pool per thread.
+    monkeypatch.setattr(ValkeyPyAdapter, "_sync_pools", {})
+    retry = factory(3)
+    pool = ValkeyPyAdapter([SERVER_URL], retry=retry).get_client(write=True).connection_pool
+
+    retry.retries = 5
+
+    assert ValkeyPyAdapter([SERVER_URL], retry=retry).get_client(write=True).connection_pool is pool
+
+
+@requires_valkey
 def test_empty_server_list_raises_improperly_configured():
     # Regression: reads reached random.randint(1, -1) and writes reached
     # _servers[0], both far from the misconfiguration that caused them.
