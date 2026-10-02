@@ -1477,7 +1477,8 @@
 <h2 id="backend-classes">Backend Classes<a class="headerlink" href="#backend-classes" title="Permanent link">&para;</a></h2>
 <p>All backends live in <code>django_cachex.cache</code>. Valkey and Redis are
 protocol-compatible, so the Valkey and Redis backends each work with either
-server.</p>
+server. The redis-py backends reject <code>valkey://</code> and <code>valkeys://</code> URLs, though:
+the first cache call raises <code>ValueError</code>.</p>
 <p><code>RespCache</code>, <code>RespClusterCache</code> and <code>RespSentinelCache</code> are the Valkey/Redis
 base classes. They bind no driver, so use them for subclassing and typing, not
 as <code>BACKEND</code>.</p>

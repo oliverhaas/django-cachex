@@ -1167,7 +1167,7 @@
 </tr>
 </tbody>
 </table>
-<p>Valkey and Redis are protocol-compatible, so either backend works with either server.</p>
+<p>Valkey and Redis are protocol-compatible, so either backend works with either server. The redis-py backends reject <code>valkey://</code> and <code>valkeys://</code> URLs, though: the first cache call raises <code>ValueError</code>.</p>
 <h2 id="connection-url-formats">Connection URL Formats<a class="headerlink" href="#connection-url-formats" title="Permanent link">&para;</a></h2>
 <p><code>LOCATION</code> uses the valkey-py and redis-py URL notation:</p>
 <table>

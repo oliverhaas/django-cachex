@@ -1004,6 +1004,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1089,7 +1100,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#documentation" class="md-nav__link">
+  <a href="#documentation_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Documentation
@@ -1161,7 +1172,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#documentation_1" class="md-nav__link">
+  <a href="#documentation_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Documentation
@@ -1433,7 +1444,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#documentation_2" class="md-nav__link">
+  <a href="#documentation_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Documentation
@@ -1505,7 +1516,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#documentation_3" class="md-nav__link">
+  <a href="#documentation_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         Documentation
@@ -1555,7 +1566,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#documentation_4" class="md-nav__link">
+  <a href="#documentation_5" class="md-nav__link">
     <span class="md-ellipsis">
       
         Documentation
@@ -2047,6 +2058,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2132,7 +2154,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#documentation" class="md-nav__link">
+  <a href="#documentation_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Documentation
@@ -2204,7 +2226,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#documentation_1" class="md-nav__link">
+  <a href="#documentation_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Documentation
@@ -2476,7 +2498,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#documentation_2" class="md-nav__link">
+  <a href="#documentation_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Documentation
@@ -2548,7 +2570,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#documentation_3" class="md-nav__link">
+  <a href="#documentation_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         Documentation
@@ -2598,7 +2620,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#documentation_4" class="md-nav__link">
+  <a href="#documentation_5" class="md-nav__link">
     <span class="md-ellipsis">
       
         Documentation
@@ -3048,6 +3070,12 @@
 <li>On valkey-glide, <code>xreadgroup()</code> with id <code>0</code> raised <code>TypeError</code> when a pending entry had been removed by <code>XDEL</code> or <code>XTRIM</code>. That entry now comes back with an empty field dict, as on redis-py and valkey-py.</li>
 <li>On valkey-glide, each sync blocking call (<code>blpop()</code>, <code>brpop()</code>, <code>blmove()</code>, <code>xread()</code> and <code>xreadgroup()</code> with <code>block</code>, or a pipeline holding one) built a client and kept about 2 KB of it for the life of the process, because glide registers every client in a fork hook. Those calls now reuse idle clients.</li>
 <li>On Redis before 7.0, <code>set(nx=True, get=True)</code> and its pipeline form raised the driver's <code>syntax error</code>. They now raise <code>NotSupportedError</code>, as the <a href="../../getting-started/installation/#requirements">requirements</a> say.</li>
+<li>On valkey-glide, <code>flush_db()</code>, <code>aflush_db()</code> and the admin's Flush database button sent <code>FLUSHDB SYNC</code>, so a large flush blocked the server and raised <code>TimeoutError</code> after <code>request_timeout</code> (250 ms by default), though the flush went through. They now send a plain <code>FLUSHDB</code>, as redis-py and valkey-py do, and the server's <code>lazyfree-lazy-user-flush</code> decides whether to free the keys in the background.</li>
+</ul>
+<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The quickstart and the configuration reference say that the redis-py backends reject <code>valkey://</code> and <code>valkeys://</code> URLs, with a <code>ValueError</code> on the first cache call.</li>
+<li>The API reference and the <code>TrackingCache</code> docs no longer claim async twins for <code>info()</code>, <code>slowlog_get()</code> and <code>slowlog_len()</code>, which have none.</li>
 </ul>
 <h2 id="0121-october-2026">0.12.1 (October 2026)<a class="headerlink" href="#0121-october-2026" title="Permanent link">&para;</a></h2>
 <h3 id="fixes_1">Fixes<a class="headerlink" href="#fixes_1" title="Permanent link">&para;</a></h3>
@@ -3064,7 +3092,7 @@
 <ul>
 <li><code>flush_db()</code> and <code>aflush_db()</code> raise <code>NotSupportedError</code> on <code>LocMemCache</code>, <code>DatabaseCache</code> and <code>TrackingCache</code>, like <code>clear_all_versions()</code>, instead of <code>AttributeError</code>.</li>
 </ul>
-<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<h3 id="documentation_1">Documentation<a class="headerlink" href="#documentation_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>The API reference lists <code>info()</code>, <code>slowlog_get()</code>, <code>slowlog_len()</code>, and the <code>version_src</code> and <code>version_dst</code> arguments of <code>rename()</code> and <code>renamenx()</code>.</li>
 <li>The semaphore docs say that <code>release()</code> after an expired lease logs a warning, and that the semaphore keys survive <code>clear()</code> and <code>clear_all_versions()</code>.</li>
@@ -3108,7 +3136,7 @@
 <li>The admin's Flush database text wrongly said a cluster flush only reaches the connected primary, and a quote in a translation broke the confirmation button.</li>
 <li>The wheel and sdist ship <code>LICENSE.django-redis</code> (BSD-3-Clause) for the serializer, compressor and exception code derived from django-redis. The README and docs home page say which parts it covers.</li>
 </ul>
-<h3 id="documentation_1">Documentation<a class="headerlink" href="#documentation_1" title="Permanent link">&para;</a></h3>
+<h3 id="documentation_2">Documentation<a class="headerlink" href="#documentation_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>clear()</code> was documented as safe on a shared database; it deletes every key under its <code>KEY_PREFIX</code> and <code>VERSION</code>, so apps need distinct prefixes. The docstring and API reference now say so.</li>
 <li>The README and docs promised automatic key prefixing and value encoding in <code>eval_script()</code>, which only applies them through a <code>pre_hook</code> such as <code>keys_only_pre</code>. The Lua guide's example now passes one.</li>
@@ -3383,7 +3411,7 @@
 <li>valkey-glide: a blocking lock acquire no longer sleeps past its <code>blocking_timeout</code>.</li>
 <li>valkey-glide: cluster pipelines build a <code>ClusterBatch</code>, the batch type the cluster client is declared to execute.</li>
 </ul>
-<h3 id="documentation_2">Documentation<a class="headerlink" href="#documentation_2" title="Permanent link">&para;</a></h3>
+<h3 id="documentation_3">Documentation<a class="headerlink" href="#documentation_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>set_with_flags(get=True)</code> documents what it returns: the driver's raw previous value, which the cache layer decodes.</li>
 <li>The documented server requirement said "Valkey 7.0+", but Valkey's first release was 7.2; the README, the docs home page and the installation page now say "Valkey 7.2+ or Redis 6.0+".</li>
@@ -3481,7 +3509,7 @@
 <li>The admin's <code>xtrim</code> is exact, and the Help link preserves the current page and type filter.</li>
 <li>The cache and key admins' per-object history and delete routes return 404.</li>
 </ul>
-<h3 id="documentation_3">Documentation<a class="headerlink" href="#documentation_3" title="Permanent link">&para;</a></h3>
+<h3 id="documentation_4">Documentation<a class="headerlink" href="#documentation_4" title="Permanent link">&para;</a></h3>
 <ul>
 <li>The <code>OPTIONS</code> reference says which backends honor each key, with a valkey-glide section covering <code>db</code>, <code>use_tls</code>, <code>username</code>, <code>password</code>, <code>request_timeout</code> and <code>client_name</code>; glide ignores <code>ssl_*</code>.</li>
 <li>The valkey-glide description names <code>glide_sync.GlideClient</code> for the sync surface and <code>glide.GlideClient</code> for the <code>a*</code> methods.</li>
@@ -3508,7 +3536,7 @@
 <li>Admin breadcrumbs render with Django 6.1's markup instead of drawing unstyled.</li>
 <li>Admin object tools (Help, List Keys) sit next to the page title again instead of below it.</li>
 </ul>
-<h3 id="documentation_4">Documentation<a class="headerlink" href="#documentation_4" title="Permanent link">&para;</a></h3>
+<h3 id="documentation_5">Documentation<a class="headerlink" href="#documentation_5" title="Permanent link">&para;</a></h3>
 <ul>
 <li>The <code>username</code> connection option is documented: an <code>OPTIONS</code> key on every adapter that takes precedence over the URL.</li>
 </ul>
