@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from django.contrib import admin, messages
 from django.contrib.admin import ShowFacets
+from django.contrib.admin.utils import quote
 from django.contrib.admin.views.main import ERROR_FLAG, PAGE_VAR
 from django.core.cache.backends.db import BaseDatabaseCache
 from django.core.cache.backends.redis import RedisCache as DjangoRedisCache
@@ -30,6 +31,7 @@ from django_cachex.admin.helpers import (
     can_access_cache,
     can_clear_cache,
     can_flush,
+    can_view_caches,
     check_cache_access,
     creatable_types,
     get_cache,
@@ -740,6 +742,11 @@ class KeyAdminMixin:
             return response
         extra_context["cache_name"] = cache_name
         extra_context["title"] = f"Keys in '{cache_name}'"
+        may_view_caches = can_view_caches(request)
+        extra_context["cache_list_href"] = reverse("admin:django_cachex_cache_changelist") if may_view_caches else ""
+        extra_context["cache_detail_href"] = (
+            reverse("admin:django_cachex_cache_change", args=[quote(cache_name)]) if may_view_caches else ""
+        )
         extra_context["can_flush"] = can_flush(request) and can_clear_cache(request, cache_name)
         with contextlib.suppress(CacheUnavailableError):
             cache = get_cache(cache_name)

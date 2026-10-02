@@ -1,10 +1,8 @@
 {% extends "admin/change_list.html" %}
-{% load i18n l10n admin_urls django_cachex_admin %}
+{% load i18n l10n django_cachex_admin %}
 
 {% block breadcrumbs %}
 {% url "admin:index" as index_href %}
-{% url "admin:django_cachex_cache_changelist" as cache_list_href %}
-{% url "admin:django_cachex_cache_change" cache_name|admin_urlquote as cache_detail_href %}
 {% cachex_breadcrumbs _("Home") index_href _("Caches") cache_list_href cache_name cache_detail_href _("Keys") %}
 {% endblock %}
 
@@ -21,9 +19,11 @@
     <li>
         <a href="?cache={{ cache_name|urlencode }}{% if not help_active %}&amp;help=1{% endif %}">{% trans "Help" %}</a>
     </li>
+    {% if cache_detail_href %}
     <li>
-        <a href="{% url "admin:django_cachex_cache_change" cache_name|admin_urlquote %}">{% trans "Cache Details" %}</a>
+        <a href="{{ cache_detail_href }}">{% trans "Cache Details" %}</a>
     </li>
+    {% endif %}
     {% if can_flush %}
     <li>
         <form method="post" style="display: inline;" id="clear-cache-form">

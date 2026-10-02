@@ -3368,6 +3368,23 @@ def test_add_pages_link_only_the_lists_the_user_may_view(db, test_cache: RespCac
     assert (_key_list_url("default") in hrefs) == ("keys" in linked)
 
 
+@pytest.mark.parametrize(
+    ("perms", "linked"),
+    [(["view_key"], False), (["view_cache", "view_key"], True), (["change_cache", "view_key"], True)],
+)
+def test_key_list_links_the_cache_pages_only_when_the_user_can_open_them(db, test_cache: RespCache, perms, linked):
+    client = _staff_client(perms)
+
+    response = client.get(_key_list_url("default"))
+
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.content, "html.parser")
+    assert "default" in soup.select_one(".breadcrumbs").get_text()
+    hrefs = {link["href"] for link in soup.select(".breadcrumbs a, .object-tools a")}
+    assert (_cache_list_url() in hrefs) == linked
+    assert (_cache_detail_url("default") in hrefs) == linked
+
+
 def test_delete_button_hidden_in_create_mode(admin_client: Client, test_cache: RespCache):
     """The Delete link submits ``#delete-form``, which only exists once the
     key does. Rendering it in create mode gives a JS TypeError.
