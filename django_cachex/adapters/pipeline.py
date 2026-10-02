@@ -1434,8 +1434,8 @@ class Pipeline:
     ) -> Self:
         """Queue ZADD command (add members with scores).
 
-        ``incr=True`` turns the single ``mapping`` pair into ZINCRBY with the
-        other flags applied: the step decodes to the member's new score, or
+        ``incr=True`` sends ZADD ... INCR for the single ``mapping`` pair with
+        the other flags applied: the step decodes to the member's new score, or
         ``None`` when ``nx`` / ``xx`` / ``gt`` / ``lt`` blocked the update.
         An empty ``mapping`` resolves to ``0`` with no command sent, like
         :meth:`RespCache.zadd`; ``incr=True`` with any other size than one

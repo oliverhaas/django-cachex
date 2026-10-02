@@ -411,7 +411,7 @@ A pipeline queues `get`, `set`, `delete`, `exists`, `incr`, `decr`, `type`, `ren
 The queueing methods take the parameters of the cache methods. Their flags decide what a step adds to the results:
 
 - `set()` adds `True`, or `False` when `nx` or `xx` blocks the write. With `get=True` it adds the previous value or `None` instead.
-- `zadd(key, mapping, *, ..., incr=False)` takes `incr=True` on the pipeline only. It sends `ZINCRBY` for the single pair in `mapping` and adds the new score, or `None` when `nx`, `xx`, `gt` or `lt` blocked it.
+- `zadd(key, mapping, *, ..., incr=False)` takes `incr=True` on the pipeline only. It sends `ZADD ... INCR` for the single pair in `mapping` and adds the new score, or `None` when `nx`, `xx`, `gt` or `lt` blocked it.
 - `zrange(key, start, end, *, withscores=False, desc=False)` takes `desc=True` on the pipeline only, which gives the result of `zrevrange`.
 - `xautoclaim(..., justid=True)` raises `NotSupportedError` when queued. Use `justid=False`, or call `cache.xautoclaim()`.
 

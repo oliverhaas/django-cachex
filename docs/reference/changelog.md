@@ -53,6 +53,7 @@
 - The stampede prevention docs say that `{}` turns it off, that unknown dict keys are dropped with a warning, so a dict of misspelled keys means the defaults, and that bad field values raise `TypeError` or `ValueError`, not `ImproperlyConfigured`.
 - The stampede prevention docs say that counters and data structures get the buffer too, and how to keep it off them.
 - The admin guide's Backend Abilities table said that `LocMemCache` and `DatabaseCache` have no conflict detection on edit. It now says they detect type changes only.
+- The API reference said that a pipelined `zadd(..., incr=True)` sends `ZINCRBY`, which takes none of the `nx`, `xx`, `gt` and `lt` flags. It now says that the pipeline sends `ZADD ... INCR`.
 
 ## 0.12.1 (October 2026)
 
