@@ -1163,7 +1163,7 @@
 <h2 id="operation">Operation<a class="headerlink" href="#operation" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Tracking coherence needs a redis-py or valkey-py transport, standalone or Sentinel.</li>
-<li>Each process opens one extra RESP3 connection for the listener, outside the transport's pool. The first cache operation opens it, and the listener thread retries a failed connect in the background.</li>
+<li>Each process opens one extra RESP3 connection for the listener, outside the transport's pool. The first call to <code>get()</code>, <code>get_many()</code>, <code>has_key()</code>, <code>get_or_set()</code>, one of their async twins or <code>info()</code> opens it; writes and the methods passed to the transport do not. The listener thread retries a failed connect in the background.</li>
 <li>Aliases with the same <code>LOCATION</code> (by default the transport alias) share one local store and listener, and must have the same <code>OPTIONS</code>.</li>
 <li><code>close()</code> leaves the listener running between requests, and <code>shutdown()</code> stops it.</li>
 <li>A local miss costs one pipelined <code>GET</code> and <code>PTTL</code>. <code>get_many()</code> fetches all missing keys in one pipeline.</li>

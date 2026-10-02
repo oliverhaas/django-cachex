@@ -3079,11 +3079,17 @@
 <li>The admin's Clear tool said it removes only the current cache version, but on <code>LocMemCache</code> and <code>DatabaseCache</code> it removes every version, and on <code>DatabaseCache</code> the whole table, which other aliases may share. Its confirmation and message now say what goes.</li>
 <li>The admin's key page read and rendered a string value in full, so a 50 MB value blocked Redis and made a 50 MB page. On the Valkey and Redis backends, a string over 1 MiB now shows only its size; its TTL and Delete still work.</li>
 <li>One key name that is not valid UTF-8 made <code>scan()</code> and <code>ascan()</code> raise <code>UnicodeDecodeError</code>, so the admin's key list showed an error instead of any key. They now return that name with its bad bytes escaped, as in <code>bad\xff</code>, next to the other keys.</li>
+<li><code>LocMemCache</code>'s <code>zadd()</code>, <code>zincrby()</code>, <code>zrem()</code>, <code>zrank()</code> and <code>zrevrank()</code> raised <code>ValueError</code> for a member equal to a stored one with another string form, such as <code>1</code> or <code>True</code> for a stored <code>1.0</code>, and a failed <code>zrem()</code> left the member in <code>zrange()</code> but not in <code>zcard()</code>. They now act on the stored member.</li>
+<li><code>LocMemCache.delete()</code> returned <code>True</code> for an expired key, which <code>get()</code> and <code>has_key()</code> already treated as missing. It now returns <code>False</code>, as Redis does, and still removes the key.</li>
+<li><code>LocMemCache</code>'s <code>aget()</code>, <code>aadd()</code>, <code>atouch()</code>, <code>adelete()</code>, <code>aget_or_set()</code>, <code>adelete_many()</code>, <code>aclear()</code> and <code>aclose()</code> went through <code>sync_to_async</code> and a worker thread, although the docs say its async methods call the sync method directly. They now do.</li>
+<li>After a fork, as under gunicorn <code>--preload</code> or Celery prefork, the child's first <code>TrackingCache</code> write, <code>clear()</code> or <code>shutdown()</code> could hang for good when a thread of the parent, such as its listener, held the local store's lock at the fork. Writes now switch the child to a fresh store first, as reads already did.</li>
 </ul>
 <h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
 <ul>
 <li>The quickstart and the configuration reference say that the redis-py backends reject <code>valkey://</code> and <code>valkeys://</code> URLs, with a <code>ValueError</code> on the first cache call.</li>
 <li>The API reference, the async guide and the <code>TrackingCache</code> docs no longer claim async twins for <code>info()</code>, <code>slowlog_get()</code> and <code>slowlog_len()</code>, which have none.</li>
+<li>The <code>TrackingCache</code> guide says which calls open the listener connection. Reads and <code>info()</code> do, writes do not.</li>
+<li>The configuration reference says that concurrent <code>DatabaseCache</code> writes on SQLite can fail with <code>database is locked</code> under Django's default deferred transactions, and that <code>"transaction_mode": "IMMEDIATE"</code> in the database's <code>OPTIONS</code> makes them wait for the lock.</li>
 </ul>
 <h2 id="0121-october-2026">0.12.1 (October 2026)<a class="headerlink" href="#0121-october-2026" title="Permanent link">&para;</a></h2>
 <h3 id="fixes_1">Fixes<a class="headerlink" href="#fixes_1" title="Permanent link">&para;</a></h3>

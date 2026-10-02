@@ -1630,6 +1630,12 @@ The compound operations (<code>lpush()</code>, <code>sadd()</code>, <code>hincrb
 their row with <code>SELECT ... FOR UPDATE</code>. Under the InnoDB default of
 <code>REPEATABLE READ</code>, two clients that create the same key at the same time
 deadlock. One of them gets an <code>OperationalError</code> (MySQL error 1213).</p>
+<p>On SQLite, which has no row locks, concurrent writes contend for the
+database's write lock. Under Django's default deferred transactions, a write
+can fail with <code>OperationalError: database is locked</code>, sometimes without
+waiting for the lock. Add <code>"transaction_mode": "IMMEDIATE"</code> to the database's
+<code>OPTIONS</code> in <code>DATABASES</code> so that each write waits for it instead, up to the
+<code>timeout</code> option (5 seconds by default).</p>
 <p>Inside <code>transaction.atomic()</code>, <code>ATOMIC_REQUESTS</code> included, the row lock of a
 compound operation or <code>incr()</code> lasts until the outer transaction ends. Keep
 these calls out of long-running transactions.</p>
