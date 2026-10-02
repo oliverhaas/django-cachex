@@ -2625,7 +2625,7 @@
 </tr>
 </tbody>
 </table>
-<p>The <a href="../../user-guide/orm-cache/#failures">ORM cache</a> raises <code>django_cachex.orm.exceptions.InvalidationError</code> when a write cannot invalidate the cache. It subclasses <code>CachexError</code> and Django's <code>DatabaseError</code>, so <code>atomic()</code> rolls the transaction back.</p>
+<p>The <a href="../../user-guide/orm-cache/#failures">ORM cache</a> raises <code>django_cachex.orm.exceptions.InvalidationError</code> when a write or <code>invalidate()</code> cannot invalidate the cache. It subclasses <code>CachexError</code> and Django's <code>DatabaseError</code>, so <code>atomic()</code> rolls the transaction back.</p>
 
 
 
