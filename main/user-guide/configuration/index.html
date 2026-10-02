@@ -1858,6 +1858,10 @@ keys expire logically at their timeout. A field of the wrong type raises
 <code>expiretime</code> and their <code>a*</code> twins take it. On <code>touch</code>, pass the value the
 original write used, because it decides whether the new TTL includes the
 buffer.</p>
+<p>Counters and data structures get the buffer too. <code>expire()</code> and its relatives
+add it to any key, and <code>incr()</code> keeps counting on a key that <code>get()</code> already
+reports as expired. Pass <code>stampede_prevention=False</code> to the calls that write
+and expire them, or keep them on an alias without the option.</p>
 <p>A pipelined <code>get()</code> skips the early-recompute check. It returns the stored
 value until the key expires, up to <code>buffer</code> seconds after its timeout.</p>
 <div class="admonition warning">
