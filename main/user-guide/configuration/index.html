@@ -1817,6 +1817,8 @@ valkey-glide silently ignores every other key, such as <code>socket_timeout</cod
 </span><span id="__span-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>    <span class="s2">"socket_timeout"</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span>
 </span><span id="__span-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="p">}</span>
 </span></code></pre></div>
+<p><code>socket_connect_timeout</code> defaults to 5 seconds when neither it nor
+<code>socket_timeout</code> is in <code>OPTIONS</code> or the <code>LOCATION</code> query.</p>
 <p>Every thread in the process shares a pool, and so does every alias with the
 same <code>LOCATION</code> and connection options, so <code>max_connections</code> caps them all
 together. redis-py 8 defaults it to 100. Past the cap a command fails with
