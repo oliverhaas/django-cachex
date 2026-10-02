@@ -40,6 +40,7 @@
 - The API reference, the async guide and the `TrackingCache` docs no longer claim async twins for `info()`, `slowlog_get()` and `slowlog_len()`, which have none.
 - The `TrackingCache` guide says which calls open the listener connection. Reads and `info()` do, writes do not.
 - The configuration reference says that concurrent `DatabaseCache` writes on SQLite can fail with `database is locked` under Django's default deferred transactions, and that `"transaction_mode": "IMMEDIATE"` in the database's `OPTIONS` makes them wait for the lock.
+- The configuration reference lists exclusive score bounds such as `"(5"` among what `LocMemCache` and `DatabaseCache` raise `NotSupportedError` for.
 
 ## 0.12.1 (October 2026)
 

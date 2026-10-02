@@ -120,6 +120,8 @@ database vendor. These methods and their `a*` twins raise `NotSupportedError`:
 - `slowlog_get()`, `slowlog_len()`, `memory_usage()` and `largest_keys()`
 - the blocking list pops and the cross-key store commands (`lmove()`,
   `smove()`, `sinterstore()` and the like)
+- exclusive score bounds, such as `"(5"`, in `zrangebyscore()`,
+  `zrevrangebyscore()`, `zcount()` and `zremrangebyscore()`
 - `semaphore()` on `DatabaseCache`. On `LocMemCache`, it returns the
   in-process `django_cachex.Semaphore`.
 
