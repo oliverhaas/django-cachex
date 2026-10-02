@@ -57,6 +57,7 @@
 - The stampede prevention docs say that counters and data structures get the buffer too, and how to keep it off them.
 - The admin guide's Backend Abilities table said that `LocMemCache` and `DatabaseCache` have no conflict detection on edit. It now says they detect type changes only.
 - The API reference said that a pipelined `zadd(..., incr=True)` sends `ZINCRBY`, which takes none of the `nx`, `xx`, `gt` and `lt` flags. It now says that the pipeline sends `ZADD ... INCR`.
+- The configuration reference says that on the redis-py and valkey-py backends a database in the `LOCATION` URL overrides `OPTIONS["db"]`, whereas on valkey-glide backends `OPTIONS["db"]` overrides the URL.
 
 ## 0.12.1 (October 2026)
 

@@ -201,6 +201,10 @@ scheme, username and password, and on `ValkeyGlideCache` also on the database.
 | Any other key, such as `socket_timeout`, `socket_connect_timeout`, `retry_on_timeout`, `ssl_*` and `db` | redis-py and valkey-py backends, which pass it to the driver's `from_url()` |
 | `db`, `use_tls` / `ssl`, `request_timeout`, `client_name` | valkey-glide backends, see [Valkey-Glide OPTIONS](#valkey-glide-options) |
 
+On the redis-py and valkey-py backends, a database in the `LOCATION` URL
+overrides `OPTIONS["db"]`, because the driver's `from_url()` applies URL values
+last. On valkey-glide backends, `OPTIONS["db"]` overrides the URL.
+
 `MAX_ENTRIES` and `CULL_FREQUENCY` stay with Django and do nothing on these
 backends. Every Valkey/Redis backend rejects a true
 `OPTIONS["decode_responses"]`, and `decode_responses` in the `LOCATION` query,
