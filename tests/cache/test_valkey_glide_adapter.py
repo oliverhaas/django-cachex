@@ -27,6 +27,7 @@ from glide_sync import (
     ServerCredentials,
 )
 
+from django_cachex.adapters import valkey_glide
 from django_cachex.adapters.protocols import (
     RespAdapterProtocol,
     RespPipelineProtocol,
@@ -52,6 +53,7 @@ from django_cachex.lock import LockError
 from django_cachex.script import script_sha
 from django_cachex.stampede import StampedeConfig
 from django_cachex.types import KeyType
+from tests.cache.support import run_forked_while_held
 
 
 def _adapter(mocker):
@@ -1079,6 +1081,68 @@ def test_slow_connect_does_not_block_another_config(mocker, monkeypatch, adapter
         released.set()
 
     assert not waited
+
+
+@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded:DeprecationWarning")
+@pytest.mark.parametrize(
+    ("adapter_class", "held_lock", "call"),
+    [
+        pytest.param(
+            ValkeyGlideAdapter,
+            lambda adapter: valkey_glide._GLIDE_SYNC_LOCK,
+            lambda adapter: adapter.get_client(),
+            id="clients",
+        ),
+        pytest.param(
+            ValkeyGlideAdapter,
+            lambda adapter: valkey_glide._GLIDE_SYNC_CREATE_LOCKS.setdefault(adapter._config_key, threading.Lock()),
+            lambda adapter: adapter.get_client(),
+            id="client-create",
+        ),
+        pytest.param(
+            ValkeyGlideAdapter,
+            lambda adapter: valkey_glide._GLIDE_SYNC_BLOCKING_LOCK,
+            lambda adapter: adapter.blpop("k", timeout=1),
+            id="blocking-clients",
+        ),
+        pytest.param(
+            ValkeyGlideAdapter,
+            lambda adapter: valkey_glide._GLIDE_ASYNC_REGISTRY_LOCK,
+            lambda adapter: adapter.close(),
+            id="async-clients",
+        ),
+        pytest.param(
+            ValkeyGlideAdapter,
+            lambda adapter: valkey_glide._GLIDE_SCRIPTS_LOCK,
+            lambda adapter: adapter.eval("return 1", 0),
+            id="scripts",
+        ),
+        pytest.param(
+            ValkeyGlideClusterAdapter,
+            lambda adapter: valkey_glide._GLIDE_SYNC_CLUSTER_LOCK,
+            lambda adapter: adapter.get_client(),
+            id="cluster-clients",
+        ),
+        pytest.param(
+            ValkeyGlideClusterAdapter,
+            lambda adapter: valkey_glide._GLIDE_SYNC_CLUSTER_CREATE_LOCKS.setdefault(
+                adapter._config_key,
+                threading.Lock(),
+            ),
+            lambda adapter: adapter.get_client(),
+            id="cluster-client-create",
+        ),
+    ],
+)
+def test_a_forked_child_skips_a_lock_held_at_the_fork(mocker, adapter_class, held_lock, call):
+    mocker.patch.dict(valkey_glide._GLIDE_SYNC_CREATE_LOCKS)
+    mocker.patch.dict(valkey_glide._GLIDE_SYNC_CLUSTER_CREATE_LOCKS)
+    client = mocker.Mock()
+    client.custom_command.return_value = None
+    mocker.patch.object(adapter_class, "_create_client", return_value=client)
+    adapter = adapter_class(["redis://fork:6379"])
+
+    run_forked_while_held(held_lock(adapter), lambda: call(adapter))
 
 
 def test_slow_async_connect_does_not_block_another_config(mocker, monkeypatch):

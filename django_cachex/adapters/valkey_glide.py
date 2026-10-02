@@ -3962,6 +3962,26 @@ _GLIDE_ASYNC_CLUSTER_LOCKS: weakref.WeakKeyDictionary[
 ] = weakref.WeakKeyDictionary()
 
 
+def _reset_locks() -> None:
+    """Replace the module's locks in a forked child, where no thread of the parent can release them.
+
+    glide reconnects every sync client it built in the child, so the registered clients stay usable.
+    """
+    global _GLIDE_SYNC_LOCK, _GLIDE_SYNC_BLOCKING_LOCK, _GLIDE_ASYNC_REGISTRY_LOCK  # noqa: PLW0603
+    global _GLIDE_SCRIPTS_LOCK, _GLIDE_SYNC_CLUSTER_LOCK  # noqa: PLW0603
+    _GLIDE_SYNC_LOCK = threading.Lock()
+    _GLIDE_SYNC_CREATE_LOCKS.clear()
+    _GLIDE_SYNC_BLOCKING_LOCK = threading.Lock()
+    _GLIDE_ASYNC_REGISTRY_LOCK = threading.RLock()
+    _GLIDE_SCRIPTS_LOCK = threading.Lock()
+    _GLIDE_SYNC_CLUSTER_LOCK = threading.Lock()
+    _GLIDE_SYNC_CLUSTER_CREATE_LOCKS.clear()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_locks)
+
+
 class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
     """Cluster-mode adapter, wraps ``GlideClusterClient`` instead of standalone.
 
