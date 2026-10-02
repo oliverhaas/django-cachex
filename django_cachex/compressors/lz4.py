@@ -19,6 +19,7 @@ class Lz4Compressor(BaseCompressor):
         super().__init__(min_length=min_length)
         if level is not None:
             self.level = level
+        self._check_level(self.level, None, lz4_frame.COMPRESSIONLEVEL_MAX)
 
     def _compress(self, data: bytes) -> bytes:
         return lz4_frame.compress(data, compression_level=self.level)

@@ -2,6 +2,7 @@ import pickle
 from enum import IntEnum
 
 import pytest
+from django.core.exceptions import ImproperlyConfigured
 from django.db import models
 
 from django_cachex.exceptions import SerializerError
@@ -44,10 +45,9 @@ def test_pickle_protocol_explicit():
     assert serializer.protocol == 4
 
 
-def test_pickle_protocol_too_high_raises_on_dumps():
-    serializer = PickleSerializer(protocol=pickle.HIGHEST_PROTOCOL + 1)
-    with pytest.raises(SerializerError):
-        serializer.dumps({"x": 1})
+def test_pickle_protocol_too_high_is_rejected_when_the_serializer_is_built():
+    with pytest.raises(ImproperlyConfigured, match="PickleSerializer"):
+        PickleSerializer(protocol=pickle.HIGHEST_PROTOCOL + 1)
 
 
 def test_msgpack_basic_roundtrip():

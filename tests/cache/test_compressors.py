@@ -1,6 +1,11 @@
 """Tests for all compressor implementations."""
 
+import zlib
+from compression import zstd
+
 import pytest
+from django.core.exceptions import ImproperlyConfigured
+from lz4 import frame as lz4_frame
 
 from django_cachex.compressors.base import BaseCompressor
 from django_cachex.compressors.gzip import GzipCompressor
@@ -121,3 +126,20 @@ def test_higher_level_compresses_smaller(cls, low, high):
     strong = cls(level=high).compress(data)
     assert len(strong) < len(fast)
     assert cls(level=high).decompress(strong) == data
+
+
+@pytest.mark.parametrize(
+    ("cls", "level"),
+    [
+        (GzipCompressor, zlib.Z_BEST_COMPRESSION + 1),
+        (Lz4Compressor, lz4_frame.COMPRESSIONLEVEL_MAX + 1),
+        (LzmaCompressor, 10),
+        (ZlibCompressor, zlib.Z_DEFAULT_COMPRESSION - 1),
+        (ZstdCompressor, zstd.CompressionParameter.compression_level.bounds()[1] + 1),
+        (ZstdCompressor, "3"),
+    ],
+    ids=lambda value: value.__name__ if isinstance(value, type) else None,
+)
+def test_bad_level_is_rejected_when_the_compressor_is_built(cls, level):
+    with pytest.raises(ImproperlyConfigured, match=cls.__name__):
+        cls(level=level)

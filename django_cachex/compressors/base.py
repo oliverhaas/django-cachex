@@ -3,6 +3,8 @@
 # Copyright (c) 2011 Sean Bleier
 # Licensed under BSD-3-Clause
 
+from django.core.exceptions import ImproperlyConfigured
+
 from django_cachex.exceptions import CompressorError
 
 
@@ -18,6 +20,22 @@ class BaseCompressor:
     def __init__(self, *, min_length: int | None = None) -> None:
         if min_length is not None:
             self.min_length = min_length
+
+    def _check_level(self, level: object, lowest: int | None, highest: int) -> None:
+        """Raise ``ImproperlyConfigured`` unless ``level`` is an int from ``lowest`` (``None``: open) to ``highest``.
+
+        Subclasses call it from ``__init__``: the library rejects a bad level only on the first write.
+        """
+        if (
+            isinstance(level, int)
+            and not isinstance(level, bool)
+            and (lowest is None or lowest <= level)
+            and level <= highest
+        ):
+            return
+        bounds = f"at most {highest}" if lowest is None else f"from {lowest} to {highest}"
+        msg = f"{type(self).__name__} level must be an int {bounds}, got {level!r}"
+        raise ImproperlyConfigured(msg)
 
     def compress(self, data: bytes) -> bytes:
         if len(data) > self.min_length:

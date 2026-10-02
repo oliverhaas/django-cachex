@@ -12,6 +12,7 @@ class ZstdCompressor(BaseCompressor):
         super().__init__(min_length=min_length)
         if level is not None:
             self.level = level
+        self._check_level(self.level, *zstd.CompressionParameter.compression_level.bounds())
 
     def _compress(self, data: bytes) -> bytes:
         return zstd.compress(data, level=self.level)
