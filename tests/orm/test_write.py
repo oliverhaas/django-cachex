@@ -938,20 +938,17 @@ def test_raw_alter():
             cursor.execute("ALTER TABLE ormtest_test DROP COLUMN tmp;")
 
 
-@pytest.mark.skipif(
-    connection.vendor != "postgresql",
-    reason="SQLite does not revert schema changes in a transaction, making it hard to test this.",
-)
-@transaction.atomic
 def test_raw_drop():
     with assert_num_queries(1):
         assert list(Test.objects.all()) == []
 
-    with assert_num_queries(1), connection.cursor() as cursor:
-        cursor.execute("DROP TABLE ormtest_test;")
+    with transaction.atomic():
+        with assert_num_queries(1), connection.cursor() as cursor:
+            cursor.execute("DROP TABLE ormtest_test;")
 
-    with pytest.raises((ProgrammingError, OperationalError)):
-        list(Test.objects.all())
+        with pytest.raises((ProgrammingError, OperationalError)):
+            list(Test.objects.all())
+        transaction.set_rollback(True)
 
 
 @pytest.mark.skipif(connection.vendor != "postgresql", reason="Materialized views are PostgreSQL only.")
