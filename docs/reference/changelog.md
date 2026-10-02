@@ -48,6 +48,7 @@
 - On `ValkeyGlideClusterCache`, the `ImproperlyConfigured` error for seed URLs that disagree on TLS, username or password called the `LOCATION` list a primary and its replicas. It now says that valkey-glide applies one set of these settings to every URL in the list.
 - `KeyType`, which `type()` returns, was missing from the names that `django_cachex` exports, so `from django_cachex import KeyType` raised `ImportError`. It now works.
 - On the Valkey and Redis backends, `semaphore()` and `asemaphore()` raised `TypeError` for a name that `scan()` returned for a key name that is not valid UTF-8. They now take that name, as `get()` and the other key commands do.
+- On `LocMemCache` and `DatabaseCache`, `hincrbyfloat()` stored a whole result such as `5200.0` as a float, so a later `hincrby()` on the field raised `ValueError` and `hget()` returned `5200.0`. Redis stores it as `"5200"`, which `HINCRBY` takes and `hget()` returns as `5200`. Both backends now store a whole result as an integer.
 
 ### Documentation
 

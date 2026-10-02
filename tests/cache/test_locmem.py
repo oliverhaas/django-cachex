@@ -1448,6 +1448,12 @@ def test_hincrbyfloat_int_field(locmem_cache: LocMemCache):
     assert locmem_cache.hincrbyfloat("k", "f", 0.5) == pytest.approx(2.5)
 
 
+def test_hincrby_works_on_a_whole_hincrbyfloat_result(locmem_cache: LocMemCache):
+    locmem_cache.hincrbyfloat("k", "f", 5000.0)
+    assert locmem_cache.hincrbyfloat("k", "f", 200.0) == 5200.0
+    assert locmem_cache.hincrby("k", "f", 1) == 5201
+
+
 def test_hincrby_non_integer_field_raises(locmem_cache: LocMemCache):
     locmem_cache.hset("k", "f", "abc")
     with pytest.raises(ValueError, match="not an integer"):

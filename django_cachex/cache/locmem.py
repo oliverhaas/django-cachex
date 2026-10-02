@@ -1265,9 +1265,11 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             if isinstance(value, bool) or not isinstance(value, int | float):
                 msg = "hash value is not a float"
                 raise ValueError(msg)  # noqa: TRY004
-            current[field] = float(value) + amount
+            result = float(value) + amount
+            # Redis stores 5200.0 as "5200", which HINCRBY and hget() take as an integer.
+            current[field] = int(result) if result.is_integer() else result
             self._native_write(internal_key, current)
-            return current[field]
+            return result
 
     # =========================================================================
     # Sorted Set Operations

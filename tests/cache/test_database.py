@@ -612,6 +612,12 @@ def test_hincrbyfloat_int_field_increments(db_cache: DatabaseCache):
     assert db_cache.hincrbyfloat("h", "f", 0.5) == 2.5
 
 
+def test_hincrby_works_on_a_whole_hincrbyfloat_result(db_cache: DatabaseCache):
+    db_cache.hincrbyfloat("h", "f", 5000.0)
+    assert db_cache.hincrbyfloat("h", "f", 200.0) == 5200.0
+    assert db_cache.hincrby("h", "f", 1) == 5201
+
+
 def test_zadd_non_numeric_score_raises(db_cache: DatabaseCache):
     with pytest.raises(ValueError, match="not a valid float"):
         db_cache.zadd("z", {"m": "abc"})

@@ -1284,8 +1284,10 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             if isinstance(value, bool) or not isinstance(value, int | float):
                 msg = "hash value is not a float"
                 raise ValueError(msg)  # noqa: TRY004
-            existing[field] = float(value) + amount
-            return existing, existing[field]
+            result = float(value) + amount
+            # Redis stores 5200.0 as "5200", which HINCRBY and hget() take as an integer.
+            existing[field] = int(result) if result.is_integer() else result
+            return existing, result
 
         return cast("float", self._atomic_compound(self._internal_key(key, version=version), transform))
 
