@@ -8,6 +8,7 @@ inherited from :class:`~django_cachex.adapters.valkey_py.ValkeyPyAdapter`
 and friends.
 """
 
+import os
 import threading
 import weakref
 from typing import Any
@@ -135,6 +136,19 @@ class RedisPyClusterAdapter(_RedisPyMixin, ValkeyPyClusterAdapter):
         _pool_class = RedisConnectionPool
         _cluster_class = RedisCluster
         _async_cluster_class = AsyncRedisCluster
+
+
+def _reset_clusters_lock() -> None:
+    """Replace the cluster registry's lock in a forked child, where no thread of the parent can release it.
+
+    The cluster adapter keeps it as a class attribute.
+    """
+    global _REDIS_CLUSTERS_LOCK  # noqa: PLW0603
+    _REDIS_CLUSTERS_LOCK = RedisPyClusterAdapter._clusters_lock = threading.Lock()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_clusters_lock)
 
 
 __all__ = [

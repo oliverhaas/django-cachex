@@ -338,10 +338,16 @@ FORK_LOCATION = ["redis://fork:6379/0"]
             marks=requires_valkey,
             id="valkey-py-clusters",
         ),
+        pytest.param(
+            lambda: RedisPyClusterAdapter._clusters_lock,
+            lambda: RedisPyClusterAdapter(FORK_LOCATION).get_client(),
+            id="redis-py-clusters",
+        ),
     ],
 )
 def test_a_forked_child_skips_a_lock_held_at_the_fork(mocker, held_lock, call):
     mocker.patch.object(ValkeyPyClusterAdapter, "_cluster_class")
+    mocker.patch.object(RedisPyClusterAdapter, "_cluster_class")
 
     run_forked_while_held(held_lock(), call)
 
