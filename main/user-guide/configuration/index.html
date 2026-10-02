@@ -1913,8 +1913,12 @@ transport's option and takes no keyword.</p>
 </span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>    <span class="s2">"ssl_ca_certs"</span><span class="p">:</span> <span class="s2">"/path/to/ca.crt"</span><span class="p">,</span>
 </span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>    <span class="s2">"ssl_certfile"</span><span class="p">:</span> <span class="s2">"/path/to/client.crt"</span><span class="p">,</span>
 </span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>    <span class="s2">"ssl_keyfile"</span><span class="p">:</span> <span class="s2">"/path/to/client.key"</span><span class="p">,</span>
-</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="p">}</span>
+</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>    <span class="s2">"ssl_check_hostname"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+</span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="p">}</span>
 </span></code></pre></div>
+<p><code>ssl_check_hostname</code> defaults to <code>False</code> in valkey-py and to <code>True</code> in
+redis-py, so set it on valkey-py backends to match the certificate against the
+server hostname.</p>
 <p>valkey-glide ignores the <code>ssl_*</code> keys and takes only a TLS flag, see
 <a href="#valkey-glide-options">Valkey-Glide OPTIONS</a>.</p>
 <h2 id="sentinel-configuration">Sentinel Configuration<a class="headerlink" href="#sentinel-configuration" title="Permanent link">&para;</a></h2>

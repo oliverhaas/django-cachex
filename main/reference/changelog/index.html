@@ -3047,6 +3047,7 @@
 <li><code>DatabaseCache.scan()</code> skipped keys when others were deleted mid-iteration, so a loop that scans and deletes left about half of them. Its cursor is now a position in hash order, like <code>LocMemCache</code>'s. The 0.11.0 fix had missed it.</li>
 <li>On valkey-glide, <code>xreadgroup()</code> with id <code>0</code> raised <code>TypeError</code> when a pending entry had been removed by <code>XDEL</code> or <code>XTRIM</code>. That entry now comes back with an empty field dict, as on redis-py and valkey-py.</li>
 <li>On valkey-glide, each sync blocking call (<code>blpop()</code>, <code>brpop()</code>, <code>blmove()</code>, <code>xread()</code> and <code>xreadgroup()</code> with <code>block</code>, or a pipeline holding one) built a client and kept about 2 KB of it for the life of the process, because glide registers every client in a fork hook. Those calls now reuse idle clients.</li>
+<li>On Redis before 7.0, <code>set(nx=True, get=True)</code> and its pipeline form raised the driver's <code>syntax error</code>. They now raise <code>NotSupportedError</code>, as the <a href="../../getting-started/installation/#requirements">requirements</a> say.</li>
 </ul>
 <h2 id="0121-october-2026">0.12.1 (October 2026)<a class="headerlink" href="#0121-october-2026" title="Permanent link">&para;</a></h2>
 <h3 id="fixes_1">Fixes<a class="headerlink" href="#fixes_1" title="Permanent link">&para;</a></h3>
