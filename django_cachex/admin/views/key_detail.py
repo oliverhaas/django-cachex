@@ -745,8 +745,8 @@ _POST_HANDLERS: dict[str, Callable[[HttpRequest, Any, str, str, int], HttpRespon
 }
 
 
-# These create a missing key, so they also need ``add_key``; otherwise
-# ``change_key`` alone routes around the add view's gate.
+# These create a missing key, which takes ``add_key``; otherwise ``change_key``
+# alone routes around the add view's gate.
 _CREATE_ACTIONS = frozenset(
     {
         "update",
@@ -795,15 +795,18 @@ def _check_post_permission(request: HttpRequest, action: str | None, cache: Any,
         return
     if not action:
         return
-    if not user.has_perm("django_cachex.change_key"):  # ty: ignore[unresolved-attribute]
+    may_change = user.has_perm("django_cachex.change_key")  # ty: ignore[unresolved-attribute]
+    may_add = action in _CREATE_ACTIONS and user.has_perm("django_cachex.add_key")  # ty: ignore[unresolved-attribute]
+    if not (may_change or may_add):
         raise PermissionDenied
-    # ``has_key`` only runs for users who would actually be blocked by it.
-    if action in _CREATE_ACTIONS and not user.has_perm("django_cachex.add_key"):  # ty: ignore[unresolved-attribute]
+    # With only one of the two, the key's existence decides. ``has_key`` only
+    # runs for users who would actually be blocked by it.
+    if action in _CREATE_ACTIONS and may_change != may_add:
         try:
             exists = cache.has_key(key)
         except Exception as exc:
             raise CacheUnavailableError(unreachable_message(cache_name, exc)) from exc
-        if not exists:
+        if exists != may_change:
             raise PermissionDenied
 
 
@@ -983,9 +986,10 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     user = request.user
     # ``_check_post_permission`` rejects the same submissions; hiding the
     # controls keeps a view-only user from filling in a form that only 403s.
-    can_mutate = (key_exists or create_mode) and user.has_perm("django_cachex.change_key")  # ty: ignore[unresolved-attribute]
+    can_change = (key_exists or create_mode) and user.has_perm("django_cachex.change_key")  # ty: ignore[unresolved-attribute]
+    can_mutate = can_change or create_mode
     can_delete = key_exists and user.has_perm("django_cachex.delete_key")  # ty: ignore[unresolved-attribute]
-    can_edit_ttl = can_mutate and supports_ttl_edit(cache)
+    can_edit_ttl = can_change and supports_ttl_edit(cache)
 
     context = admin.site.each_context(request)
     context.update(
@@ -1008,6 +1012,7 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             "ttl_expires_at": ttl_expires_at,
             "type_data": type_data,
             "can_mutate": can_mutate,
+            "can_change": can_change,
             "can_delete": can_delete,
             "can_edit_ttl": can_edit_ttl,
             "help_active": help_active,

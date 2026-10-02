@@ -30,6 +30,7 @@
             </form>
         </div>
     </div>
+    {% if can_change %}
     <div class="form-row">
         <label>{% trans "Pop Left:" %}</label>
         <form method="post" style="display: inline;">
@@ -59,6 +60,7 @@
             <button type="submit" class="button btn-small" onclick="return confirm('{{ confirm_ltrim|escapejs }}');">{% trans "Trim" %}</button>
         </form>
     </div>
+    {% endif %}
 </fieldset>
 {% endif %}
 <!-- List Items -->

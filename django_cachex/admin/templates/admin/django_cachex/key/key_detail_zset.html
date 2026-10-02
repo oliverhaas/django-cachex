@@ -22,6 +22,7 @@
             </form>
         </div>
     </div>
+    {% if can_change %}
     <div class="form-row">
         <label>{% trans "Pop Min:" %}</label>
         <form method="post" style="display: inline;">
@@ -42,6 +43,7 @@
             <button type="submit" class="button btn-small" onclick="return confirm('{{ confirm_popmax|escapejs }}');">{% trans "Pop" %}</button>
         </form>
     </div>
+    {% endif %}
 </fieldset>
 {% endif %}
 <!-- Sorted Set Members -->

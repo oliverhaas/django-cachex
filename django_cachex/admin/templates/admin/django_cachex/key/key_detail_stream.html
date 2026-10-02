@@ -18,6 +18,7 @@
             </form>
         </div>
     </div>
+    {% if can_change %}
     <div class="form-row">
         <label>{% trans "Trim:" %}</label>
         <form method="post" style="display: inline;">
@@ -30,6 +31,7 @@
             <button type="submit" class="button btn-small" onclick="return confirm('{{ confirm_xtrim|escapejs }}');">{% trans "Trim" %}</button>
         </form>
     </div>
+    {% endif %}
 </fieldset>
 {% endif %}
 <!-- Stream Entries -->

@@ -3191,6 +3191,43 @@ def test_existing_key_still_editable_without_add_perm(db, test_cache: RespCache)
     assert test_cache.hget("perm:existing:key", "f") == "new"
 
 
+def test_add_perm_alone_offers_only_the_creating_operations(db, test_cache: RespCache):
+    client = _staff_client(["view_key", "add_key"])
+
+    response = client.get(_key_detail_create_url("default", CREATE_KEY, "list"))
+
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert 'value="lpush"' in content
+    assert 'value="lpop"' not in content
+    assert 'name="ttl_value"' not in content
+
+
+def test_add_perm_alone_creates_a_missing_key(db, test_cache: RespCache):
+    client = _staff_client(["view_key", "add_key"])
+
+    response = client.post(
+        _key_detail_url("default", CREATE_KEY),
+        {"action": "hset", "field": "f", "field_value": "v"},
+    )
+
+    assert response.status_code == 302
+    assert test_cache.hget(CREATE_KEY, "f") == "v"
+
+
+def test_add_perm_alone_cannot_edit_an_existing_key(db, test_cache: RespCache):
+    test_cache.hset("perm:existing:key", "f", "old")
+    client = _staff_client(["view_key", "add_key"])
+
+    response = client.post(
+        _key_detail_url("default", "perm:existing:key"),
+        {"action": "hset", "field": "f", "field_value": "new"},
+    )
+
+    assert response.status_code == 403
+    assert test_cache.hget("perm:existing:key", "f") == "old"
+
+
 def test_delete_button_hidden_in_create_mode(admin_client: Client, test_cache: RespCache):
     """The Delete link submits ``#delete-form``, which only exists once the
     key does. Rendering it in create mode gives a JS TypeError.
