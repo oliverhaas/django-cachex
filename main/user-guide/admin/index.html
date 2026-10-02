@@ -1383,7 +1383,7 @@
 <p>The key detail page shows and edits a key's value and TTL, runs the operations for its data type, and deletes it. Enter valid JSON to store an object or array.</p>
 <p>The admin rejects an edit if the key's type changed after the page loaded. On the Valkey and Redis backends, it also rejects an edit if the value changed.</p>
 <p>A key of a type the admin cannot render is read-only, apart from Delete and the TTL form. The stock Django backends have no <code>type()</code>, so their key pages allow only Delete.</p>
-<p>On the Valkey and Redis backends, the page does not read a string value over 1 MiB. It shows the value's size, with Delete and the TTL form.</p>
+<p>The page shows a string value over 1 MiB, before or after decompression, as its size, with Delete and the TTL form. On the Valkey and Redis backends, it does not read a value stored in over 1 MiB.</p>
 <p><img alt="The key detail page editing a value and its TTL" src="../../assets/screenshot-key-detail.png" /></p>
 <h2 id="backend-abilities">Backend Abilities<a class="headerlink" href="#backend-abilities" title="Permanent link">&para;</a></h2>
 <table>
