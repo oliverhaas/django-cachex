@@ -215,11 +215,11 @@ _semaphore_registries: dict[str, _SemaphoreRegistry] = {}
 class LocMemCache(BaseCachex, DjangoLocMemCache):
     """LocMemCache with cachex extensions, implemented natively.
 
-    Drop-in replacement for ``django.core.cache.backends.locmem.LocMemCache``.
-    Standard cache ops (``get``/``set``/``delete``/...) are inherited
-    unchanged. Cachex extensions read and write the underlying
-    ``OrderedDict`` directly under Django's per-name lock, so compound
-    ops are atomic within a single process.
+    Drop-in replacement for Django's ``LocMemCache``. ``get``, ``set``,
+    ``delete``, ``has_key``, ``incr``, ``get_many``, ``incr_version`` and
+    ``clear`` are overridden to act as Redis does, also on collection keys;
+    the other standard ops are inherited. Cachex extensions run under
+    Django's per-name lock, so compound ops are atomic within a process.
     """
 
     _cachex_support: CachexSupportLevel = "cachex"
