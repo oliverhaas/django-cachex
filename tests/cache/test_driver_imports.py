@@ -1,4 +1,4 @@
-"""Import-time driver isolation: a backend must only pull in the driver it needs."""
+"""Import-time driver loading: importing the package pulls in no driver; resolving a RESP backend pulls in its own."""
 
 import subprocess
 import sys
