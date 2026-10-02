@@ -98,9 +98,10 @@ seven-phase workload: `get`, `get-miss`, `set`, `mget` (10-key batch),
 `mset` (10-key batch), `incr`, `delete`. Each phase runs `N_OPS=1000`
 operations, repeated `K_RUNS=10` times.
 
-Per-phase timings are reported as median ms and ops/sec across runs. Per-run
-metrics include Python peak memory (`tracemalloc`) and server memory delta
-(`INFO memory.used_memory`). Connections are sampled before the workload
+Per-phase timings are reported as median ms and ops/sec across runs, along
+with the server memory delta per run (`INFO memory.used_memory`). Python peak
+memory (`tracemalloc`) comes from one more pass after the timed runs, since
+tracing slows every allocation. Connections are sampled before the workload
 (baseline) and after every phase across every run; the summary reports peak
 and `Δ` (peak − baseline).
 

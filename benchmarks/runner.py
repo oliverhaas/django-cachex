@@ -399,26 +399,6 @@ def _sample_phase(
         result.server_connections_samples.append(sample)
 
 
-def _run_timed_block(
-    result: BenchmarkResult,
-    info_client: redis.Redis,
-    body: Callable[[], None],
-) -> None:
-    """Wrap one K_RUNS iteration with gc / tracemalloc / server-memory bookkeeping."""
-    gc.collect()
-    tracemalloc.start()
-    before_used = _server_used_memory(info_client) or 0
-
-    body()
-
-    _, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
-    result.py_peak_kb_per_run.append(peak / 1024)
-
-    after_used = _server_used_memory(info_client) or 0
-    result.server_used_memory_delta_kb_per_run.append(max(0, (after_used - before_used) / 1024))
-
-
 def _run_phase_loop(
     phases: dict[str, Callable[[], None]],
     result: BenchmarkResult,
@@ -426,16 +406,26 @@ def _run_phase_loop(
     *,
     pre_run: Callable[[], None] | None = None,
 ) -> None:
-    """Run K_RUNS iterations of every phase, recording timings + telemetry."""
-
-    def body() -> None:
+    """Run K_RUNS timed iterations of every phase, then one untimed pass under tracemalloc."""
+    for _ in range(K_RUNS):
+        gc.collect()
+        before_used = _server_used_memory(info_client) or 0
         if pre_run is not None:
             pre_run()
         for name, fn in phases.items():
             _sample_phase(name, fn, result, info_client)
+        after_used = _server_used_memory(info_client) or 0
+        result.server_used_memory_delta_kb_per_run.append(max(0, (after_used - before_used) / 1024))
 
-    for _ in range(K_RUNS):
-        _run_timed_block(result, info_client, body)
+    if pre_run is not None:
+        pre_run()
+    gc.collect()
+    tracemalloc.start()
+    for fn in phases.values():
+        fn()
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    result.py_peak_kb_per_run.append(peak / 1024)
 
 
 def run_benchmark(
@@ -857,26 +847,32 @@ async def _run_async_workload(
     _record_baseline_conns(result, info_client)
 
     n_batches = N_OPS // MGET_BATCH
+    phases: dict[str, Callable[[], Any]] = {
+        "get": lambda: _abench_get(cache, N_OPS, concurrency),
+        "get-miss": lambda: _abench_get_miss(cache, N_OPS, concurrency),
+        "set": lambda: _abench_set(cache, N_OPS, concurrency, payload),
+        "mget": lambda: _abench_mget(cache, n_batches, concurrency),
+        "mset": lambda: _abench_mset(cache, n_batches, concurrency, payload),
+        "incr": lambda: _abench_incr(cache, N_OPS, concurrency),
+        "delete": lambda: _abench_delete(cache, N_OPS, concurrency),
+    }
 
     for _ in range(K_RUNS):
         gc.collect()
-        tracemalloc.start()
         before_used = _server_used_memory(info_client) or 0
-
-        await _phase_async("get", lambda: _abench_get(cache, N_OPS, concurrency), result, info_client)
-        await _phase_async("get-miss", lambda: _abench_get_miss(cache, N_OPS, concurrency), result, info_client)
-        await _phase_async("set", lambda: _abench_set(cache, N_OPS, concurrency, payload), result, info_client)
-        await _phase_async("mget", lambda: _abench_mget(cache, n_batches, concurrency), result, info_client)
-        await _phase_async("mset", lambda: _abench_mset(cache, n_batches, concurrency, payload), result, info_client)
-        await _phase_async("incr", lambda: _abench_incr(cache, N_OPS, concurrency), result, info_client)
-        await _phase_async("delete", lambda: _abench_delete(cache, N_OPS, concurrency), result, info_client)
-
-        _, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
-        result.py_peak_kb_per_run.append(peak / 1024)
-
+        for name, coro_factory in phases.items():
+            await _phase_async(name, coro_factory, result, info_client)
         after_used = _server_used_memory(info_client) or 0
         result.server_used_memory_delta_kb_per_run.append(max(0, (after_used - before_used) / 1024))
+
+    # tracemalloc slows every allocation, so it only runs in this untimed pass.
+    gc.collect()
+    tracemalloc.start()
+    for coro_factory in phases.values():
+        await coro_factory()
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    result.py_peak_kb_per_run.append(peak / 1024)
 
     await cache.aclear()
 
