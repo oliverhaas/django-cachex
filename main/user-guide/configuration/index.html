@@ -1842,12 +1842,15 @@ setting off a thundering herd of recomputes:</p>
 </span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>    <span class="p">},</span>
 </span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="p">}</span>
 </span></code></pre></div>
-<p>The option takes <code>True</code> for the defaults, <code>False</code> or <code>None</code> for off, a dict, or
-a <code>django_cachex.StampedeConfig</code>. Any other value, such as the string <code>"False"</code>
-from an environment variable, raises <code>ImproperlyConfigured</code>. <code>buffer</code> is a
-non-negative <code>int</code> in seconds. <code>beta</code> and <code>delta</code> are finite non-negative
-numbers, and 0 for either turns off early recompute, so keys expire logically
-at their timeout.</p>
+<p>The option takes <code>True</code> for the defaults, <code>False</code>, <code>None</code> or <code>{}</code> for off, a
+dict, or a <code>django_cachex.StampedeConfig</code>. Any other value, such as the string
+<code>"False"</code> from an environment variable, raises <code>ImproperlyConfigured</code>. A dict
+key other than <code>buffer</code>, <code>beta</code> and <code>delta</code> is dropped with a logged warning,
+so a dict that holds only misspelled keys turns prevention on with the
+defaults. <code>buffer</code> is a non-negative <code>int</code> in seconds. <code>beta</code> and <code>delta</code> are
+finite non-negative numbers, and 0 for either turns off early recompute, so
+keys expire logically at their timeout. A field of the wrong type raises
+<code>TypeError</code>, and one out of range <code>ValueError</code>.</p>
 <p>The <code>stampede_prevention=</code> keyword overrides the option for one call. It takes
 <code>True</code>, <code>False</code>, a <code>StampedeConfig</code>, or <code>None</code>, the default, which keeps the
 <code>OPTIONS</code> setting. <code>get</code>, <code>set</code>, <code>add</code>, <code>touch</code>, <code>get_or_set</code>, <code>get_many</code>,
