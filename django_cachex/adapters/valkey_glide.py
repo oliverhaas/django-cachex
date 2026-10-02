@@ -2093,7 +2093,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     # ---- scan / keys ----
     def keys(self, pattern: str = "*") -> list[str]:
         result = self._cmd([b"KEYS", _enc(pattern)])
-        return _dec_keys(result) if result else []
+        return [k.decode(errors="surrogateescape") if isinstance(k, bytes) else k for k in result or []]
 
     def scan(
         self,
@@ -2117,7 +2117,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             result = client.scan(cursor, match=pattern, count=itersize)
             cursor, keys = cast("Any", result[0]), result[1]
             for k in keys:
-                yield _dec_str(k)
+                yield k.decode(errors="surrogateescape") if isinstance(k, bytes) else k
             if cursor in (b"0", "0", 0):
                 return
 
@@ -3137,7 +3137,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     # ---- Async scan ----
     async def akeys(self, pattern: str = "*") -> list[str]:
         result = await self._acmd([b"KEYS", _enc(pattern)])
-        return _dec_keys(result) if result else []
+        return [k.decode(errors="surrogateescape") if isinstance(k, bytes) else k for k in result or []]
 
     async def ascan(
         self,
@@ -3162,7 +3162,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             result = await client.scan(cursor, match=pattern, count=itersize)
             cursor, keys = cast("Any", result[0]), result[1]
             for k in keys:
-                yield _dec_str(k)
+                yield k.decode(errors="surrogateescape") if isinstance(k, bytes) else k
             if cursor in (b"0", "0", 0):
                 return
 

@@ -293,6 +293,18 @@ async def test_aiter_keys_async_generator(cache: RespCache):
 
 
 @pytest.mark.asyncio
+async def test_keys_and_iter_keys_return_an_undecodable_name_as_scan_does(cache: RespCache):
+    cache.set("lsbad_\\xff", "escaped spelling")
+    cache.get_client(write=True).set(cache.make_key("lsbad_").encode() + b"\xff", b"raw")
+    expected = {"lsbad_\\xff", "lsbad_\udcff"}
+
+    assert set(cache.keys("lsbad_*")) == expected
+    assert set(cache.iter_keys("lsbad_*")) == expected
+    assert set(await cache.akeys("lsbad_*")) == expected
+    assert {key async for key in cache.aiter_keys("lsbad_*")} == expected
+
+
+@pytest.mark.asyncio
 async def test_adelete_pattern(cache: RespCache):
     for key in ["adp_foo-aa", "adp_foo-ab", "adp_foo-bb", "adp_foo-bc"]:
         cache.set(key, "foo")

@@ -1446,7 +1446,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         client = self.get_client(write=False)
 
         keys_result = client.keys(pattern)
-        return [k.decode() if isinstance(k, bytes) else k for k in keys_result]
+        return [k.decode(errors="surrogateescape") if isinstance(k, bytes) else k for k in keys_result]
 
     def iter_keys(self, pattern: str, itersize: int | None = None) -> Iterator[str]:
         """Iterate keys matching pattern (already prefixed)."""
@@ -1456,7 +1456,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             itersize = self._default_scan_itersize
 
         for item in client.scan_iter(match=pattern, count=itersize):
-            yield item.decode() if isinstance(item, bytes) else item
+            yield item.decode(errors="surrogateescape") if isinstance(item, bytes) else item
 
     def scan(
         self,
@@ -1540,7 +1540,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         client = await self.get_async_client(write=False)
 
         keys_result = await client.keys(pattern)
-        return [k.decode() if isinstance(k, bytes) else k for k in keys_result]
+        return [k.decode(errors="surrogateescape") if isinstance(k, bytes) else k for k in keys_result]
 
     async def aiter_keys(self, pattern: str, itersize: int | None = None) -> AsyncIterator[str]:
         client = await self.get_async_client(write=False)
@@ -1549,7 +1549,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             itersize = self._default_scan_itersize
 
         async for item in client.scan_iter(match=pattern, count=itersize):
-            yield item.decode() if isinstance(item, bytes) else item
+            yield item.decode(errors="surrogateescape") if isinstance(item, bytes) else item
 
     async def adelete_pattern(self, pattern: str, itersize: int | None = None) -> int:
         client = await self.get_async_client(write=True)
@@ -4227,7 +4227,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
             "list[bytes | str]",
             client.keys(pattern, target_nodes=self._cluster.PRIMARIES),
         )
-        return [k.decode() if isinstance(k, bytes) else k for k in keys_result]
+        return [k.decode(errors="surrogateescape") if isinstance(k, bytes) else k for k in keys_result]
 
     @override
     def iter_keys(
@@ -4246,7 +4246,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
             count=itersize,
             target_nodes=self._cluster.PRIMARIES,
         ):
-            yield item.decode() if isinstance(item, bytes) else item
+            yield item.decode(errors="surrogateescape") if isinstance(item, bytes) else item
 
     @override
     def delete_pattern(
@@ -4385,7 +4385,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
             "list[bytes | str]",
             await client.keys(pattern, target_nodes=self._async_cluster.PRIMARIES),
         )
-        return [k.decode() if isinstance(k, bytes) else k for k in keys_result]
+        return [k.decode(errors="surrogateescape") if isinstance(k, bytes) else k for k in keys_result]
 
     @override
     async def aiter_keys(
@@ -4403,7 +4403,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
             count=itersize,
             target_nodes=self._async_cluster.PRIMARIES,
         ):
-            yield item.decode() if isinstance(item, bytes) else item
+            yield item.decode(errors="surrogateescape") if isinstance(item, bytes) else item
 
     @override
     async def adelete_pattern(
