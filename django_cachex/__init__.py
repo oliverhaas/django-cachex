@@ -40,6 +40,7 @@ if TYPE_CHECKING:
         SemaphoreTimeoutError,
     )
     from django_cachex.stampede import StampedeConfig
+    from django_cachex.types import KeyType
 
 # Exported name -> defining submodule.
 _LAZY_EXPORTS = {
@@ -65,6 +66,7 @@ _LAZY_EXPORTS = {
     "SemaphoreError": "django_cachex.semaphore",
     "SemaphoreTimeoutError": "django_cachex.semaphore",
     "StampedeConfig": "django_cachex.stampede",
+    "KeyType": "django_cachex.types",
 }
 
 
@@ -89,6 +91,7 @@ __all__ = [
     "CompressorError",
     "Encoded",
     "KeyNotFoundError",
+    "KeyType",
     "LockError",
     "LockNotOwnedError",
     "NotSupportedError",
