@@ -50,7 +50,7 @@ The server sends invalidations per key prefix. With Django's default `KEY_FUNCTI
 ## Operation
 
 - Tracking coherence needs a redis-py or valkey-py transport, standalone or Sentinel.
-- Each process opens one extra RESP3 connection for the listener, outside the transport's pool. The first cache operation opens it, and the listener thread retries a failed connect in the background.
+- Each process opens one extra RESP3 connection for the listener, outside the transport's pool. The first call to `get()`, `get_many()`, `has_key()`, `get_or_set()`, one of their async twins or `info()` opens it; writes and the methods passed to the transport do not. The listener thread retries a failed connect in the background.
 - Aliases with the same `LOCATION` (by default the transport alias) share one local store and listener, and must have the same `OPTIONS`.
 - `close()` leaves the listener running between requests, and `shutdown()` stops it.
 - A local miss costs one pipelined `GET` and `PTTL`. `get_many()` fetches all missing keys in one pipeline.

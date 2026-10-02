@@ -437,16 +437,23 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         thread = self._state.listener_thread
         return thread is not None and thread.is_alive()
 
+    def _process_state(self) -> _TrackingState:
+        """Return this process's state, rebinding an instance inherited across a fork."""
+        state = self._state
+        if state.pid != os.getpid():
+            # gunicorn --preload, Celery prefork: drop the parent's store, and
+            # its locks, which a thread that did not survive the fork may hold.
+            state = self._state = self._bind_state()
+        return state
+
     def _ensure_listener(self) -> None:
         """Start (or restart) the listener thread with double-checked locking; TTL coherence has none."""
         state = self._state
         if state.initialized and self._listener_alive():
             return
-        if state.pid != os.getpid():
-            # Instance created before a fork (gunicorn --preload, Celery
-            # prefork): drop the parent's store and start this process's
-            # listener without reporting the parent's thread as dead.
-            state = self._state = self._bind_state()
+        # A state rebound after a fork starts this process's listener without
+        # reporting the parent's thread as dead.
+        state = self._process_state()
         if self._coherence == "ttl":
             return
         with state.start_lock:
@@ -559,7 +566,7 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
 
     def shutdown(self) -> None:
         """Stop this storage key's listener thread and drop its local store."""
-        self._state.shutdown()
+        self._process_state().shutdown()
 
     # -- Fetching --
 
@@ -640,18 +647,19 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         return found
 
     def _evict(self, key: str, version: int | None) -> None:
-        self._state.discard((self.make_key(key, version=version),))
+        self._process_state().discard((self.make_key(key, version=version),))
 
     def _evict_many(self, keys: Iterable[str], version: int | None) -> None:
         # The key function runs before the state lock is taken.
-        self._state.discard([self.make_key(key, version=version) for key in keys])
+        self._process_state().discard([self.make_key(key, version=version) for key in keys])
 
     def _evict_pattern(self, pattern: str, version: int | None) -> None:
         """Evict the made keys the transport's server-side glob matches: the same keys the server deleted."""
         matcher = _glob_to_regex(self._transport.make_pattern(pattern, version=version))
-        with self._state.lock:
-            candidates = set(self._state.store) | set(self._state.pending)
-        self._state.discard([made_key for made_key in candidates if matcher.match(made_key)])
+        state = self._process_state()
+        with state.lock:
+            candidates = set(state.store) | set(state.pending)
+        state.discard([made_key for made_key in candidates if matcher.match(made_key)])
 
     # -- Reads --
 
@@ -934,12 +942,12 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
 
     def clear(self) -> bool:  # type: ignore[override]
         result = self._transport.clear()
-        self._state.flush()
+        self._process_state().flush()
         return result
 
     async def aclear(self) -> bool:  # type: ignore[override]
         result = await self._transport.aclear()
-        self._state.flush()
+        self._process_state().flush()
         return result
 
     def expire(self, key: str, timeout: int | timedelta, version: int | None = None) -> bool:

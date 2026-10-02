@@ -26,11 +26,13 @@
 - `LocMemCache`'s `zadd()`, `zincrby()`, `zrem()`, `zrank()` and `zrevrank()` raised `ValueError` for a member equal to a stored one with another string form, such as `1` or `True` for a stored `1.0`, and a failed `zrem()` left the member in `zrange()` but not in `zcard()`. They now act on the stored member.
 - `LocMemCache.delete()` returned `True` for an expired key, which `get()` and `has_key()` already treated as missing. It now returns `False`, as Redis does, and still removes the key.
 - `LocMemCache`'s `aget()`, `aadd()`, `atouch()`, `adelete()`, `aget_or_set()`, `adelete_many()`, `aclear()` and `aclose()` went through `sync_to_async` and a worker thread, although the docs say its async methods call the sync method directly. They now do.
+- After a fork, as under gunicorn `--preload` or Celery prefork, the child's first `TrackingCache` write, `clear()` or `shutdown()` could hang for good when a thread of the parent, such as its listener, held the local store's lock at the fork. Writes now switch the child to a fresh store first, as reads already did.
 
 ### Documentation
 
 - The quickstart and the configuration reference say that the redis-py backends reject `valkey://` and `valkeys://` URLs, with a `ValueError` on the first cache call.
 - The API reference, the async guide and the `TrackingCache` docs no longer claim async twins for `info()`, `slowlog_get()` and `slowlog_len()`, which have none.
+- The `TrackingCache` guide says which calls open the listener connection. Reads and `info()` do, writes do not.
 
 ## 0.12.1 (October 2026)
 

@@ -1,7 +1,10 @@
 """Tests for the CLIENT TRACKING backed local cache (TrackingCache)."""
 
+import asyncio
 import logging
 import math
+import os
+import signal
 import threading
 import time
 import uuid
@@ -1271,6 +1274,54 @@ def test_an_instance_inherited_across_a_fork_rebinds_its_state(tracking_cache, m
         assert _wait_for(lambda: tracking_cache._state.connected)
     finally:
         tracking_cache._state.shutdown()
+
+
+@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded:DeprecationWarning")
+@pytest.mark.parametrize(
+    "write",
+    [
+        lambda cache: cache.set("forked", 1),
+        lambda cache: cache.set_many({"forked": 1}),
+        lambda cache: cache.delete_pattern("forked*"),
+        lambda cache: cache.clear(),
+        lambda cache: asyncio.run(cache.aclear()),
+        lambda cache: cache.shutdown(),
+    ],
+    ids=["set", "set_many", "delete_pattern", "clear", "aclear", "shutdown"],
+)
+def test_a_write_in_a_forked_child_skips_a_lock_held_at_the_fork(tracking_cache, write):
+    """Only the forking thread survives a fork, so a lock another thread held
+    then stays held in the child; its first write must not wait on it."""
+    state = tracking_cache._state
+    holding, release = threading.Event(), threading.Event()
+
+    def hold_the_lock():
+        with state.lock:
+            holding.set()
+            release.wait(10)
+
+    holder = threading.Thread(target=hold_the_lock, daemon=True)
+    holder.start()
+    assert holding.wait(5)
+    pid = os.fork()
+    if pid == 0:
+        # The child must never return into pytest.
+        code = 1
+        try:
+            write(tracking_cache)
+            code = 0
+        finally:
+            os._exit(code)
+    release.set()
+    holder.join(5)
+    deadline = time.monotonic() + 10
+    while (waited := os.waitpid(pid, os.WNOHANG)) == (0, 0) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if waited == (0, 0):
+        os.kill(pid, signal.SIGKILL)
+        os.waitpid(pid, 0)
+        pytest.fail("the forked child's write deadlocked on the parent's state lock")
+    assert os.waitstatus_to_exitcode(waited[1]) == 0
 
 
 def test_losing_the_listener_flushes_and_reconnects(tracking_cache):
