@@ -1450,7 +1450,7 @@
 </tr>
 <tr>
 <td><code>CACHALOT_QUERY_KEYGEN</code>, <code>CACHALOT_TABLE_KEYGEN</code></td>
-<td>Removed. Keys go through the cache alias's <code>KEY_FUNCTION</code>. If it tells tenants apart, a write to a table they share invalidates only the writing tenant's results, so list shared tables in <code>UNCACHABLE_TABLES</code>.</td>
+<td><code>QUERY_KEYGEN</code>, <code>TABLE_KEYGEN</code>. They take keyword arguments, so a cachalot keygen needs adapting (see <a href="../user-guide/orm-cache/#cache-keys">Cache keys</a>). The default query keys already start with their table names, and <code>__in</code> values are sorted before any keygen runs. Keys also go through the cache alias's <code>KEY_FUNCTION</code>. If it tells tenants apart, a write to a table they share invalidates only the writing tenant's results, so list shared tables in <code>UNCACHABLE_TABLES</code>.</td>
 </tr>
 <tr>
 <td><code>CACHALOT_USE_UNSUPPORTED_DATABASE</code>, <code>CACHALOT_ADDITIONAL_SUPPORTED_DATABASES</code></td>
