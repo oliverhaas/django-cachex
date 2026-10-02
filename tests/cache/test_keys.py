@@ -44,6 +44,7 @@ def test_ttl_incr_version_no_timeout(cache: RespCache):
     my_value = cache.get("{my_key}", version=2)
 
     assert my_value == "hello world!"
+    assert cache.ttl("{my_key}", version=2) is None
 
 
 # Use {slot}: prefix to ensure both keys hash to same cluster slot
@@ -246,6 +247,7 @@ async def test_attl_aincr_version_no_timeout(cache: RespCache):
     my_value = await cache.aget("{amy_key}", version=2)
 
     assert my_value == "hello world!"
+    assert await cache.attl("{amy_key}", version=2) is None
 
 
 @pytest.mark.asyncio
