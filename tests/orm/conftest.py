@@ -46,7 +46,7 @@ def _orm_postgres() -> Generator[None]:
             container.stop()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def django_db_modify_db_settings(
     django_db_modify_db_settings_parallel_suffix: None,
     _orm_postgres: None,
