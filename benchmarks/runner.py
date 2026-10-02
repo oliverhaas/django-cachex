@@ -240,9 +240,11 @@ def _bench_incr(cache, n: int) -> None:
         cache.incr("counter")
 
 
+def _set_delete_keys(cache, n: int) -> None:
+    cache.set_many({f"del:{i}": 1 for i in range(n)})
+
+
 def _bench_delete(cache, n: int) -> None:
-    for i in range(n):
-        cache.set(f"del:{i}", 1)
     for i in range(n):
         cache.delete(f"del:{i}")
 
@@ -318,9 +320,11 @@ async def _abench_incr(cache, n: int, concurrency: int) -> None:
         await asyncio.gather(*(cache.aincr("counter") for _ in range(size)))
 
 
+async def _aset_delete_keys(cache, n: int) -> None:
+    await cache.aset_many({f"del:{i}": 1 for i in range(n)})
+
+
 async def _abench_delete(cache, n: int, concurrency: int) -> None:
-    for i in range(n):
-        await cache.aset(f"del:{i}", 1)
     if concurrency <= 1:
         for i in range(n):
             await cache.adelete(f"del:{i}")
@@ -468,10 +472,11 @@ def run_benchmark(
             _bench_mget(cache, 10)
             _bench_mset(cache, 10, payload)
             _bench_incr(cache, 100)
+            _set_delete_keys(cache, 100)
             _bench_delete(cache, 100)
 
             _record_baseline_conns(result, info_client)
-            _run_phase_loop(phases, result, info_client)
+            _run_phase_loop(phases, result, info_client, pre_run=lambda: _set_delete_keys(cache, N_OPS))
 
             _flush_cache(cache)
     finally:
@@ -554,13 +559,9 @@ def run_request_cycle_benchmark(
             }
 
             def _pre_run() -> None:
-                # The incr view doesn't reset the counter; the delete view
-                # doesn't pre-populate. The direct benchmark bakes both into
-                # its phase helpers, but here the views are single-op so we
-                # do the setup before each timed run.
+                # The incr view doesn't reset the counter, unlike _bench_incr.
                 cache.set("counter", 0)
-                for i in range(N_OPS):
-                    cache.set(f"del:{i}", 1)
+                _set_delete_keys(cache, N_OPS)
 
             _record_baseline_conns(result, info_client)
             _run_phase_loop(phases, result, info_client, pre_run=_pre_run)
@@ -842,6 +843,7 @@ async def _run_async_workload(
     await _abench_mget(cache, 10, concurrency)
     await _abench_mset(cache, 10, concurrency, payload)
     await _abench_incr(cache, 100, concurrency)
+    await _aset_delete_keys(cache, 100)
     await _abench_delete(cache, 100, concurrency)
 
     _record_baseline_conns(result, info_client)
@@ -860,12 +862,14 @@ async def _run_async_workload(
     for _ in range(K_RUNS):
         gc.collect()
         before_used = _server_used_memory(info_client) or 0
+        await _aset_delete_keys(cache, N_OPS)
         for name, coro_factory in phases.items():
             await _phase_async(name, coro_factory, result, info_client)
         after_used = _server_used_memory(info_client) or 0
         result.server_used_memory_delta_kb_per_run.append(max(0, (after_used - before_used) / 1024))
 
     # tracemalloc slows every allocation, so it only runs in this untimed pass.
+    await _aset_delete_keys(cache, N_OPS)
     gc.collect()
     tracemalloc.start()
     for coro_factory in phases.values():
