@@ -41,6 +41,7 @@
 - The `TrackingCache` guide says which calls open the listener connection. Reads and `info()` do, writes do not.
 - The configuration reference says that concurrent `DatabaseCache` writes on SQLite can fail with `database is locked` under Django's default deferred transactions, and that `"transaction_mode": "IMMEDIATE"` in the database's `OPTIONS` makes them wait for the lock.
 - The configuration reference lists exclusive score bounds such as `"(5"` among what `LocMemCache` and `DatabaseCache` raise `NotSupportedError` for.
+- The configuration reference said every other `OPTIONS` key goes to the driver. It now says that the Valkey/Redis backends reject `decode_responses` and that `MAX_ENTRIES` and `CULL_FREQUENCY` do nothing there.
 
 ## 0.12.1 (October 2026)
 

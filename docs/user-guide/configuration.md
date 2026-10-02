@@ -201,6 +201,10 @@ scheme, username and password, and on `ValkeyGlideCache` also on the database.
 | Any other key, such as `socket_timeout`, `socket_connect_timeout`, `retry_on_timeout`, `ssl_*` and `db` | redis-py and valkey-py backends, which pass it to the driver's `from_url()` |
 | `db`, `use_tls` / `ssl`, `request_timeout`, `client_name` | valkey-glide backends, see [Valkey-Glide OPTIONS](#valkey-glide-options) |
 
+`MAX_ENTRIES` and `CULL_FREQUENCY` stay with Django and do nothing on these
+backends. Every Valkey/Redis backend rejects a true
+`OPTIONS["decode_responses"]`, and `decode_responses` in the `LOCATION` query,
+with `ImproperlyConfigured`, because the cache decodes the raw bytes itself.
 valkey-glide silently ignores every other key, such as `socket_timeout`.
 
 ### Serialization
@@ -268,7 +272,7 @@ Compression applies only to values longer than the compressor's `min_length`
     # libvalkey (Valkey) or hiredis (Redis) is installed
     "parser_class": "valkey.connection.DefaultParser",  # or "redis.connection.DefaultParser"
 
-    # Every other key goes to the driver's from_url()
+    # The driver's own options go to its from_url()
     "retry_on_timeout": True,
     "socket_connect_timeout": 5,
     "socket_timeout": 5,
