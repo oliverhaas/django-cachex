@@ -255,6 +255,16 @@ _LOCAL_RESULTS: dict[str, _LocalResults] = {}
 _LOCAL_RESULTS_LOCK = Lock()
 
 
+def _reset_local_results_lock() -> None:
+    """Replace the lock in a forked child, where no thread of the parent can release it."""
+    global _LOCAL_RESULTS_LOCK  # noqa: PLW0603
+    _LOCAL_RESULTS_LOCK = Lock()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_local_results_lock)
+
+
 class RespStore:
     """Results, generations and leases in Redis or Valkey, each operation one Lua script.
 
