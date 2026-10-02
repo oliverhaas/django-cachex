@@ -32,6 +32,7 @@ from django_cachex.admin.helpers import (
     can_clear_cache,
     can_flush,
     can_view_caches,
+    can_view_keys,
     check_cache_access,
     creatable_types,
     get_cache,
@@ -198,7 +199,7 @@ class CacheAdminMixin:
     def get_queryset(self, request: HttpRequest) -> CacheQuerySet:
         caches = Cache.get_all()
         for cache_obj in caches:
-            cache_obj.keys_accessible = can_access_cache(request, cache_obj.name)
+            cache_obj.keys_accessible = can_view_keys(request) and can_access_cache(request, cache_obj.name)
         return CacheQuerySet(caches)
 
     def get_search_results(

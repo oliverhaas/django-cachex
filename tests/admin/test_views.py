@@ -5069,7 +5069,7 @@ def test_flush_spanning_a_forbidden_cache_flushes_nothing(db, test_cache: RespCa
 
 
 def test_cache_list_links_only_the_keys_of_granted_caches(db, test_cache):
-    client = _staff_client(["view_cache"])
+    client = _staff_client(["view_cache", "view_key"])
 
     response = client.get(_cache_list_url())
 
@@ -5148,13 +5148,33 @@ def test_slow_log_shows_arguments_only_with_every_alias(db, test_cache, mocker, 
     ],
 )
 def test_cache_detail_links_the_keys_only_with_the_alias_permission(db, test_cache, aliases, tools):
-    client = _staff_client(["view_cache"], aliases=aliases)
+    client = _staff_client(["view_cache", "view_key"], aliases=aliases)
 
     response = client.get(_cache_detail_url("default"))
 
     assert response.status_code == 200
     soup = BeautifulSoup(response.content, "html.parser")
     assert [link.get_text(strip=True) for link in soup.select("ul.object-tools a")] == tools
+
+
+@pytest.mark.parametrize(
+    ("perms", "linked"),
+    [(["view_cache"], False), (["view_cache", "view_key"], True), (["view_cache", "change_key"], True)],
+)
+def test_cache_pages_link_the_key_list_only_when_the_user_can_open_it(db, test_cache, perms, linked):
+    client = _staff_client(perms)
+
+    detail = client.get(_cache_detail_url("default"))
+    listing = client.get(_cache_list_url())
+    keys = client.get(_key_list_url("default"))
+
+    assert detail.status_code == 200
+    assert listing.status_code == 200
+    assert keys.status_code == (200 if linked else 403)
+    detail_hrefs = {link["href"] for link in BeautifulSoup(detail.content, "html.parser").select(".object-tools a")}
+    listing_hrefs = {link["href"] for link in BeautifulSoup(listing.content, "html.parser").select("#result_list a")}
+    assert (_key_list_url("default") in detail_hrefs) == linked
+    assert (_key_list_url("default") in listing_hrefs) == linked
 
 
 def test_a_tracking_cache_needs_the_permission_of_its_transport(db, test_cache):
