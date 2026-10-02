@@ -33,6 +33,21 @@ def key_detail_url(cache_name: str, key: str) -> str:
     return reverse("admin:django_cachex_key_change", args=[quote(pk)])
 
 
+def list_hrefs(request: HttpRequest, cache_name: str) -> dict[str, str]:
+    """Return the cache list and key list links for ``request``.
+
+    A list the user cannot open gets "", so its breadcrumb is plain text and
+    the page has no Back link to it, as in Django's admin.
+    """
+    user = request.user
+    may_view_caches = user.has_perm("django_cachex.view_cache") or user.has_perm("django_cachex.change_cache")  # ty: ignore[unresolved-attribute]
+    may_view_keys = user.has_perm("django_cachex.view_key") or user.has_perm("django_cachex.change_key")  # ty: ignore[unresolved-attribute]
+    return {
+        "cache_list_href": cache_list_url() if may_view_caches else "",
+        "key_list_href": key_list_url(cache_name) if may_view_keys else "",
+    }
+
+
 # =============================================================================
 # View Configuration
 # =============================================================================

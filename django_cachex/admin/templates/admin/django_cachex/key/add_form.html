@@ -13,7 +13,6 @@
 
 {% block breadcrumbs %}
 {% url "admin:index" as index_href %}
-{% url "admin:django_cachex_cache_changelist" as cache_list_href %}
 {% cachex_breadcrumbs _("Home") index_href _("Caches") cache_list_href cache_name key_list_href _("Add Key") %}
 {% endblock %}
 
@@ -59,7 +58,9 @@
 
         <div class="submit-row">
             <input type="submit" value="{% trans "Continue" %}" class="default" name="_continue">
-            <a href="{% url "admin:django_cachex_key_changelist" %}?cache={{ cache_name|urlencode }}" class="closelink" style="margin-left: auto; text-decoration: none;">{% trans "Back" %}</a>
+            {% if key_list_href %}
+            <a href="{{ key_list_href }}" class="closelink" style="margin-left: auto; text-decoration: none;">{% trans "Back" %}</a>
+            {% endif %}
         </div>
     </form>
 </div>

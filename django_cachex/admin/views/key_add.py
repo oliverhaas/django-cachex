@@ -18,6 +18,7 @@ from django_cachex.admin.views.base import (
     cache_list_url,
     key_detail_url,
     key_list_url,
+    list_hrefs,
     show_help,
 )
 from django_cachex.types import KeyType
@@ -87,7 +88,7 @@ def key_add_view(
         {
             "title": f"Add key to '{cache_name}'",
             "cache_name": cache_name,
-            "key_list_href": key_list_url(cache_name),
+            **list_hrefs(request, cache_name),
             "prefill_key": prefill_key,
             "prefill_type": prefill_type,
             "type_choices": [(t.value, _TYPE_LABELS[t]) for t in offered_types],

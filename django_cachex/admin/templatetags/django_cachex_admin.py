@@ -16,27 +16,26 @@ _ADMIN_61_CHROME = django.VERSION >= (6, 1)
 def cachex_breadcrumbs(*crumbs: str) -> SafeString:
     """Render an admin breadcrumb trail as label, url, label, url, ..., label.
 
-    The final argument is the current page and is rendered without a link.
+    The final label and a label with an empty url are rendered without a link.
     """
     if len(crumbs) % 2 == 0:
         msg = "cachex_breadcrumbs takes label/url pairs followed by a final label."
         raise template.TemplateSyntaxError(msg)
-    links = list(zip(crumbs[:-1:2], crumbs[1::2], strict=True))
+    trail = [
+        format_html('<a href="{}">{}</a>', url, label) if url else format_html("{}", label)
+        for label, url in zip(crumbs[:-1:2], crumbs[1::2], strict=True)
+    ]
     current = crumbs[-1]
 
     if _ADMIN_61_CHROME:
-        items = format_html_join("\n", '<li><a href="{}">{}</a></li>', ((url, label) for label, url in links))
+        items = format_html_join("\n", "<li>{}</li>", ((crumb,) for crumb in trail))
         return format_html(
             '<ol class="breadcrumbs">\n{}\n<li aria-current="page">{}</li>\n</ol>',
             items,
             current,
         )
 
-    items = format_html_join(
-        mark_safe("\n&rsaquo;\n"),
-        '<a href="{}">{}</a>',
-        ((url, label) for label, url in links),
-    )
+    items = format_html_join(mark_safe("\n&rsaquo;\n"), "{}", ((crumb,) for crumb in trail))
     return format_html('<div class="breadcrumbs">\n{}\n&rsaquo;\n{}\n</div>', items, current)
 
 

@@ -3343,6 +3343,31 @@ def test_add_form_keeps_a_user_without_view_perm_off_an_existing_key(db, test_ca
     assert "classified-value" not in content
 
 
+@pytest.mark.parametrize("page", ["add form", "create page"])
+@pytest.mark.parametrize(
+    ("perms", "linked"),
+    [
+        (["add_key"], set()),
+        (["view_key", "add_key"], {"keys"}),
+        (["view_cache", "view_key", "add_key"], {"caches", "keys"}),
+    ],
+)
+def test_add_pages_link_only_the_lists_the_user_may_view(db, test_cache: RespCache, page, perms, linked):
+    client = _staff_client(perms)
+    url = _key_add_url("default") if page == "add form" else _key_detail_create_url("default", CREATE_KEY, "hash")
+
+    response = client.get(url)
+
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.content, "html.parser")
+    crumbs = soup.select_one(".breadcrumbs").get_text()
+    assert "Caches" in crumbs
+    assert "default" in crumbs
+    hrefs = {link["href"] for link in soup.select(".breadcrumbs a, .submit-row a")}
+    assert (_cache_list_url() in hrefs) == ("caches" in linked)
+    assert (_key_list_url("default") in hrefs) == ("keys" in linked)
+
+
 def test_delete_button_hidden_in_create_mode(admin_client: Client, test_cache: RespCache):
     """The Delete link submits ``#delete-form``, which only exists once the
     key does. Rendering it in create mode gives a JS TypeError.
