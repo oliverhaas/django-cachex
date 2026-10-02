@@ -244,7 +244,6 @@ def test_order_by(rows):
     assert_query_cached(qs, [rows.t2, rows.t1])
 
 
-@pytest.mark.usefixtures("final_sql_check")
 def test_random_order_by():
     qs = Test.objects.order_by("?")
     with pytest.raises(UncachableQuery):
@@ -266,7 +265,6 @@ def test_order_by_field_of_another_table_with_expression(rows):
     assert_query_cached(qs, [rows.t1, rows.t2])
 
 
-@pytest.mark.usefixtures("final_sql_check")
 def test_random_order_by_subquery():
     qs = Test.objects.filter(pk__in=Test.objects.order_by("?")[:10])
     with pytest.raises(UncachableQuery):

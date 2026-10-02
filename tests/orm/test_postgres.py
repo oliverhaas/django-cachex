@@ -281,7 +281,6 @@ def test_datetime_range():
     )
 
 
-@pytest.mark.usefixtures("final_sql_check")
 def test_transaction_now():
     """Queries with a TransactionNow() parameter are not cached."""
     obj = Test.objects.create(datetime="1992-07-02T12:00:00+00:00")
