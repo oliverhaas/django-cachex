@@ -268,7 +268,7 @@ class RespCache(BaseCachex):
             config = "django_cachex.serializers.pickle.PickleSerializer"
         items: list[Any] = list(config) if isinstance(config, (list, tuple)) else [config]
         if not items:
-            msg = "OPTIONS['serializer'] must not be an empty list; configure at least one serializer or omit it"
+            msg = "OPTIONS['serializer'] must not be empty; configure at least one serializer or omit it"
             raise ImproperlyConfigured(msg)
         return [_load_codec(item) for item in items]
 
