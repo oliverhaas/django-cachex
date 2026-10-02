@@ -4,7 +4,7 @@ from urllib.parse import quote, unquote
 from django.conf import settings
 from django.db import models
 
-from django_cachex.admin.helpers import CacheUnavailableError, get_cache, mask_credentials, mask_location
+from django_cachex.admin.helpers import CacheUnavailableError, get_cache, key_display, mask_credentials, mask_location
 
 
 class Cache(models.Model):
@@ -126,24 +126,31 @@ class Key(models.Model):
         verbose_name_plural = "Keys"
 
     def __str__(self) -> str:
-        return self.key_name or "Key"
+        return key_display(self.key_name) or "Key"
 
     @classmethod
     def make_pk(cls, cache_name: str, key_name: str) -> str:
         """Create a primary key from cache name and key name.
 
-        The cache name is percent-encoded so a ``:`` in it can't be confused
-        with the separator; key names can contain ``:`` freely because
-        ``parse_pk`` splits on the first separator only.
+        The percent-encoded cache name ends at the first ``:``, so key names can hold ``:``.
+        A key name that UTF-8 cannot encode follows a ``!``, percent-encoded for the URL.
         """
-        return f"{quote(cache_name, safe='')}:{key_name}"
+        cache_part = quote(cache_name, safe="")
+        try:
+            key_name.encode()
+        except UnicodeEncodeError:
+            return f"{cache_part}!{quote(key_name, safe='', errors='surrogateescape')}"
+        return f"{cache_part}:{key_name}"
 
     @classmethod
     def parse_pk(cls, pk: str) -> tuple[str, str]:
         """Parse a primary key into (cache_name, key_name)."""
-        parts = pk.split(":", 1)
-        if len(parts) == 2:
-            return unquote(parts[0]), parts[1]
+        cache_part, sep, key_name = pk.partition(":")
+        if "!" in cache_part:
+            cache_part, sep, key_name = pk.partition("!")
+            key_name = unquote(key_name, errors="surrogateescape")
+        if sep:
+            return unquote(cache_part), key_name
         return "", pk
 
     @classmethod

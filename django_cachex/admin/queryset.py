@@ -37,6 +37,7 @@ from django_cachex.admin.helpers import (
     creatable_types,
     get_cache,
     get_size,
+    key_display,
     mask_credentials,
     requested_cache,
 )
@@ -542,7 +543,7 @@ def _pipelined_sizes(cache: Any, rows: list[Key]) -> None:
         return
     with client.pipeline(transaction=False) as raw:
         for row in strings:
-            raw.strlen(cache.make_key(row.key_name))
+            raw.strlen(cache.make_and_validate_key(row.key_name))
         for row, size in zip(strings, raw.execute(), strict=True):
             row.key_size = size  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
 
@@ -589,18 +590,24 @@ def _describe_keys(cache: Any, cache_name: str, keys: list[str], type_filter: st
     return rows
 
 
+@admin.display(description=_("key name"), ordering="key_name")
+def key_name(obj: Key) -> str:
+    """List the name through ``key_display``; the string ``"key_name"`` would render the raw model field."""
+    return key_display(obj.key_name)
+
+
 class KeyAdminMixin:
     """Key list admin behaviour: list_display, filtering, search, delete action, and
     cursor-based pagination. Used as a mixin before the concrete ModelAdmin base.
     """
 
     list_display: ClassVar[Any] = [
-        "key_name",
+        key_name,
         "type_display",
         "ttl_display",
         "size_display",
     ]
-    list_display_links: ClassVar[Any] = ["key_name"]
+    list_display_links: ClassVar[Any] = [key_name]
     list_filter: ClassVar[Any] = [CacheFilter, TypeFilter]
     search_fields: ClassVar[Any] = ["key_name"]
     actions: ClassVar[Any] = ["delete_selected_keys"]
@@ -813,7 +820,7 @@ class KeyAdminMixin:
                 else:
                     missing += 1
             except Exception as exc:  # noqa: BLE001
-                errors.append(f"'{key_obj.key_name}': {mask_credentials(str(exc))}")
+                errors.append(f"'{key_display(key_obj.key_name)}': {mask_credentials(str(exc))}")
         if deleted:
             messages.success(request, f"Successfully deleted {deleted} key(s).")
         if missing:

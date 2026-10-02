@@ -2105,7 +2105,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         if count is None:
             count = self._default_scan_itersize
         result = self._client().scan(_enc(cursor), match=match, count=count, type=_object_type(_type))
-        keys = [k.decode(errors="backslashreplace") if isinstance(k, bytes) else k for k in result[1]]
+        keys = [k.decode(errors="surrogateescape") if isinstance(k, bytes) else k for k in result[1]]
         return int(_dec_str(result[0])), keys
 
     def iter_keys(self, pattern: str, itersize: int | None = None) -> Iterator[str]:
@@ -3150,7 +3150,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         if count is None:
             count = self._default_scan_itersize
         result = await client.scan(_enc(cursor), match=match, count=count, type=_object_type(_type))
-        keys = [k.decode(errors="backslashreplace") if isinstance(k, bytes) else k for k in result[1]]
+        keys = [k.decode(errors="surrogateescape") if isinstance(k, bytes) else k for k in result[1]]
         return int(_dec_str(result[0])), keys
 
     async def aiter_keys(self, pattern: str, itersize: int | None = None):
@@ -3993,7 +3993,7 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
         object_type = _object_type(_type)
         while not cursor.is_finished():
             cursor, keys = client.scan(cursor, match=match, count=count, type=object_type)
-            yield from (k.decode(errors="backslashreplace") if isinstance(k, bytes) else k for k in keys)
+            yield from (k.decode(errors="surrogateescape") if isinstance(k, bytes) else k for k in keys)
 
     def scan(
         self,
@@ -4017,7 +4017,7 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
         while not cursor.is_finished():
             cursor, keys = await client.scan(cursor, match=match, count=count, type=object_type)
             for key in keys:
-                yield key.decode(errors="backslashreplace") if isinstance(key, bytes) else key
+                yield key.decode(errors="surrogateescape") if isinstance(key, bytes) else key
 
     async def ascan(
         self,

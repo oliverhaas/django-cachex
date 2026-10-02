@@ -60,7 +60,7 @@ def test_scan_empty(
     assert keys == []
 
 
-def test_scan_keeps_keys_next_to_an_undecodable_name(
+def test_scan_returns_an_undecodable_name_that_reads_and_deletes_its_own_key(
     cache: RespCache,
     client_class: str,
     sentinel_mode: str | bool,
@@ -68,8 +68,8 @@ def test_scan_keeps_keys_next_to_an_undecodable_name(
 ):
     if _is_py_cluster(client_class, sentinel_mode, resp_adapter):
         pytest.skip("SCAN raises on a redis-py or valkey-py cluster")
-    cache.set("scanbad_ok", 1)
-    cache.get_client(write=True).set(cache.make_key("scanbad_").encode() + b"\xff", b"raw")
+    cache.set("scanbad_\\xff", "escaped spelling")
+    cache.get_client(write=True).set(cache.make_key("scanbad_").encode() + b"\xff", cache.encode("raw bytes"))
 
     cursor, keys = cache.scan(pattern="scanbad_*")
     all_keys = set(keys)
@@ -77,7 +77,11 @@ def test_scan_keeps_keys_next_to_an_undecodable_name(
         cursor, keys = cache.scan(cursor=cursor, pattern="scanbad_*")
         all_keys.update(keys)
 
-    assert all_keys == {"scanbad_ok", "scanbad_\\xff"}
+    assert all_keys == {"scanbad_\\xff", "scanbad_\udcff"}
+    assert cache.get("scanbad_\udcff") == "raw bytes"
+    assert cache.delete("scanbad_\udcff") is True
+    assert cache.get("scanbad_\udcff") is None
+    assert cache.get("scanbad_\\xff") == "escaped spelling"
 
 
 def test_decr_version(cache: RespCache):
@@ -206,7 +210,7 @@ async def test_ascan_empty(
 
 
 @pytest.mark.asyncio
-async def test_ascan_keeps_keys_next_to_an_undecodable_name(
+async def test_ascan_returns_an_undecodable_name_that_reads_and_deletes_its_own_key(
     cache: RespCache,
     client_class: str,
     sentinel_mode: str | bool,
@@ -214,8 +218,8 @@ async def test_ascan_keeps_keys_next_to_an_undecodable_name(
 ):
     if _is_py_cluster(client_class, sentinel_mode, resp_adapter):
         pytest.skip("SCAN raises on a redis-py or valkey-py cluster")
-    cache.set("ascanbad_ok", 1)
-    cache.get_client(write=True).set(cache.make_key("ascanbad_").encode() + b"\xff", b"raw")
+    cache.set("ascanbad_\\xff", "escaped spelling")
+    cache.get_client(write=True).set(cache.make_key("ascanbad_").encode() + b"\xff", cache.encode("raw bytes"))
 
     cursor, keys = await cache.ascan(pattern="ascanbad_*")
     all_keys = set(keys)
@@ -223,7 +227,11 @@ async def test_ascan_keeps_keys_next_to_an_undecodable_name(
         cursor, keys = await cache.ascan(cursor=cursor, pattern="ascanbad_*")
         all_keys.update(keys)
 
-    assert all_keys == {"ascanbad_ok", "ascanbad_\\xff"}
+    assert all_keys == {"ascanbad_\\xff", "ascanbad_\udcff"}
+    assert await cache.aget("ascanbad_\udcff") == "raw bytes"
+    assert await cache.adelete("ascanbad_\udcff") is True
+    assert await cache.aget("ascanbad_\udcff") is None
+    assert await cache.aget("ascanbad_\\xff") == "escaped spelling"
 
 
 @pytest.fixture

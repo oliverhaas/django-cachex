@@ -61,7 +61,7 @@ The Valkey/Redis backends and `LocMemCache` take all three flags, and `TrackingC
 | `lock(key, ...)` | Get a distributed lock, see [Lock Interface](#lock-interface) |
 | `keys(pattern)` | Get keys matching pattern |
 | `iter_keys(pattern)` | Iterate keys matching pattern |
-| `scan(cursor=0, pattern="*", count=None, version=None, key_type=None)` | Single SCAN iteration. `key_type` keeps only keys of that type. A key name that is not valid UTF-8 comes back with its bad bytes escaped, as in `bad\xff` |
+| `scan(cursor=0, pattern="*", count=None, version=None, key_type=None)` | Single SCAN iteration. `key_type` keeps only keys of that type. A key name that is not valid UTF-8 comes back decoded with the `surrogateescape` error handler, as from `os.listdir()`, and the key commands take it back as is |
 | `delete_pattern(pattern)` | Delete keys matching pattern |
 | `rename(src, dst, version=None, version_src=None, version_dst=None)` | Rename a key; raises `KeyNotFoundError` when `src` does not exist. `version_src` and `version_dst` override `version` for one side |
 | `renamenx(src, dst, version=None, version_src=None, version_dst=None)` | Rename a key only if `dst` does not exist; `False` when `dst` exists or `src` does not |

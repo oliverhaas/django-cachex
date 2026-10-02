@@ -29,6 +29,7 @@ from django_cachex.admin.helpers import (
     get_cache,
     get_type_data,
     is_hashable,
+    key_display,
     mask_credentials,
     parse_json_or_str,
     read_value_with_sha1,
@@ -125,7 +126,7 @@ def _stored_string_size(cache: Any, key: str) -> int | None:
     if not hasattr(cache, "get_client"):
         return None
     try:
-        return cache.get_client(write=False).strlen(cache.make_key(key))
+        return cache.get_client(write=False).strlen(cache.make_and_validate_key(key))
     except NotSupportedError:
         return None
 
@@ -881,7 +882,7 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         elif key_type is not None and action in _ACTION_TYPES and key_type != _ACTION_TYPES[action]:
             messages.error(
                 request,
-                f"Key '{key}' is now a {key_type}, not a {_ACTION_TYPES[action]}: "
+                f"Key '{key_display(key)}' is now a {key_type}, not a {_ACTION_TYPES[action]}: "
                 "it changed since you loaded the page, so nothing was written. Review the current value below.",
             )
             return _redirect_to_key(request, cache_name, key, page)
@@ -926,7 +927,7 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             messages.error(request, unknown_type_message(cache, requested_type))
             return redirect(key_list_url(cache_name))
         else:
-            messages.error(request, f"Key '{key}' does not exist in cache '{cache_name}'.")
+            messages.error(request, f"Key '{key_display(key)}' does not exist in cache '{cache_name}'.")
             return redirect(key_list_url(cache_name))
 
     key_type = None
@@ -1026,7 +1027,8 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
         "key_prefix": cache.key_prefix,
         "version": cache.version,
     }
-    raw_key = cache.make_key(key)
+    shown_key = key_display(key)
+    raw_key = key_display(cache.make_key(key))
 
     user = request.user
     # ``_check_post_permission`` rejects the same submissions; hiding the
@@ -1039,10 +1041,10 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     context = admin.site.each_context(request)
     context.update(
         {
-            "title": f"Add Key: {key}" if create_mode else f"Key: {key}",
+            "title": f"Add Key: {shown_key}" if create_mode else f"Key: {shown_key}",
             "cache_name": cache_name,
             **list_hrefs(request, cache_name),
-            "key": key,
+            "key": shown_key,
             "raw_key": raw_key,
             "cache_metadata": cache_metadata,
             "key_exists": key_exists,

@@ -81,6 +81,15 @@ def unreachable_message(cache_name: str, exc: BaseException) -> str:
     return f"Cache '{cache_name}' is unreachable: {mask_credentials(str(exc))}"
 
 
+def key_display(name: str) -> str:
+    """Show a key name that UTF-8 cannot encode as its bytes, like ``b'bad\\xff'``."""
+    try:
+        name.encode()
+    except UnicodeEncodeError:
+        return repr(name.encode(errors="surrogateescape"))
+    return name
+
+
 def read_value(cache: Any, key: str) -> Any:
     """Read a value for display, bypassing stampede prevention.
 
@@ -643,7 +652,7 @@ def get_size(cache: Any, key: str, key_type: str | None = None) -> int | None:
         if hasattr(cache, "get_client"):
             try:
                 client = cache.get_client(write=False)
-                return client.strlen(cache.make_key(key))
+                return client.strlen(cache.make_and_validate_key(key))
             except NotSupportedError:
                 pass
         # Fallback: compute Python object size (e.g. LocMemCache). Decode

@@ -527,6 +527,18 @@ class RespCache(BaseCachex):
             return key
         return original
 
+    @override
+    def make_and_validate_key(self, key: Any, version: int | None = None) -> Any:
+        """Make and validate the key; a name from :meth:`scan` with surrogates goes out as its original bytes."""
+        made = super().make_and_validate_key(key, version=version)
+        if made.isascii():
+            return made
+        try:
+            made.encode()
+        except UnicodeEncodeError:
+            return made.encode(errors="surrogateescape")
+        return made
+
     # =========================================================================
     # Core Cache Operations (Django's BaseCache interface)
     # =========================================================================
@@ -4273,8 +4285,8 @@ class RespClusterCache(RespCache):
         """
         if version is None:
             version = self.version
-        old_key = self.make_and_validate_key(key, version=version)
-        new_key = self.make_and_validate_key(key, version=version + delta)
+        old_key = self.make_key(key, version=version)
+        new_key = self.make_key(key, version=version + delta)
         tag = _hash_tag(old_key)
         if tag is None or tag != _hash_tag(new_key):
             raise NotSupportedError(

@@ -2920,14 +2920,57 @@ def test_key_list_renders_with_broken_value(admin_client, test_cache):
     assert BROKEN_KEY in response.content.decode()
 
 
-def test_key_list_keeps_other_keys_next_to_an_undecodable_name(admin_client: Client, test_cache: RespCache):
-    test_cache.set("plain:key", "value")
-    test_cache.get_client(write=True).set(test_cache.make_key("bad:").encode() + b"\xff", b"raw")
+def test_key_list_shows_an_undecodable_name_apart_from_its_escaped_spelling(
+    admin_client: Client,
+    test_cache: RespCache,
+):
+    raw_key = test_cache.make_key("bad:").encode() + b"\xff"
+    test_cache.set("bad:\\xff", "escaped spelling")
+    test_cache.get_client(write=True).set(raw_key, test_cache.encode("raw bytes"))
 
     response = admin_client.get(_key_list_url("default"))
 
     assert response.status_code == 200
-    assert set(_result_column(response.content, "key_name")) == {"plain:key", "bad:\\xff"}
+    assert set(_result_column(response.content, "key_name")) == {"bad:\\xff", "b'bad:\\xff'"}
+    assert _result_column(response.content, "type_display") == ["string", "string"]
+
+
+def test_undecodable_key_opens_from_the_key_list_and_saves_an_edit(admin_client: Client, test_cache: RespCache):
+    raw_key = test_cache.make_key("bad:").encode() + b"\xff"
+    test_cache.set("bad:\\xff", "escaped spelling")
+    test_cache.get_client(write=True).set(raw_key, test_cache.encode("raw bytes"))
+    listing = admin_client.get(_key_list_url("default"))
+    link = BeautifulSoup(listing.content, "html.parser").find("a", string="b'bad:\\xff'")["href"]
+
+    page = admin_client.get(link)
+    soup = BeautifulSoup(page.content, "html.parser")
+    sha1 = soup.select_one('input[name="original_sha1"]')["value"]
+    response = admin_client.post(link, {"action": "update", "value": '"edited"', "original_sha1": sha1})
+
+    assert page.status_code == 200
+    assert "b'bad:\\xff'" in soup.select_one("#content-main code").get_text()
+    assert "raw bytes" in page.content.decode()
+    assert response.status_code == 302
+    assert test_cache.decode(test_cache.get_client(write=False).get(raw_key)) == "edited"
+    assert test_cache.get("bad:\\xff") == "escaped spelling"
+
+
+def test_undecodable_key_is_deleted_by_the_key_list_action(admin_client: Client, test_cache: RespCache):
+    raw_key = test_cache.make_key("bad:").encode() + b"\xff"
+    test_cache.set("bad:\\xff", "escaped spelling")
+    test_cache.get_client(write=True).set(raw_key, test_cache.encode("raw bytes"))
+    listing = admin_client.get(_key_list_url("default"))
+    row = BeautifulSoup(listing.content, "html.parser").find("a", string="b'bad:\\xff'").find_parent("tr")
+    pk = row.select_one("input.action-select")["value"]
+
+    response = admin_client.post(
+        _key_list_url("default"),
+        {"action": "delete_selected_keys", "_selected_action": [pk]},
+    )
+
+    assert response.status_code == 302
+    assert test_cache.get_client(write=False).exists(raw_key) == 0
+    assert test_cache.get("bad:\\xff") == "escaped spelling"
 
 
 def test_oversized_string_is_neither_read_nor_rendered(admin_client: Client, test_cache: RespCache, mocker):

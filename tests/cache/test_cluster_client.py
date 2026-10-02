@@ -448,6 +448,12 @@ def test_incr_version_renames_inside_the_tag(mocker):
     cache.adapter.rename.assert_called_once_with(":1:{user}:k", ":2:{user}:k")
 
 
+def test_incr_version_renames_an_undecodable_name_inside_the_tag(mocker):
+    cache = setup_cluster_cache(mocker)
+    assert cache.incr_version("{user}:\udcff") == 2
+    cache.adapter.rename.assert_called_once_with(b":1:{user}:\xff", b":2:{user}:\xff")
+
+
 def test_key_prefix_tag_colocates_versions(mocker):
     cache = setup_cluster_cache(mocker, KEY_PREFIX="{app}")
     assert cache.incr_version("k", delta=2, version=3) == 5
