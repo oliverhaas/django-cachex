@@ -130,10 +130,9 @@ def test_index_shows_support_badge(admin_client: Client, test_cache):
     response = admin_client.get(url)
     assert response.status_code == 200
 
-    data_table = _table_containing(response.content, "default")
-
-    table_text = data_table.get_text().lower()
-    assert "cachex" in table_text, "'cachex' badge not found in cache table"
+    names = _result_column(response.content, "name")
+    badges = _result_column(response.content, "support_display")
+    assert dict(zip(names, badges, strict=True))["default"] == "cachex"
 
 
 def test_index_shows_backend_column(admin_client: Client, test_cache):
@@ -350,12 +349,9 @@ def test_key_list_shows_type_column(
     response = admin_client.get(url + "&q=type:*")
     assert response.status_code == 200
 
-    data_table = _table_containing(response.content, "type:string:test")
-
-    table_text = data_table.get_text()
-
-    assert "string" in table_text, "'string' not found in table"
-    assert "list" in table_text, "'list' not found in table"
+    names = _result_column(response.content, "key_name")
+    types = _result_column(response.content, "type_display")
+    assert dict(zip(names, types, strict=True)) == {"type:string:test": "string", "type:list:test": "list"}
 
 
 def test_key_list_shows_ttl_column(
@@ -605,7 +601,7 @@ def test_hash_key_detail(
     url = _key_detail_url("default", "hash:test")
     response = admin_client.get(url)
     assert response.status_code == 200
-    assert b"hash" in response.content.lower()
+    assert 'type-hash">hash</span>' in response.content.decode()
 
 
 def test_zset_key_detail(
@@ -617,7 +613,7 @@ def test_zset_key_detail(
     url = _key_detail_url("default", "zset:test")
     response = admin_client.get(url)
     assert response.status_code == 200
-    assert b"zset" in response.content.lower()
+    assert 'type-zset">zset</span>' in response.content.decode()
 
 
 def test_nonexistent_key_detail(admin_client: Client, test_cache):
