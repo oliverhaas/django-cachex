@@ -88,6 +88,17 @@ def _hash_tag(key: str) -> str | None:
     return key[open_idx + 1 : close_idx]
 
 
+def _wire_key(made_key: str) -> Any:
+    """Return the made key for the driver: its original bytes when it holds surrogates from :meth:`RespCache.scan`."""
+    if made_key.isascii():
+        return made_key
+    try:
+        made_key.encode()
+    except UnicodeEncodeError:
+        return made_key.encode(errors="surrogateescape")
+    return made_key
+
+
 def _load_codec(config: str | type | Any) -> Any:
     """Resolve a serializer/compressor config (dotted path, class or instance) to an instance."""
     if isinstance(config, str):
@@ -529,15 +540,7 @@ class RespCache(BaseCachex):
 
     @override
     def make_and_validate_key(self, key: Any, version: int | None = None) -> Any:
-        """Make and validate the key; a name from :meth:`scan` with surrogates goes out as its original bytes."""
-        made = super().make_and_validate_key(key, version=version)
-        if made.isascii():
-            return made
-        try:
-            made.encode()
-        except UnicodeEncodeError:
-            return made.encode(errors="surrogateescape")
-        return made
+        return _wire_key(super().make_and_validate_key(key, version=version))
 
     # =========================================================================
     # Core Cache Operations (Django's BaseCache interface)

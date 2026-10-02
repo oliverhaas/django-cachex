@@ -17,7 +17,7 @@ from django.core.exceptions import ImproperlyConfigured
 
 from django_cachex.cache._delegation import DelegatingCacheMixin
 from django_cachex.cache.base import BaseCachex, CachexSupportLevel
-from django_cachex.cache.resp import RespCache
+from django_cachex.cache.resp import RespCache, _wire_key
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.stampede import should_recompute, should_recompute_remaining
 from django_cachex.utils import _glob_to_regex
@@ -590,8 +590,9 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         try:
             pipe = self._transport.adapter.pipeline(transaction=False)
             for made_key in made_keys:
-                pipe.get(made_key)
-                pipe.pttl(made_key)
+                wire_key = _wire_key(made_key)
+                pipe.get(wire_key)
+                pipe.pttl(wire_key)
             results = pipe.execute()
         except BaseException:
             for made_key, token in tokens.items():
@@ -605,8 +606,9 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
         try:
             pipe = await self._transport.adapter.apipeline(transaction=False)
             for made_key in made_keys:
-                pipe.get(made_key)
-                pipe.pttl(made_key)
+                wire_key = _wire_key(made_key)
+                pipe.get(wire_key)
+                pipe.pttl(wire_key)
             results = await pipe.execute()
         except BaseException:
             for made_key, token in tokens.items():

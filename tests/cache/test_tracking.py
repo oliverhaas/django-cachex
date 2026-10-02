@@ -981,6 +981,16 @@ def test_write_on_another_pod_evicts_the_local_copy(tracking_pair):
     assert _wait_for(lambda: pod1.get("shared") == "new")
 
 
+def test_write_on_another_pod_evicts_the_local_copy_of_an_undecodable_name(tracking_pair):
+    pod1, pod2 = tracking_pair
+    pod1.set("bad\udcff", "old")
+    assert pod1.get("bad\udcff") == "old"
+    assert pod2.get("bad\udcff") == "old"
+    pod2.set("bad\udcff", "new")
+    assert pod2.get("bad\udcff") == "new"
+    assert _wait_for(lambda: pod1.get("bad\udcff") == "new")
+
+
 def test_transport_delete_evicts(tracking_pair):
     pod1, _pod2 = tracking_pair
     pod1.set("gone", 1)
@@ -1691,6 +1701,14 @@ async def test_aget_many_aset_many_adelete_many_aclear(tracking_cache):
     await tracking_cache.aclear()
     assert _tracking_section(tracking_cache)["entries"] == 0
     assert await tracking_cache.aget("c2") is None
+
+
+@BOTH_MODES
+@pytest.mark.asyncio
+async def test_aget_and_aget_many_fetch_an_undecodable_name(tracking_cache):
+    await tracking_cache.aset_many({"bad\udcff": 1, "worse\udcfe": 2})
+    assert await tracking_cache.aget("bad\udcff") == 1
+    assert await tracking_cache.aget_many(["bad\udcff", "worse\udcfe"]) == {"bad\udcff": 1, "worse\udcfe": 2}
 
 
 @BOTH_MODES

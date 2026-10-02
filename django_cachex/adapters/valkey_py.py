@@ -597,7 +597,7 @@ def _hgetex_args(key: str, fields: tuple[str, ...], *, ex: int | None, persist: 
 
 
 def _text(value: Any) -> str:
-    return value.decode("utf-8", "replace") if isinstance(value, bytes) else str(value)
+    return value.decode("utf-8", "surrogateescape") if isinstance(value, bytes) else str(value)
 
 
 def _is_connected(conn: Any) -> bool:
