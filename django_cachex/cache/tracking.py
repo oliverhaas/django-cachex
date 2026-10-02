@@ -257,6 +257,16 @@ _TRACKING_REGISTRY: dict[str, _TrackingState] = {}
 _REGISTRY_LOCK = Lock()
 
 
+def _reset_registry_lock() -> None:
+    """Replace the registry lock in a forked child, where no thread of the parent can release it."""
+    global _REGISTRY_LOCK  # noqa: PLW0603
+    _REGISTRY_LOCK = Lock()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_registry_lock)
+
+
 class TrackingCache(DelegatingCacheMixin, BaseCachex):
     """Read-through local cache over ``OPTIONS['transport']``.
 

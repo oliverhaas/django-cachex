@@ -23,6 +23,7 @@ from valkey.exceptions import ConnectionError as ValkeyConnectionError
 from valkey.exceptions import ResponseError as ValkeyResponseError
 
 from django_cachex.adapters.protocols import Invalidation
+from django_cachex.cache import tracking as tracking_module
 from django_cachex.cache.tracking import _TRACKING_REGISTRY, TrackingCache, _TrackingState
 from django_cachex.exceptions import NotSupportedError
 from tests.fixtures.cache import (
@@ -1290,6 +1291,11 @@ def test_an_instance_inherited_across_a_fork_rebinds_its_state(tracking_cache, m
 
 @pytest.mark.filterwarnings("ignore:This process .* is multi-threaded:DeprecationWarning")
 @pytest.mark.parametrize(
+    "held_lock",
+    [lambda cache: cache._state.lock, lambda cache: tracking_module._REGISTRY_LOCK],
+    ids=["state-lock", "registry-lock"],
+)
+@pytest.mark.parametrize(
     "write",
     [
         lambda cache: cache.set("forked", 1),
@@ -1301,14 +1307,14 @@ def test_an_instance_inherited_across_a_fork_rebinds_its_state(tracking_cache, m
     ],
     ids=["set", "set_many", "delete_pattern", "clear", "aclear", "shutdown"],
 )
-def test_a_write_in_a_forked_child_skips_a_lock_held_at_the_fork(tracking_cache, write):
+def test_a_write_in_a_forked_child_skips_a_lock_held_at_the_fork(tracking_cache, write, held_lock):
     """Only the forking thread survives a fork, so a lock another thread held
     then stays held in the child; its first write must not wait on it."""
-    state = tracking_cache._state
+    lock = held_lock(tracking_cache)
     holding, release = threading.Event(), threading.Event()
 
     def hold_the_lock():
-        with state.lock:
+        with lock:
             holding.set()
             release.wait(10)
 
@@ -1332,7 +1338,7 @@ def test_a_write_in_a_forked_child_skips_a_lock_held_at_the_fork(tracking_cache,
     if waited == (0, 0):
         os.kill(pid, signal.SIGKILL)
         os.waitpid(pid, 0)
-        pytest.fail("the forked child's write deadlocked on the parent's state lock")
+        pytest.fail("the forked child's write deadlocked on a lock held at the fork")
     assert os.waitstatus_to_exitcode(waited[1]) == 0
 
 
