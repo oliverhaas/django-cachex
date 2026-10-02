@@ -146,8 +146,9 @@ waiting for the lock. Add `"transaction_mode": "IMMEDIATE"` to the database's
 `timeout` option (5 seconds by default).
 
 Inside `transaction.atomic()`, `ATOMIC_REQUESTS` included, the row lock of a
-compound operation or `incr()` lasts until the outer transaction ends. Keep
-these calls out of long-running transactions.
+compound operation or `incr()`, on SQLite the database's write lock, lasts
+until the outer transaction ends. Keep these calls out of long-running
+transactions.
 
 ### Composite backend
 
