@@ -21,6 +21,7 @@ _build*
 .\#*
 dump.rdb
 .idea
+.vscode/
 .venv
 .venv-*
 .coverage
