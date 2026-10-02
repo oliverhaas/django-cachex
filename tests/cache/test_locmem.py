@@ -16,6 +16,7 @@ import pytest
 from django.core.cache import caches
 from django.test import override_settings
 
+from django_cachex.cache.base import BaseCachex
 from django_cachex.cache.locmem import LocMemCache, _ZSet
 from django_cachex.exceptions import NotSupportedError, WrongTypeError
 from django_cachex.utils import _deep_getsizeof, _glob_to_regex
@@ -2217,6 +2218,15 @@ def _twin_state(cache: LocMemCache) -> tuple[dict[str, object], dict[str, int | 
 # One-member sets keep ``spop``/``srandmember`` deterministic.
 _ASYNC_TWIN_CASES = [
     ("aset", ("s", 7), {"get": True}),
+    ("aget", ("s",), {}),
+    ("aadd", ("new", 1), {}),
+    ("atouch", ("s", 100), {}),
+    ("adelete", ("l",), {}),
+    ("aget_or_set", ("new", lambda: 3), {}),
+    ("aset_many", ({"s": 1, "new": 2},), {}),
+    ("adelete_many", (["s", "l", "missing"],), {}),
+    ("aclear", (), {}),
+    ("aclose", (), {}),
     ("ahas_key", ("l",), {}),
     ("aincr", ("s",), {}),
     ("adecr", ("s", 2), {}),
@@ -2302,10 +2312,16 @@ async def test_async_twin_matches_sync(locmem_cache: LocMemCache, name, args, kw
 
 
 def test_async_twin_cases_cover_every_async_method():
-    defined = {
-        name
-        for name, member in vars(LocMemCache).items()
-        if inspect.iscoroutinefunction(member) or inspect.isasyncgenfunction(member)
+    # ``dir()`` rather than ``vars()``, so the ``a*`` methods inherited from
+    # Django's ``BaseCache``, which run the sync twin in a thread, count too.
+    owners = {
+        name: next(klass for klass in LocMemCache.__mro__ if name in vars(klass))
+        for name in dir(LocMemCache)
+        if inspect.iscoroutinefunction(getattr(LocMemCache, name))
+        or inspect.isasyncgenfunction(getattr(LocMemCache, name))
     }
+    # ``BaseCachex``'s raise NotSupportedError for what this backend lacks.
+    assert {name for name, owner in owners.items() if owner not in (LocMemCache, BaseCachex)} == set()
+    defined = {name for name, owner in owners.items() if owner is LocMemCache}
     # ``asemaphore`` builds a new Semaphore per call; test_semaphores.py covers it.
     assert defined - {"asemaphore"} == {case[0] for case in _ASYNC_TWIN_CASES}

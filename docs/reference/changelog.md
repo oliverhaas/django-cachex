@@ -25,6 +25,7 @@
 - One key name that is not valid UTF-8 made `scan()` and `ascan()` raise `UnicodeDecodeError`, so the admin's key list showed an error instead of any key. They now return that name with its bad bytes escaped, as in `bad\xff`, next to the other keys.
 - `LocMemCache`'s `zadd()`, `zincrby()`, `zrem()`, `zrank()` and `zrevrank()` raised `ValueError` for a member equal to a stored one with another string form, such as `1` or `True` for a stored `1.0`, and a failed `zrem()` left the member in `zrange()` but not in `zcard()`. They now act on the stored member.
 - `LocMemCache.delete()` returned `True` for an expired key, which `get()` and `has_key()` already treated as missing. It now returns `False`, as Redis does, and still removes the key.
+- `LocMemCache`'s `aget()`, `aadd()`, `atouch()`, `adelete()`, `aget_or_set()`, `adelete_many()`, `aclear()` and `aclose()` went through `sync_to_async` and a worker thread, although the docs say its async methods call the sync method directly. They now do.
 
 ### Documentation
 

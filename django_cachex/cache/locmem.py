@@ -1686,6 +1686,52 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     # Each ``a*`` calls its sync twin directly. The per-LOCATION ``_lock`` can
     # block the loop under contention, bounded by short in-memory sections.
 
+    # Django's ``BaseCache`` runs these in a thread through ``sync_to_async``,
+    # or composes them from its methods that do.
+    async def aget(self, key: str, default: Any = None, version: int | None = None) -> Any:
+        return self.get(key, default, version=version)
+
+    async def aadd(
+        self,
+        key: str,
+        value: Any,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+    ) -> bool:
+        return self.add(key, value, timeout=timeout, version=version)
+
+    async def atouch(self, key: str, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
+        return self.touch(key, timeout=timeout, version=version)
+
+    async def adelete(self, key: str, version: int | None = None) -> bool:
+        return self.delete(key, version=version)
+
+    async def aget_or_set(
+        self,
+        key: str,
+        default: Any,
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+    ) -> Any:
+        return self.get_or_set(key, default, timeout=timeout, version=version)
+
+    async def aset_many(
+        self,
+        data: dict[str, Any],
+        timeout: float | None = DEFAULT_TIMEOUT,
+        version: int | None = None,
+    ) -> list[Any]:
+        return self.set_many(data, timeout=timeout, version=version)
+
+    async def adelete_many(self, keys: Iterable[str], version: int | None = None) -> None:
+        self.delete_many(keys, version=version)
+
+    async def aclear(self) -> None:
+        self.clear()
+
+    async def aclose(self, **kwargs: Any) -> None:
+        self.close(**kwargs)
+
     # Django 6.0's ``BaseCache`` composes these from ``aget``/``aset`` (6.1
     # routes to an overridden sync twin), which would bypass the overrides above.
     async def ahas_key(self, key: str, version: int | None = None) -> bool:
