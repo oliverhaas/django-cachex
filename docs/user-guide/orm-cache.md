@@ -122,6 +122,24 @@ def hashed_table_key(*, db_alias: str, table: str) -> str:
 CACHEX_ORM = {"TABLE_KEYGEN": "myproject.cache_keys.hashed_table_key"}
 ```
 
+This query keygen adds the django-tenants schema to the query key, so tenants do not share results (see [Limits](#limits)):
+
+```python
+# myproject/cache_keys.py
+from django_cachex.orm.utils import readable_query_key
+
+
+def tenant_query_key(*, compiler, tables, digest):
+    query_key = readable_query_key(compiler=compiler, tables=tables, digest=digest)
+    return f"{compiler.connection.schema_name}:{query_key}"
+```
+
+```python
+CACHEX_ORM = {"QUERY_KEYGEN": "myproject.cache_keys.tenant_query_key"}
+```
+
+The table keys stay the same in every schema, so a write to a table in one schema invalidates that table's results in all of them. Give the ORM cache an alias without a tenant-aware `KEY_FUNCTION` such as `django_tenants.cache.make_key`, which would put the tenant into the table keys too.
+
 ### Eviction
 
 A write does not delete the results it invalidates, so they stay in the cache until they expire or are evicted. What a full Redis or Valkey server evicts depends on its `maxmemory-policy`:
@@ -223,6 +241,7 @@ python manage.py invalidate_orm_cache shop.Order --cache default --db default
 - The ORM cache does not see writes by other applications and database clients, triggers and rules, `COPY`, or stored procedures run with `callproc()`. Call `invalidate()` or `invalidate_orm_cache` after them. Deletes follow the foreign keys that Django declares with a database-level `on_delete` (`DB_CASCADE`, `DB_SET_NULL`, `DB_SET_DEFAULT`). `TRUNCATE ... CASCADE` follows every table that references a truncated one.
 - Raw SQL writes are recognized by keyword (`INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `ALTER`, `CREATE`, `DROP`, `REFRESH`, `REPLACE INTO`, `MERGE INTO`) and their tables by name. Tables without a model are found only when listed in `ADDITIONAL_TABLES`. Transactions opened with a raw `BEGIN` are not seen, so use `atomic()`.
 - Results read from a view are cached under the view's name, so writes to the tables behind it do not invalidate them. List views in `UNCACHABLE_TABLES`, or `invalidate()` them after such writes. `REFRESH MATERIALIZED VIEW` invalidates the view it names.
+- A result is keyed by the database alias, SQL and parameters. If the same SQL returns other rows depending on session state, such as django-tenants' per-tenant `search_path` or a row-level security policy reading a session setting, one tenant is served another's rows. Add that state to the query key (see [Cache keys](#cache-keys)).
 - Leave replicas out of `DATABASES`. Writes to the primary do not invalidate what was cached from a replica's alias.
 - A failover of the cache server can lose the latest generation changes, which makes stale results current again. Run `invalidate_orm_cache` after a failover.
 - Writes made while the app was uninstalled, a database was left out of `DATABASES` or `CACHE` named another alias did not invalidate the cache. Run `invalidate_orm_cache` before switching back.

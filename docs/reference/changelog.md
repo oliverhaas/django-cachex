@@ -34,6 +34,7 @@
 
 ### Documentation
 
+- The ORM cache guide says that under django-tenants' per-tenant `search_path` or a row-level security policy, one tenant can be served another's cached rows, and shows a `QUERY_KEYGEN` that adds the tenant to the query key.
 - The quickstart and the configuration reference say that the redis-py backends reject `valkey://` and `valkeys://` URLs, with a `ValueError` on the first cache call.
 - The API reference, the async guide and the `TrackingCache` docs no longer claim async twins for `info()`, `slowlog_get()` and `slowlog_len()`, which have none.
 - The `TrackingCache` guide says which calls open the listener connection. Reads and `info()` do, writes do not.
