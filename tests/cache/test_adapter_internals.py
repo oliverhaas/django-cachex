@@ -283,6 +283,12 @@ def _retrying_sentinel_options(retry_on_error: list[type[Exception]]) -> dict[st
     }
 
 
+RETRY_ON_TIMEOUT_IS_DEPRECATED = pytest.mark.filterwarnings(
+    "ignore:Call to '__init__' function with deprecated usage of input argument/s 'retry_on_timeout':DeprecationWarning",
+)
+
+
+@RETRY_ON_TIMEOUT_IS_DEPRECATED
 @pytest.mark.parametrize("adapter_class", SENTINEL_ADAPTERS)
 def test_sentinel_kwargs_retry_list_keeps_one_sync_pool(monkeypatch: pytest.MonkeyPatch, adapter_class: Any):
     monkeypatch.setattr(adapter_class, "_sync_pools", {})
@@ -296,6 +302,7 @@ def test_sentinel_kwargs_retry_list_keeps_one_sync_pool(monkeypatch: pytest.Monk
     assert retry_on_error == [ConnectionError]
 
 
+@RETRY_ON_TIMEOUT_IS_DEPRECATED
 @pytest.mark.parametrize("adapter_class", SENTINEL_ADAPTERS)
 @pytest.mark.asyncio
 async def test_sentinel_kwargs_retry_list_keeps_one_async_pool(monkeypatch: pytest.MonkeyPatch, adapter_class: Any):
