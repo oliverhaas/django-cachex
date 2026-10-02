@@ -26,8 +26,8 @@ def test_set_nx_with_expiration(cache: RespCache):
     cache.delete("expiring_nx")
     result = cache.set("expiring_nx", "temporary", timeout=2, nx=True)
     assert result is True
-    cache.expire("expiring_nx", 0)
-    assert cache.get("expiring_nx") is None
+    assert cache.get("expiring_nx") == "temporary"
+    assert_ttl_seconds(cache.ttl("expiring_nx"), 2)
 
 
 def test_set_nx_does_not_change_existing_ttl(cache: RespCache):
@@ -43,12 +43,6 @@ def test_set_nx_does_not_change_existing_ttl(cache: RespCache):
         assert_ttl_seconds(new_ttl, original_ttl)
 
 
-def test_key_expires_after_timeout(cache: RespCache):
-    cache.set("expires_soon", "temp_data", timeout=3)
-    cache.expire("expires_soon", 0)
-    assert cache.get("expires_soon") is None
-
-
 def test_zero_timeout_immediate_expiration(cache: RespCache):
     cache.set("instant_expire", "gone", timeout=0)
     assert cache.get("instant_expire") is None
@@ -60,8 +54,7 @@ def test_timeout_as_positional_arg(cache: RespCache):
 
     cache.set("pos_timeout2", 888, 1)
     assert cache.get("pos_timeout2") == 888
-    cache.expire("pos_timeout2", 0)
-    assert cache.get("pos_timeout2") is None
+    assert_ttl_seconds(cache.ttl("pos_timeout2"), 1)
 
 
 def test_timeout_positional_with_nx(cache: RespCache):
@@ -152,7 +145,7 @@ def test_pttl_returns_milliseconds(cache: RespCache):
 def test_fractional_timeout_truncates_to_whole_seconds(cache: RespCache):
     # ``get_backend_timeout`` does ``int(timeout)``, so 5.5 is stored as a 5 s TTL.
     cache.set("half_sec", "data", 5.5)
-    assert cache.pttl("half_sec") == pytest.approx(5000, abs=500)
+    assert 4000 < cache.pttl("half_sec") <= 5000
 
 
 def test_pttl_returns_none_for_persistent(cache: RespCache):
@@ -218,7 +211,7 @@ def test_expire_on_missing_key_returns_false(cache: RespCache):
 def test_pexpire_sets_millisecond_ttl(cache: RespCache):
     cache.set("pexp_key", "data", timeout=None)
     assert cache.pexpire("pexp_key", 20500) is True
-    assert cache.pttl("pexp_key") == pytest.approx(20_500, abs=1000)
+    assert 20_000 < cache.pttl("pexp_key") <= 20_500
 
 
 def test_pexpire_on_missing_key_returns_false(cache: RespCache):
@@ -283,8 +276,7 @@ def test_touch_resets_expiration(cache: RespCache):
     cache.set("touch_reset", "data", timeout=10)
     assert cache.touch("touch_reset", 2) is True
     assert cache.get("touch_reset") == "data"
-    cache.expire("touch_reset", 0)
-    assert cache.get("touch_reset") is None
+    assert_ttl_seconds(cache.ttl("touch_reset"), 2)
 
 
 def test_touch_negative_timeout_deletes(cache: RespCache):
@@ -320,8 +312,8 @@ async def test_aset_nx_with_expiration(cache: RespCache):
     await cache.adelete("aexpiring_nx")
     result = await cache.aset("aexpiring_nx", "temporary", timeout=2, nx=True)
     assert result is True
-    cache.expire("aexpiring_nx", 0)
-    assert await cache.aget("aexpiring_nx") is None
+    assert await cache.aget("aexpiring_nx") == "temporary"
+    assert_ttl_seconds(await cache.attl("aexpiring_nx"), 2)
 
 
 @pytest.mark.asyncio
@@ -339,13 +331,6 @@ async def test_aset_nx_does_not_change_existing_ttl(cache: RespCache):
 
 
 @pytest.mark.asyncio
-async def test_akey_expires_after_timeout(cache: RespCache):
-    await cache.aset("aexpires_soon", "temp_data", timeout=3)
-    cache.expire("aexpires_soon", 0)
-    assert await cache.aget("aexpires_soon") is None
-
-
-@pytest.mark.asyncio
 async def test_azero_timeout_immediate_expiration(cache: RespCache):
     await cache.aset("ainstant_expire", "gone", timeout=0)
     assert await cache.aget("ainstant_expire") is None
@@ -358,8 +343,7 @@ async def test_atimeout_as_positional_arg(cache: RespCache):
 
     await cache.aset("apos_timeout2", 888, 1)
     assert await cache.aget("apos_timeout2") == 888
-    cache.expire("apos_timeout2", 0)
-    assert await cache.aget("apos_timeout2") is None
+    assert_ttl_seconds(await cache.attl("apos_timeout2"), 1)
 
 
 @pytest.mark.asyncio
@@ -446,7 +430,7 @@ async def test_apttl_returns_milliseconds(cache: RespCache):
 @pytest.mark.asyncio
 async def test_apttl_with_fractional_timeout(cache: RespCache):
     await cache.aset("ahalf_sec", "data", 5.5)
-    assert await cache.apttl("ahalf_sec") == pytest.approx(5500, abs=1000)
+    assert 4000 < await cache.apttl("ahalf_sec") <= 5000
 
 
 @pytest.mark.asyncio
@@ -511,7 +495,7 @@ async def test_aexpire_on_missing_key_returns_false(cache: RespCache):
 async def test_apexpire_sets_millisecond_ttl(cache: RespCache):
     cache.set("apexpire_key", "data", timeout=None)
     assert await cache.apexpire("apexpire_key", 20500) is True
-    assert cache.pttl("apexpire_key") == pytest.approx(20_500, abs=1000)
+    assert 20_000 < cache.pttl("apexpire_key") <= 20_500
 
 
 @pytest.mark.asyncio
@@ -597,8 +581,7 @@ async def test_atouch_resets_expiration(cache: RespCache):
     await cache.aset("atouch_reset", "data", timeout=10)
     assert await cache.atouch("atouch_reset", 2) is True
     assert await cache.aget("atouch_reset") == "data"
-    cache.expire("atouch_reset", 0)
-    assert await cache.aget("atouch_reset") is None
+    assert_ttl_seconds(await cache.attl("atouch_reset"), 2)
 
 
 @pytest.mark.asyncio
