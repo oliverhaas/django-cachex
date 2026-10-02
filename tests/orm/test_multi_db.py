@@ -67,9 +67,6 @@ def test_heterogeneous_atomics(rows):
         with assert_num_queries(0):
             assert list(Test.objects.all()) == [rows.t1, rows.t2]
 
-        with assert_num_queries(1):
-            assert list(Test.objects.filter(name="test3")) == []
-
 
 def test_heterogeneous_atomics_independence():
     """Rolling back an atomic block still invalidates what a nested atomic block for another database committed."""

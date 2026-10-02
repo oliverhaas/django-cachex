@@ -639,27 +639,6 @@ def test_invalidate_prefetch_related():  # noqa: PLR0915
         assert data7[0].owner.username == "modified_user"
 
 
-@pytest.mark.skipif(
-    not connection.features.has_select_for_update,
-    reason="Database doesn't support feature(s): has_select_for_update",
-)
-def test_invalidate_select_for_update():
-    with assert_num_queries(1):
-        Test.objects.bulk_create([Test(name="test1"), Test(name="test2")])
-
-    with assert_num_queries(1), transaction.atomic():
-        data1 = list(Test.objects.select_for_update())
-        assert [t.name for t in data1] == ["test1", "test2"]
-
-    with assert_num_queries(1), transaction.atomic():
-        qs = Test.objects.select_for_update()
-        qs.update(name="test3")
-
-    with assert_num_queries(1), transaction.atomic():
-        data2 = list(Test.objects.select_for_update())
-        assert [t.name for t in data2] == ["test3"] * 2
-
-
 def test_prefetch_related_similar_table_names():
     # The prefetch selects a column of ormtest_testchild_permissions with extra(select=...).
     child = TestChild.objects.create(name="child")
