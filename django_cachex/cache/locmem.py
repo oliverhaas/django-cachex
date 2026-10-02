@@ -517,7 +517,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         get: bool = False,
     ) -> Any:
         """Async: see :meth:`set`. Calls the sync method directly, like the rest
-        of the async surface (see the note above ``attl``)."""
+        of the async surface (see the note above ``aget``)."""
         return self.set(key, value, timeout, version, nx=nx, xx=xx, get=get)
 
     # =========================================================================
