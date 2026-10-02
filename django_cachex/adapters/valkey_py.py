@@ -5160,8 +5160,10 @@ class ValkeyPyAsyncPipelineAdapter(ValkeyPyPipelineAdapter, RespAsyncPipelinePro
 
 
 __all__ = [
-    "_VALKEY_AVAILABLE",
+    "AsyncClusterRegistry",
     "AsyncPoolsRegistry",
+    "ClusterRegistry",
+    "PoolsRegistry",
     "ValkeyPyAdapter",
     "ValkeyPyAsyncPipelineAdapter",
     "ValkeyPyClusterAdapter",
