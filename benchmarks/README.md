@@ -137,7 +137,9 @@ BENCH_NET_DELAY_US=250 uv run pytest benchmarks/ -c benchmarks/pytest.ini
 makes it useful for quick algorithm comparisons on a laptop without
 containers running.
 
-A summary table prints at the end of the session.
+A summary table prints at the end of the session. Reference results from a
+full run, and the machine they come from, are in
+[docs/reference/benchmarks.md](../docs/reference/benchmarks.md).
 
 ## Notes
 
@@ -233,102 +235,3 @@ BENCH_NET_DELAY_US=250 uv run pytest benchmarks/test_orm.py -c benchmarks/pytest
 The whole file takes about 8 minutes, 9 with `BENCH_NET_DELAY_US=250` and 12
 with `BENCH_NET_DELAY_US=1000`. The results and what they show are in
 [docs/reference/benchmarks.md](../docs/reference/benchmarks.md#orm-cache-vs-django-cachalot).
-
-## Reference results
-
-Snapshot of the adapter matrix on a Ryzen 9 5950X / 32 GiB / Linux 6.17,
-cp314 GIL, Django 6.0, all servers in local Docker. Numbers shift run to
-run; ordering is what matters.
-
-### Sync direct (`test_adapters_sync`) in ops/sec
-
-| Adapter              |    get | get-miss |    set |  mget |  mset |   incr | delete | py-mem KiB |
-| -------------------- | -----: | -------: | -----: | ----: | ----: | -----: | -----: | ---------: |
-| redis-py             |  2,301 |    2,439 |  2,251 | 1,439 | 1,285 |  2,463 |  1,189 |        111 |
-| redis-py+hiredis     |  2,332 |    2,480 |  2,281 | 1,515 | 1,345 |  2,506 |  1,209 |         51 |
-| valkey-py            |  2,783 |    2,956 |  2,695 | 1,595 | 1,418 |  2,978 |  1,437 |        109 |
-| valkey-py+libvalkey  |  2,821 |    2,973 |  2,741 | 1,695 | 1,508 |  3,040 |  1,465 |         48 |
-| **valkey-glide**     |  6,982 |    8,783 |  6,982 | 2,030 | 1,916 |  8,901 |  3,994 |         29 |
-| django (builtin)     |  2,307 |    2,459 |  2,269 | 1,501 | 1,347 |  1,947 |  1,199 |         51 |
-
-### Django request cycle (`test_adapters_request_cycle`, `#req`) in ops/sec
-
-One cache op per request through the full middleware/URL/view path.
-
-| Adapter              |   get | get-miss |   set |  mget |  mset |  incr | delete |
-| -------------------- | ----: | -------: | ----: | ----: | ----: | ----: | -----: |
-| redis-py             | 1,106 |    1,180 | 1,129 |   835 |   778 | 1,153 |  1,152 |
-| redis-py+hiredis     | 1,065 |    1,181 | 1,131 |   866 |   807 | 1,168 |  1,173 |
-| valkey-py            | 1,089 |    1,299 | 1,241 |   891 |   836 | 1,276 |  1,282 |
-| valkey-py+libvalkey  | 1,053 |    1,306 | 1,248 |   924 |   861 | 1,290 |  1,300 |
-| **valkey-glide**     | 1,237 |    1,863 | 1,753 | 1,023 |   994 | 1,816 |  1,838 |
-| django (builtin)     |   861 |    1,177 | 1,133 |   859 |   806 | 1,016 |  1,169 |
-
-### Async serial (`test_adapters_async_serial`, `#async`) in ops/sec
-
-One `await` at a time.
-
-| Adapter              |   get | get-miss |   set |  mget |  mset |  incr | delete |
-| -------------------- | ----: | -------: | ----: | ----: | ----: | ----: | -----: |
-| redis-py             | 1,820 |    1,911 | 1,724 | 1,195 |   849 | 1,903 |    917 |
-| redis-py+hiredis     | 1,815 |    1,913 | 1,729 | 1,199 |   849 | 1,911 |    915 |
-| valkey-py            | 2,080 |    2,184 | 2,039 | 1,331 |   854 | 2,190 |  1,055 |
-| valkey-py+libvalkey  | 2,075 |    2,187 | 2,029 | 1,329 |   852 | 2,176 |  1,049 |
-| **valkey-glide**     | 3,300 |    3,738 | 3,297 | 1,725 | 1,678 | 3,693 |  1,735 |
-| django (builtin)     | 1,948 |    1,995 | 1,929 |   199 |   197 |   989 |    992 |
-
-### Async concurrent at 50 (`test_adapters_async_concurrent`, `#async50`) in ops/sec
-
-`asyncio.gather` of 50 ops in flight, the workload most Django ASGI apps
-actually generate.
-
-| Adapter              |    get | get-miss |    set |  mget |  mset |   incr | delete | conns peak |
-| -------------------- | -----: | -------: | -----: | ----: | ----: | -----: | -----: | ---------: |
-| redis-py             |  2,109 |    2,254 |  2,043 | 1,343 |   925 |  2,148 |    971 |         56 |
-| redis-py+hiredis     |  2,121 |    2,254 |  2,047 | 1,347 |   931 |  2,149 |    979 |        106 |
-| valkey-py            |  2,465 |    2,591 |  2,327 | 1,229 |   920 |  2,569 |  1,130 |         58 |
-| valkey-py+libvalkey  |  2,467 |    2,588 |  2,329 | 1,223 |   917 |  2,564 |  1,129 |        108 |
-| **valkey-glide**     | 10,149 |   12,575 | 10,045 | 2,074 | 2,607 | 12,232 |  2,627 |        109 |
-| django (builtin)     |  2,078 |    2,177 |  2,076 |   212 |   210 |  1,051 |  1,018 |        107 |
-
-### ASGI full-stack (`test_adapters_asgi`)
-
-`granian` (4 workers) + `httpx` (100 concurrent, 20 s). Each request runs
-six async cache ops, the shape closest to real production load.
-
-| Adapter              | req/s | avg ms | p99 ms | RSS peak (MiB) | conns peak | conns settled |
-| -------------------- | ----: | -----: | -----: | -------------: | ---------: | ------------: |
-| redis-py             |   413 |    241 |  1,507 |            435 |        209 |           209 |
-| redis-py+hiredis     |   586 |    170 |  2,422 |            427 |        209 |           209 |
-| valkey-py            |   380 |    262 |  1,467 |            434 |        220 |           220 |
-| valkey-py+libvalkey  |   626 |    159 |  1,181 |            434 |        216 |           216 |
-| valkey-glide         |   324 |    306 |  1,682 |            438 |        115 |           115 |
-| django (builtin)     |   200 |    494 |  2,422 |            523 |        316 |           316 |
-
-These numbers come from a later re-run than the tables above; req/s is noisy
-run to run on this benchmark.
-
-### Takeaways
-
-- **Sync direct.** `valkey-glide` leads every phase at **~7k get / 7k set
-  / 8.9k incr / 4k delete** ops/sec, ~2.5× the fastest pure-Python adapter,
-  and uses ~4× less Python memory.
-- **Django request cycle.** `valkey-glide` leads at ~1.2-1.9k ops/sec.
-  An earlier version failed this benchmark entirely because `close()`
-  was tearing down the connection on every `request_finished` signal;
-  now it outperforms the Python adapters.
-- **Async serial.** `valkey-glide` runs ~1.5-1.8x faster than the C-parser
-  Python adapters on every phase (3.3k get, 3.7k incr).
-- **Async concurrent (50 in flight).** `valkey-glide` peaks at **10k get /
-  12.5k get-miss / 12.2k incr** ops/sec, roughly **4-5x** the fastest
-  Python adapter.
-- **ASGI full-stack** (granian × 4 workers, httpx × 100 concurrent). req/s
-  swings run to run, so read the rough buckets (~600 / ~400 / ~200) rather
-  than the exact ranks. What holds across runs: `valkey-glide` settles at
-  roughly half the connections of the Python adapters (115 vs ~210), and
-  Django's builtin `RedisCache` opens 316 (it builds a fresh `redis.Redis`
-  per cache call) while paying the highest average latency and the largest
-  RSS.
-- **Connection stability.** Across every shape the cachex path keeps
-  `Δ` at 0 between phases, so there are no per-phase connection leaks on
-  any adapter.
