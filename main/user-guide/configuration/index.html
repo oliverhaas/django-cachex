@@ -1617,6 +1617,8 @@ database vendor. These methods and their <code>a*</code> twins raise <code>NotSu
 <li><code>slowlog_get()</code>, <code>slowlog_len()</code>, <code>memory_usage()</code> and <code>largest_keys()</code></li>
 <li>the blocking list pops and the cross-key store commands (<code>lmove()</code>,
   <code>smove()</code>, <code>sinterstore()</code> and the like)</li>
+<li>exclusive score bounds, such as <code>"(5"</code>, in <code>zrangebyscore()</code>,
+  <code>zrevrangebyscore()</code>, <code>zcount()</code> and <code>zremrangebyscore()</code></li>
 <li><code>semaphore()</code> on <code>DatabaseCache</code>. On <code>LocMemCache</code>, it returns the
   in-process <code>django_cachex.Semaphore</code>.</li>
 </ul>
