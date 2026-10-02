@@ -130,9 +130,9 @@ def test_write(protocol):
 
 
 def test_overlapping_writes(protocol):
-    protocol.begin_write("first")
+    protocol.begin_write("first", protocol.tables)
     protocol.begin_write("second", protocol.tables[1:])
-    protocol.end_write("first")
+    protocol.end_write("first", protocol.tables)
     assert protocol.lookup() is BYPASS
     protocol.end_write("second", protocol.tables[1:])
     assert protocol.lookup().token is not None
