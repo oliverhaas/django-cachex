@@ -30,6 +30,7 @@ from django_cachex.exceptions import KeyNotFoundError, NotSupportedError, maybe_
 from django_cachex.script import ScriptHelpers, reject_stray_encoded
 from django_cachex.types import KeyType
 from django_cachex.utils import (
+    _validate_hset_items,
     _validate_linsert_where,
     _validate_lpos_args,
     _validate_pop_count,
@@ -1086,9 +1087,8 @@ class Pipeline:
         of odd length raises ``ValueError`` here, at queue time, and a call with
         no field, no mapping and no items resolves to ``0`` with no command sent.
         """
-        if items and len(items) % 2:
-            msg = "items must hold field/value pairs"
-            raise ValueError(msg)
+        if items:
+            _validate_hset_items(items)
         if field is None and not mapping and not items:
             return self._fixed(0)
         nkey = self._make_key(key, version)

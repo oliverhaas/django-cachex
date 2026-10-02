@@ -38,6 +38,7 @@ from django_cachex.cache.base import BaseCachex, CachexSupportLevel
 from django_cachex.exceptions import CompressorError, NotSupportedError, SerializerError, maybe_wrap_set_nx_get
 from django_cachex.script import ScriptHelpers, reject_stray_encoded
 from django_cachex.utils import (
+    _validate_hset_items,
     _validate_linsert_where,
     _validate_lpos_args,
     _validate_pop_count,
@@ -1620,9 +1621,8 @@ class RespCache(BaseCachex):
         items: list[Any] | None = None,
     ) -> int:
         """Set hash field(s). Use field/value, mapping, or items (flat key-value pairs)."""
-        if items and len(items) % 2:
-            msg = "items must hold field/value pairs"
-            raise ValueError(msg)
+        if items:
+            _validate_hset_items(items)
         if field is None and not mapping and not items:
             return 0
         key = self.make_and_validate_key(key, version=version)
@@ -1754,9 +1754,8 @@ class RespCache(BaseCachex):
         items: list[Any] | None = None,
     ) -> int:
         """Set hash field(s) asynchronously."""
-        if items and len(items) % 2:
-            msg = "items must hold field/value pairs"
-            raise ValueError(msg)
+        if items:
+            _validate_hset_items(items)
         if field is None and not mapping and not items:
             return 0
         key = self.make_and_validate_key(key, version=version)
@@ -1892,9 +1891,7 @@ class RespCache(BaseCachex):
         if mapping:
             encoded.update({f: self.encode(v) for f, v in mapping.items()})
         if items:
-            if len(items) % 2:
-                msg = "items must hold field/value pairs"
-                raise ValueError(msg)
+            _validate_hset_items(items)
             for i in range(0, len(items), 2):
                 encoded[items[i]] = self.encode(items[i + 1])
         if not encoded:
