@@ -2202,7 +2202,7 @@ def test_escaped_range_end_stays_a_bound():
 def _seed_twin_data(cache: LocMemCache) -> None:
     cache.clear()
     cache.set("s", 5, timeout=300)
-    cache.rpush("l", "a", "b", "a")
+    cache.rpush("l", "a", "b", "a", "c")
     cache.sadd("one", "a")
     cache.sadd("two", "a", "b")
     cache.hset("h", mapping={"f": 1, "g": 2.5})
@@ -2311,6 +2311,7 @@ async def test_async_twin_matches_sync(locmem_cache: LocMemCache, name, args, kw
     call = getattr(locmem_cache, name)(*args, **kwargs)
     result = [item async for item in call] if inspect.isasyncgen(call) else await call
     assert result == expected
+    assert type(result) is type(expected)
     assert _twin_state(locmem_cache) == expected_state
 
 
