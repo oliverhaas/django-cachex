@@ -381,7 +381,7 @@ class Pipeline:
         backend_timeout = self._cache.get_backend_timeout(timeout)
         actual_timeout = self._adapter.get_timeout_with_buffer(backend_timeout, stampede_prevention)
 
-        # Immediate expiry: queue the net effect of SET-with-flags followed by DEL.
+        # Immediate expiry: queue the net effect of a SET-with-flags whose key expires on arrival.
         if actual_timeout == 0 and not (nx and xx):
             if get:
                 # SET GET hands back the old value; the key is gone afterwards
@@ -392,7 +392,7 @@ class Pipeline:
                     self._pipeline_adapter.execute_command("GETDEL", nkey)
                 self._decoders.append(self._decode_single)
             elif nx:
-                # SET NX then DEL leaves the key absent either way; EXISTS tells whether SET ran.
+                # SET NX keeps an existing key and an absent one expires on arrival; EXISTS tells whether SET ran.
                 self._pipeline_adapter.exists(nkey)
                 self._decoders.append(lambda result: not result)
             else:
