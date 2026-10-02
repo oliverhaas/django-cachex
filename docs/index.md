@@ -8,7 +8,7 @@ Valkey and Redis cache backend for Django, with a Django admin UI for cache insp
 
 ## Features
 
-A drop-in replacement for Django's built-in Redis cache, plus:
+A replacement for Django's built-in Redis cache that takes the same settings ([two behaviors differ](migration.md#from-djangos-built-in-cache-backend)), plus:
 
 - One package for Valkey and Redis, standalone, [Sentinel](user-guide/sentinel.md) and [Cluster](user-guide/cluster.md).
 - Sync and [async](user-guide/async.md) methods on every cache (`get()` and `aget()`), from one alias and one configuration.
