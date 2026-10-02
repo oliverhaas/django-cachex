@@ -52,6 +52,7 @@ def test_single_string_config_backwards_compatible(redis_container):
 
     with _override_caches(caches):
         cache.set("test_key", "test_value" * 100)
+        assert cache.adapter.get(cache.make_key("test_key"))[:2] == b"\x1f\x8b"
         assert cache.get("test_key") == "test_value" * 100
         cache.delete("test_key")
 
@@ -91,6 +92,7 @@ def test_small_and_large_value_roundtrip(redis_container):
 
         # Above min_length: stored compressed.
         cache.set("large_key", "test_value" * 100)
+        assert pickle.loads(zlib.decompress(cache.adapter.get(cache.make_key("large_key")))) == "test_value" * 100
         assert cache.get("large_key") == "test_value" * 100
 
         cache.delete("small_key")

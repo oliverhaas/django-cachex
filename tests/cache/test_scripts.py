@@ -493,6 +493,7 @@ def test_wrapped_value_reads_back_and_bare_scalar_parses_in_lua(cache: RespCache
     value = "x" * 1000
 
     assert cache.eval_script(SETEXPIRE, keys=["se"], args=[Encoded(value), 300, "0"], pre_hook=encoded_pre) == 1
+    assert (len(cache.adapter.get(cache.make_key("se"))) < len(value)) == (compressors is not None)
     assert cache.get("se") == value
     assert 0 < cache.ttl("se") <= 300
     assert cache.eval_script(SETEXPIRE, keys=["se"], args=[Encoded("other"), 300, "1"], pre_hook=encoded_pre) == 0
