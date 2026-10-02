@@ -704,8 +704,8 @@ def test_test_parent():
     parent.name = "another name"
     parent.save()
 
-    child = TestChild.objects.all().first()
-    assert child.name == "another name"
+    with assert_num_queries(1):
+        assert list(qs.all()) == []
 
 
 @pytest.mark.usefixtures("final_sql_check")
