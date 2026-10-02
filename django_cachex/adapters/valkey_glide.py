@@ -1976,14 +1976,13 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         config = self.resolve_stampede(stampede_prevention)
         if config and found:
             stampede_keys = list(found)
-            if stampede_keys:
-                pipe = self._pipeline()
-                for k in stampede_keys:
-                    pipe.ttl(k)
-                ttls = pipe.execute()
-                for k, ttl in zip(stampede_keys, ttls, strict=False):
-                    if isinstance(ttl, int) and should_recompute(ttl, config):
-                        del found[k]
+            pipe = self._pipeline()
+            for k in stampede_keys:
+                pipe.ttl(k)
+            ttls = pipe.execute()
+            for k, ttl in zip(stampede_keys, ttls, strict=False):
+                if isinstance(ttl, int) and should_recompute(ttl, config):
+                    del found[k]
 
         return found
 
@@ -3017,14 +3016,13 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         config = self.resolve_stampede(stampede_prevention)
         if config and found:
             stampede_keys = list(found)
-            if stampede_keys:
-                batch = self._batch_factory(atomic=False)
-                for k in stampede_keys:
-                    batch.ttl(k)
-                ttls = _checked_exec(await client.exec(batch, raise_on_error=True))
-                for k, ttl in zip(stampede_keys, ttls, strict=False):
-                    if isinstance(ttl, int) and should_recompute(ttl, config):
-                        del found[k]
+            batch = self._batch_factory(atomic=False)
+            for k in stampede_keys:
+                batch.ttl(k)
+            ttls = _checked_exec(await client.exec(batch, raise_on_error=True))
+            for k, ttl in zip(stampede_keys, ttls, strict=False):
+                if isinstance(ttl, int) and should_recompute(ttl, config):
+                    del found[k]
 
         return found
 
