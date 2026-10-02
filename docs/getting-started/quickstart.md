@@ -53,9 +53,12 @@ value = cache.get("key")
 cache.hset("user:1", "name", "Alice")
 cache.zrange("leaderboard", 0, 10)
 
-# Async versions (standard Django methods)
-await cache.aget("key")
-await cache.aset("key", "value", timeout=300)
+
+# Async twins, from async code
+async def refresh():
+    await cache.aset("key", "value", timeout=300)
+    return await cache.aget("key")
+
 
 # The driver client, for commands the cache does not wrap
 client = cache.get_client()
