@@ -165,12 +165,15 @@ def test_deferred_error():
     """An error occurring during the end of a transaction has no impact on future queries."""
     with connection.cursor() as cursor:
         cursor.execute("CREATE TABLE example (id int UNIQUE DEFERRABLE INITIALLY DEFERRED);")
-        with pytest.raises(IntegrityError), transaction.atomic():
-            with assert_num_queries(1):
-                list(Test.objects.all())
-            cursor.execute(
-                "INSERT INTO example VALUES (1), (1);-- " + Test._meta.db_table,
-            )  # Should invalidate Test.
+        try:
+            with pytest.raises(IntegrityError), transaction.atomic():
+                with assert_num_queries(1):
+                    list(Test.objects.all())
+                cursor.execute(
+                    "INSERT INTO example VALUES (1), (1);-- " + Test._meta.db_table,
+                )  # Should invalidate Test.
+        finally:
+            cursor.execute("DROP TABLE example;")
     # PostgreSQL rejects the duplicate at COMMIT, after the bump; SQLite at the INSERT, before any write.
     with assert_num_queries(1 if connection.vendor == "postgresql" else 0):
         assert list(Test.objects.all()) == []

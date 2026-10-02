@@ -131,3 +131,4 @@ def test_tables_sharing_a_key_invalidate_each_other():
         assert_query_cached(queryset)
         invalidate(User)
         assert_query_cached(queryset)
+        invalidate(Test)
