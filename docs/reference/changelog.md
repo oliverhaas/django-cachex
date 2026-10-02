@@ -11,6 +11,7 @@
 ### Fixes
 
 - The ORM cache's `invalidate()` and `invalidate_orm_cache` stopped at the first cache they could not reach, so the caches after it in `CACHES`, the ORM cache itself among them, kept serving stale results. They now invalidate every cache they can reach before raising `InvalidationError` for the ones that failed.
+- A `CACHEX_ORM["LEASE_TIMEOUT"]` that is not a positive number of seconds went unreported: `0` gave writes leases that expire at once, and `None` made every write raise `InvalidationError`. The new `cachex_orm.E008` check reports it.
 - `DatabaseCache.scan()` skipped keys when others were deleted mid-iteration, so a loop that scans and deletes left about half of them. Its cursor is now a position in hash order, like `LocMemCache`'s. The 0.11.0 fix had missed it.
 - On valkey-glide, `xreadgroup()` with id `0` raised `TypeError` when a pending entry had been removed by `XDEL` or `XTRIM`. That entry now comes back with an empty field dict, as on redis-py and valkey-py.
 - On valkey-glide, each sync blocking call (`blpop()`, `brpop()`, `blmove()`, `xread()` and `xreadgroup()` with `block`, or a pipeline holding one) built a client and kept about 2 KB of it for the life of the process, because glide registers every client in a fork hook. Those calls now reuse idle clients.

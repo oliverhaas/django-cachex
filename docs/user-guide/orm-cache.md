@@ -216,6 +216,7 @@ python manage.py invalidate_orm_cache shop.Order --cache default --db default
 | `cachex_orm.E005` | The cache could not be loaded. |
 | `cachex_orm.E006` | A database listed in `DATABASES` is neither PostgreSQL nor SQLite. It is not cached. |
 | `cachex_orm.E007` | A table setting is not a list, tuple or set, like `("django_session")` without its comma. The value counts as empty. |
+| `cachex_orm.E008` | `LEASE_TIMEOUT` is not a positive number of seconds. |
 
 ## Limits
 
