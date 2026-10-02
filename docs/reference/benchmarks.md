@@ -7,10 +7,12 @@ run, so trust the ordering more than the exact values.
 
 ## Setup
 
-- AMD Ryzen 9 5950X (16C/32T) · 32 GiB RAM · Ubuntu 24.04 · Linux 6.17
-- CPython 3.14.2 (GIL build), Django 6.0
-- Redis 8 / Valkey 8 in local Docker, paired natively per adapter
+- AMD Ryzen 9 5950X (16C/32T) · 32 GiB RAM · Ubuntu 24.04 · Linux 7.0
+- CPython 3.14.2 (GIL build), Django 6.1.1
+- Redis 8 / Valkey 9 in local Docker, paired natively per adapter
   (`redis-py` → redis, `valkey-py` / `valkey-glide` → valkey, `django (builtin)` → redis)
+- Every round trip 250 µs longer than on the local Docker network, as within
+  a cloud availability zone
 
 Each column from `get` to `delete` is a phase of 1,000 calls, or 100 calls of
 10 keys for `mget` and `mset`. Throughput is in calls per second. A phase has
@@ -20,15 +22,19 @@ in the compressor benchmarks.
 ## Sync direct
 
 Cache calls such as `cache.get(...)`, with no Django request and no asyncio.
+The round trip takes most of each call, so the django-cachex adapters land
+within 7% of each other. Django's built-in `RedisCache` builds a `redis.Redis`
+client for every call, about 40 µs, and its `incr` makes two round trips
+(`EXISTS`, then `INCRBY`).
 
 | Adapter | get | get-miss | set | mget | mset | incr | delete | py-mem KiB |
 |---------|----:|---------:|----:|-----:|-----:|-----:|-------:|-----------:|
-| redis-py            | 2,179 |  2,327 |  2,150 | 1,368 | 1,226 |  2,345 | 1,132 | 111 |
-| redis-py+hiredis    | 2,235 |  2,365 |  2,176 | 1,448 | 1,289 |  2,374 | 1,147 |  51 |
-| valkey-py           | 2,639 |  2,823 |  2,603 | 1,513 | 1,347 |  2,873 | 1,374 | 109 |
-| valkey-py+libvalkey | 2,707 |  2,865 |  2,613 | 1,617 | 1,421 |  2,887 | 1,394 |  48 |
-| valkey-glide        | 7,110 |  8,821 |  6,887 | 1,928 | 1,844 |  9,076 | 3,980 |  29 |
-| django (builtin)    | 2,218 |  2,360 |  2,205 | 1,416 | 1,290 |  1,855 | 1,143 |  51 |
+| redis-py            | 2,789 | 2,896 | 2,782 | 2,362 | 2,213 | 2,887 | 2,879 | 64 |
+| redis-py+hiredis    | 2,783 | 2,887 | 2,777 | 2,391 | 2,215 | 2,901 | 2,905 | 36 |
+| valkey-py           | 2,869 | 2,946 | 2,883 | 2,396 | 2,301 | 2,953 | 2,953 | 91 |
+| valkey-py+libvalkey | 2,920 | 2,990 | 2,922 | 2,535 | 2,383 | 2,989 | 2,979 | 31 |
+| valkey-glide        | 2,733 | 2,837 | 2,743 | 2,337 | 2,297 | 2,840 | 2,834 | 29 |
+| django (builtin)    | 2,511 | 2,535 | 2,458 | 2,227 | 2,032 | 1,366 | 2,526 | 50 |
 
 ## Serializers
 
@@ -36,11 +42,11 @@ The `valkey-py+libvalkey` adapter with each serializer.
 
 | Serializer | get | get-miss | set | mget | mset | incr | delete |
 |------------|----:|---------:|----:|-----:|-----:|-----:|-------:|
-| pickle    | 2,502 | 2,732 | 2,578 | 1,565 | 1,249 | 2,771 | 1,328 |
-| json      | 2,464 | 2,783 | 2,361 | 1,419 |   898 | 2,846 | 1,348 |
-| msgpack   | 2,459 | 2,726 | 2,609 | 1,653 | 1,165 | 2,831 | 1,344 |
-| orjson    | 2,542 | 2,757 | 2,647 | 1,750 | 1,301 | 2,857 | 1,362 |
-| ormsgpack | 2,550 | 2,792 | 2,632 | 1,742 | 1,290 | 2,884 | 1,360 |
+| pickle    | 2,906 | 2,976 | 2,924 | 2,499 | 2,383 | 2,984 | 2,980 |
+| json      | 2,883 | 2,967 | 2,861 | 2,395 | 2,215 | 2,963 | 2,962 |
+| msgpack   | 2,917 | 2,982 | 2,914 | 2,551 | 2,392 | 2,981 | 2,990 |
+| orjson    | 2,923 | 2,984 | 2,936 | 2,573 | 2,456 | 2,987 | 2,980 |
+| ormsgpack | 2,921 | 2,956 | 2,897 | 2,549 | 2,368 | 2,966 | 2,957 |
 
 ## Compressors (macro)
 
@@ -49,12 +55,12 @@ queryset-shaped payload.
 
 | Compressor | get | get-miss | set | mget | mset | incr | delete | srv-mem KiB |
 |------------|----:|---------:|----:|-----:|-----:|-----:|-------:|------------:|
-| none | 1,577 | 2,711 | 2,342 | 291 | 990 | 2,785 | 1,349 | 1,268 |
-| zlib | 1,544 | 2,770 | 1,902 | 286 | 531 | 2,841 | 1,347 |   166 |
-| gzip | 1,479 | 2,753 | 1,825 | 272 | 486 | 2,864 | 1,354 |   166 |
-| lzma | 1,466 | 2,765 |   646 | 265 |  83 | 2,878 | 1,362 |   163 |
-| lz4  | 1,571 | 2,773 | 2,338 | 290 | 958 | 2,879 | 1,380 |   233 |
-| zstd | 1,564 | 2,782 | 2,248 | 285 | 833 | 2,889 | 1,400 |   166 |
+| none | 2,372 | 2,976 | 2,711 |   918 | 1,480 | 2,988 | 2,982 | 1,269 |
+| zlib | 2,495 | 2,983 | 2,195 | 1,105 |   680 | 2,971 | 2,981 |   169 |
+| gzip | 2,471 | 2,988 | 2,099 | 1,027 |   608 | 2,980 | 2,978 |   169 |
+| lzma | 2,384 | 2,985 |   682 |   920 |    88 | 2,988 | 2,982 |   167 |
+| lz4  | 2,551 | 2,987 | 2,677 | 1,181 | 1,420 | 2,986 | 2,978 |   238 |
+| zstd | 2,532 | 2,984 | 2,563 | 1,153 | 1,190 | 2,987 | 2,984 |   169 |
 
 ## Compressors (micro)
 
@@ -63,26 +69,26 @@ adapter and no network.
 
 | Compressor | output ratio | compress (MB/s) | decompress (MB/s) |
 |------------|-------------:|----------------:|------------------:|
-| zlib |  11.9% |   181.0 | 1,217.2 |
-| gzip |  11.8% |   147.8 | 1,090.0 |
-| lzma |  11.4% |    13.2 |   484.2 |
-| lz4  |  16.6% | 2,945.5 | 6,089.9 |
-| zstd |  11.4% |   780.6 | 2,077.5 |
+| zlib |  11.9% |   155.4 | 1,074.4 |
+| gzip |  11.8% |   128.4 |   766.2 |
+| lzma |  11.4% |    12.2 |   419.3 |
+| lz4  |  16.6% | 2,511.6 | 6,163.5 |
+| zstd |  11.4% |   676.4 | 1,695.5 |
 
 ## Django request cycle
 
 The sync direct workload, with every cache call inside `Client().get(url)`
 (URL resolve → `CommonMiddleware` → view → `request_finished`). The gap to
-sync direct is Django's per-request overhead.
+sync direct is Django's per-request overhead, about 115 µs here.
 
 | Adapter | get | get-miss | set | mget | mset | incr | delete |
 |---------|----:|---------:|----:|-----:|-----:|-----:|-------:|
-| redis-py            | 1,058 | 1,123 | 1,083 |   795 |   745 | 1,099 | 1,077 |
-| redis-py+hiredis    | 1,007 | 1,132 | 1,083 |   832 |   778 | 1,116 | 1,122 |
-| valkey-py           | 1,035 | 1,230 | 1,183 |   844 |   789 | 1,206 | 1,200 |
-| valkey-py+libvalkey | 1,003 | 1,243 | 1,180 |   879 |   825 | 1,215 | 1,238 |
-| valkey-glide        | 1,150 | 1,749 | 1,668 |   983 |   940 | 1,740 | 1,745 |
-| django (builtin)    |   799 | 1,104 | 1,062 |   812 |   765 |   955 | 1,106 |
+| redis-py            | 2,105 | 2,168 | 2,090 | 1,854 | 1,738 | 2,010 | 2,081 |
+| redis-py+hiredis    | 2,150 | 2,215 | 2,142 | 1,900 | 1,806 | 2,058 | 2,097 |
+| valkey-py           | 2,184 | 2,235 | 2,191 | 1,902 | 1,803 | 2,072 | 2,246 |
+| valkey-py+libvalkey | 2,201 | 2,257 | 2,205 | 1,963 | 1,862 | 2,084 | 2,236 |
+| valkey-glide        | 2,079 | 2,126 | 2,054 | 1,823 | 1,791 | 1,974 | 2,106 |
+| django (builtin)    | 1,955 | 1,987 | 1,934 | 1,778 | 1,647 | 1,126 | 1,875 |
 
 ## Async serial
 
@@ -92,42 +98,52 @@ async path, so it also pays for `sync_to_async`.
 
 | Adapter | get | get-miss | set | mget | mset | incr | delete |
 |---------|----:|---------:|----:|-----:|-----:|-----:|-------:|
-| redis-py            | 1,785 | 1,863 | 1,677 | 1,170 |   830 | 1,857 |   891 |
-| redis-py+hiredis    | 1,776 | 1,850 | 1,686 | 1,163 |   840 | 1,842 |   894 |
-| valkey-py           | 2,012 | 2,107 | 1,976 | 1,288 |   836 | 2,138 | 1,020 |
-| valkey-py+libvalkey | 2,031 | 2,138 | 1,976 | 1,294 |   836 | 2,135 | 1,026 |
-| valkey-glide        | 3,251 | 3,634 | 3,291 | 1,640 | 1,634 | 3,680 | 1,735 |
-| django (builtin)    | 1,903 | 2,016 | 1,879 |   193 |   189 |   971 |   970 |
+| redis-py            | 2,709 | 2,805 | 2,666 | 2,316 | 1,924 | 2,793 | 2,787 |
+| redis-py+hiredis    | 2,684 | 2,774 | 2,662 | 2,335 | 1,889 | 2,776 | 2,790 |
+| valkey-py           | 2,678 | 2,768 | 2,675 | 2,318 | 1,997 | 2,756 | 2,746 |
+| valkey-py+libvalkey | 2,670 | 2,762 | 2,671 | 2,318 | 2,006 | 2,766 | 2,759 |
+| valkey-glide        | 2,615 | 2,699 | 2,619 | 2,247 | 2,202 | 2,695 | 2,680 |
+| django (builtin)    | 2,005 | 2,031 | 1,999 | 1,826 | 1,689 | 1,205 | 2,021 |
 
 ## Async concurrent (50 in flight)
 
-`asyncio.gather` of 50 calls at a time. Connection counts stay flat between
-phases on every adapter (`Δ = 0`).
+`asyncio.gather` of 50 calls at a time. redis-py and valkey-py open a
+connection per call in flight, and valkey-glide sends them all over one.
+Django's built-in `RedisCache` runs every call through `sync_to_async` on one
+thread, so it serves 50 in flight about as fast as one at a time. Connection
+counts, which include the harness's own, stay flat between phases on every
+adapter (`Δ = 0`).
 
 | Adapter | get | get-miss | set | mget | mset | incr | delete | conns peak |
 |---------|----:|---------:|----:|-----:|-----:|-----:|-------:|-----------:|
-| redis-py            |  2,076 |  2,199 |  2,007 | 1,323 |   910 |  2,114 |   967 |  56 |
-| redis-py+hiredis    |  2,074 |  2,198 |  1,998 | 1,318 |   897 |  2,110 |   961 | 106 |
-| valkey-py           |  2,434 |  2,530 |  2,290 | 1,186 |   898 |  2,515 | 1,114 |  58 |
-| valkey-py+libvalkey |  2,421 |  2,540 |  2,292 | 1,199 |   918 |  2,522 | 1,108 | 108 |
-| valkey-glide        |  9,903 | 12,208 |  9,770 | 1,949 | 2,541 | 11,950 | 2,588 | 109 |
-| django (builtin)    |  2,007 |  2,170 |  2,058 |   208 |   206 |  1,058 |   991 | 107 |
+| redis-py            | 16,411 | 18,362 | 15,447 |  8,937 |  5,466 | 18,488 | 18,481 | 51 |
+| redis-py+hiredis    | 16,885 | 18,484 | 15,476 |  8,678 |  5,383 | 18,569 | 18,543 | 51 |
+| valkey-py           | 20,514 | 22,735 | 20,088 | 10,133 |  6,427 | 22,510 | 22,838 | 51 |
+| valkey-py+libvalkey | 20,541 | 22,882 | 20,318 | 10,108 |  6,430 | 22,563 | 23,058 | 51 |
+| valkey-glide        | 43,804 | 47,758 | 33,133 | 13,296 | 10,043 | 50,684 | 49,981 |  2 |
+| django (builtin)    |  2,244 |  2,281 |  2,220 |  2,000 |  1,863 |  1,292 |  2,188 |  2 |
 
 ## ASGI full-stack
 
 `granian` (4 workers) and `httpx` (100 concurrent clients, 20 s) against a
 view that makes six async cache calls per request. The harness samples server
-RSS and `connected_clients` every 5 s. The req/s column is noisy, so read it
-in rough buckets (~600, ~400, ~200).
+RSS and `connected_clients` every 5 s, and the connection counts include about
+5 of its own. The req/s column is noisy, so read it in rough buckets: 500 to
+600 for the django-cachex adapters, 350 for Django's built-in `RedisCache`.
+
+Under ASGI, Django gives every request its own instance of a cache backend.
+The built-in `RedisCache` builds a connection pool for each instance, and its
+`close()` leaves the pool open, so its connections climb until the garbage
+collector frees the pools.
 
 | Adapter | req/s | avg ms | p99 ms | RSS peak (MiB) | conns peak | conns settled |
 |---------|------:|-------:|-------:|---------------:|-----------:|--------------:|
-| redis-py            | 413 | 240.6 | 1,507.2 | 435 | 209 | 209 |
-| redis-py+hiredis    | 586 | 170.1 | 2,421.7 | 427 | 209 | 209 |
-| valkey-py           | 380 | 261.8 | 1,467.0 | 434 | 220 | 220 |
-| valkey-py+libvalkey | 626 | 159.2 | 1,180.8 | 434 | 216 | 216 |
-| valkey-glide        | 324 | 306.0 | 1,681.9 | 438 | 115 | 115 |
-| django (builtin)    | 200 | 494.0 | 2,421.7 | 523 | 316 | 316 |
+| redis-py            | 487 | 204.4 | 1,522.8 | 364 |   105 | 105 |
+| redis-py+hiredis    | 597 | 167.1 | 1,270.4 | 368 |   105 | 105 |
+| valkey-py           | 613 | 162.6 | 1,317.0 | 369 |   104 | 104 |
+| valkey-py+libvalkey | 563 | 177.0 | 1,383.5 | 368 |   104 | 104 |
+| valkey-glide        | 500 | 199.2 | 1,451.1 | 425 |     8 |   8 |
+| django (builtin)    | 355 | 279.6 | 1,769.4 | 459 | 1,371 | 180 |
 
 ## ORM cache vs django-cachalot
 
@@ -137,12 +153,11 @@ The contenders are the database alone (`none`), `cachalot`, the ORM cache
 [`TrackingCache`](../user-guide/composite-backends.md) (`+tracking`), which
 keeps local copies of what each process read.
 
-- The machine above on Linux 7.0, CPython 3.14.2 (free-threaded build, with
-  the GIL that libvalkey turns back on), Django 6.1.1, psycopg 3.3.6
+- The machine above, with CPython 3.14.2 (free-threaded build, with the GIL
+  that libvalkey turns back on), Django 6.1.1, psycopg 3.3.6
 - PostgreSQL 18 with `fsync=off` and Valkey 9 in local Docker, both libraries
   on the `valkey-py+libvalkey` backend
-- Every round trip 250 µs longer than on the local Docker network, as within
-  a cloud availability zone, except in the clock skew runs
+- The same 250 µs added to every round trip, except in the clock skew runs
 
 ### Correctness
 
@@ -285,13 +300,14 @@ The harness starts its own Redis, Valkey and PostgreSQL containers, so a
 Docker daemon is the only host requirement:
 
 ```console
-uv run pytest benchmarks/ -c benchmarks/pytest.ini
+# Everything, with 250 µs added to every round trip
+BENCH_NET_DELAY_US=250 uv run pytest benchmarks/ -c benchmarks/pytest.ini
 
 # A single slice
 uv run pytest benchmarks/test_throughput.py::test_adapters_sync \
   -c benchmarks/pytest.ini
 
-# The ORM cache comparison, with 250 µs added to every round trip
+# The ORM cache comparison alone
 BENCH_NET_DELAY_US=250 uv run pytest benchmarks/test_orm.py \
   -c benchmarks/pytest.ini
 ```

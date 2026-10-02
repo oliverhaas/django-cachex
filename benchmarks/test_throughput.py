@@ -145,14 +145,9 @@ def test_adapters_request_cycle(adapter, server_url, results, capsys) -> None:
 
 @pytest.mark.parametrize("adapter", ADAPTER_CONFIGS, ids=lambda c: c.id)
 def test_adapters_asgi(adapter, server_url, asgi_results, capsys) -> None:
-    """Full-stack ASGI benchmark with granian + httpx and 6 cache ops per request.
+    """Full-stack ASGI run with granian and httpx, six cache ops per request.
 
-    Mirrors django-vcache's ``bench_compare.py`` shape so numbers are
-    directly comparable. To reproduce vcache's connection-leak claim
-    against Django's built-in ``RedisCache`` you need network latency
-    (``tc qdisc add dev eth0 root netem delay 1ms``); on localhost the
-    leak doesn't manifest because sync_to_async threads finish before
-    the pool can grow.
+    Shaped like django-vcache's ``bench_compare.py``, so the numbers compare.
     """
     pickle_serializer = SERIALIZER_BY_ID["pickle"]
     location = server_url(adapter.server)

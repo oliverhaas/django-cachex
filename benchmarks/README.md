@@ -70,12 +70,10 @@ to stress the pool. The ASGI benchmark hits the pool from four worker
 processes simultaneously, which is enough to expose any per-call client
 pattern.
 
-To match django-vcache's exact methodology (which also adds simulated
-network latency to amplify connection-lifetime issues), run the script
-inside a Docker container with `--cap-add NET_ADMIN` and apply
-`tc qdisc add dev eth0 root netem delay 1ms` against the cache server's
-interface. Without latency the directional ranking is the same; with it,
-the gaps widen.
+To match django-vcache's methodology, which also adds 1 ms of network latency
+to amplify connection-lifetime issues, set `BENCH_NET_DELAY_US=1000` (see
+Notes). Without latency the directional ranking is the same; with it, the
+gaps widen.
 
 **Async** gets two views via `aget` / `aset` / `aget_many` / etc.:
 
