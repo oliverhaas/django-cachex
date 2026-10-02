@@ -93,14 +93,16 @@ def test_smove_version_src_dst(cache: RespCache):
 
 def test_spop_default_count(cache: RespCache):
     cache.sadd("foo", "bar1", "bar2")
-    assert cache.spop("foo") in {"bar1", "bar2"}
-    assert cache.smembers("foo") in [{"bar1"}, {"bar2"}]
+    popped = cache.spop("foo")
+    assert popped in {"bar1", "bar2"}
+    assert cache.smembers("foo") == {"bar1", "bar2"} - {popped}
 
 
 def test_spop_with_count(cache: RespCache):
     cache.sadd("foo", "bar1", "bar2")
-    assert cache.spop("foo", 1) in [{"bar1"}, {"bar2"}]
-    assert cache.smembers("foo") in [{"bar1"}, {"bar2"}]
+    popped = cache.spop("foo", 1)
+    assert popped in [{"bar1"}, {"bar2"}]
+    assert cache.smembers("foo") == {"bar1", "bar2"} - popped
 
 
 def test_srandmember_default_count(cache: RespCache):
