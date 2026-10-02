@@ -1,16 +1,22 @@
 """Container fixtures for Redis and Sentinel using testcontainers."""
 
+import shutil
+import subprocess
 import time
 from collections.abc import Callable, Generator
 from contextlib import suppress
+from functools import partial
 from os import environ
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import docker
 import pytest
 import redis
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Standalone (and Sentinel, which runs from the same image) server images.
 # CI's minimum-server job overrides them with the oldest documented releases.
@@ -85,12 +91,95 @@ def _start_container(container: DockerContainer, port: int) -> ContainerInfo:
         raise
 
 
-def _start_redis_container(image: str) -> ContainerInfo:
-    """Start a Redis container with the given image."""
+def _redis_server(image: str, *server_args: str) -> DockerContainer:
+    """A container, not yet started, that runs ``redis-server`` with ``server_args``."""
     container = DockerContainer(image)
     container.with_exposed_ports(6379)
-    container.with_command("redis-server --protected-mode no")
+    container.with_command(" ".join(["redis-server --protected-mode no", *server_args]))
     container.waiting_for(LogMessageWaitStrategy("Ready to accept connections"))
+    return container
+
+
+def _start_redis_container(image: str) -> ContainerInfo:
+    """Start a Redis container with the given image."""
+    return _start_container(_redis_server(image), 6379)
+
+
+ACL_USERNAME = "cachex"
+ACL_PASSWORD = "cachex-secret"
+
+
+def _start_acl_container(image: str) -> ContainerInfo:
+    """Start a server whose ``default`` user is off, so only ``ACL_USERNAME`` gets in."""
+    server_args = ("--user default off", f"--user {ACL_USERNAME} on >{ACL_PASSWORD} ~* +@all")
+    return _start_container(_redis_server(image, *server_args), 6379)
+
+
+class TlsCertificates(NamedTuple):
+    """A throwaway CA, the server certificate it signed (both in ``directory``), and an unrelated CA."""
+
+    directory: Path
+    ca: Path
+    other_ca: Path
+
+
+_OPENSSL_CONFIG = """\
+[req]
+distinguished_name = dn
+[dn]
+[ca]
+basicConstraints = critical, CA:TRUE
+keyUsage = critical, keyCertSign, cRLSign
+subjectKeyIdentifier = hash
+[server]
+basicConstraints = critical, CA:FALSE
+keyUsage = critical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = DNS:localhost, IP:127.0.0.1, IP:::1
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid
+"""
+
+
+def _issue_tls_certificates(directory: Path) -> TlsCertificates:
+    """Write two CAs and a ``localhost`` server certificate signed by the first into ``directory``.
+
+    The extensions are spelled out because Python's default context verifies
+    with ``VERIFY_X509_STRICT``, which rejects certificates that lack them.
+    """
+    openssl = shutil.which("openssl")
+    if openssl is None:
+        pytest.skip("the openssl command is needed to issue the test certificates")
+
+    def run(*args: str) -> None:
+        subprocess.run([openssl, *args], cwd=directory, check=True, capture_output=True)  # noqa: S603
+
+    (directory / "openssl.cnf").write_text(_OPENSSL_CONFIG)
+    for name, subject in (("ca", "/CN=django-cachex test CA"), ("other-ca", "/CN=django-cachex other CA")):
+        run(
+            *("req", "-x509", "-config", "openssl.cnf", "-extensions", "ca", "-newkey", "rsa:2048", "-nodes"),
+            *("-subj", subject, "-days", "2", "-keyout", f"{name}.key", "-out", f"{name}.crt"),
+        )
+    run(
+        *("req", "-config", "openssl.cnf", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=localhost"),
+        *("-keyout", "server.key", "-out", "server.csr"),
+    )
+    run(
+        *("x509", "-req", "-in", "server.csr", "-CA", "ca.crt", "-CAkey", "ca.key", "-set_serial", "1"),
+        *("-days", "2", "-extfile", "openssl.cnf", "-extensions", "server", "-out", "server.crt"),
+    )
+    return TlsCertificates(directory, directory / "ca.crt", directory / "other-ca.crt")
+
+
+def _start_tls_container(image: str, certificates: TlsCertificates) -> ContainerInfo:
+    """Start a server that only speaks TLS, with the server certificate from ``certificates``."""
+    container = _redis_server(
+        image,
+        "--port 0 --tls-port 6379 --tls-auth-clients no --tls-ca-cert-file /tls/ca.crt",
+        "--tls-cert-file /tls/server.crt --tls-key-file /tls/server.key",
+    )
+    for name in ("ca.crt", "server.crt", "server.key"):
+        container.with_copy_into_container(certificates.directory / name, f"/tls/{name}")
     return _start_container(container, 6379)
 
 
@@ -335,6 +424,58 @@ def redis_container(
     factory, _ = redis_container_factory
     image, client_library = _resolve_image(request)
     host, port = factory(image)
+    return RedisContainerInfo(host, port, client_library)
+
+
+def _containers_by_image(start: Callable[[str], ContainerInfo]) -> Generator[ContainerFactory]:
+    """Start one container per image on first use and stop them all on close."""
+    started: dict[str, ContainerInfo] = {}
+
+    def get_container(image: str) -> tuple[str, int]:
+        if image not in started:
+            started[image] = start(image)
+        info = started[image]
+        return info.host, info.port
+
+    try:
+        yield get_container
+    finally:
+        for info in started.values():
+            with suppress(Exception):
+                info.container.stop()
+
+
+@pytest.fixture(scope="session")
+def acl_container_factory() -> Generator[ContainerFactory]:
+    """Session-scoped factory for servers that only let ``ACL_USERNAME`` in."""
+    yield from _containers_by_image(_start_acl_container)
+
+
+@pytest.fixture
+def acl_container(acl_container_factory: ContainerFactory, request: pytest.FixtureRequest) -> RedisContainerInfo:
+    """Get a server for the active ``resp_adapter`` that only lets ``ACL_USERNAME`` in."""
+    image, client_library = _resolve_image(request)
+    host, port = acl_container_factory(image)
+    return RedisContainerInfo(host, port, client_library)
+
+
+@pytest.fixture(scope="session")
+def tls_certificates(tmp_path_factory: pytest.TempPathFactory) -> TlsCertificates:
+    """Certificates issued for this session; skips the tests without the openssl command."""
+    return _issue_tls_certificates(tmp_path_factory.mktemp("tls"))
+
+
+@pytest.fixture(scope="session")
+def tls_container_factory(tls_certificates: TlsCertificates) -> Generator[ContainerFactory]:
+    """Session-scoped factory for servers that only speak TLS."""
+    yield from _containers_by_image(partial(_start_tls_container, certificates=tls_certificates))
+
+
+@pytest.fixture
+def tls_container(tls_container_factory: ContainerFactory, request: pytest.FixtureRequest) -> RedisContainerInfo:
+    """Get a TLS-only server for the active ``resp_adapter``, its certificate signed by ``tls_certificates.ca``."""
+    image, client_library = _resolve_image(request)
+    host, port = tls_container_factory(image)
     return RedisContainerInfo(host, port, client_library)
 
 

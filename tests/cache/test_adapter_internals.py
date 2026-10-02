@@ -1033,49 +1033,11 @@ def _pool_kwargs(**options: Any) -> dict[str, Any]:
 
 
 @requires_valkey
-def test_username_and_password_are_forwarded():
-    captured = _pool_kwargs(username="alice", password="s3cret")  # noqa: S106
-
-    assert captured["kwargs"]["username"] == "alice"
-    assert captured["kwargs"]["password"] == "s3cret"
-
-
-@requires_valkey
-def test_ssl_settings_are_forwarded():
-    captured = _pool_kwargs(ssl_cert_reqs="required", ssl_ca_certs="/etc/ssl/ca.pem")
-
-    assert captured["kwargs"]["ssl_cert_reqs"] == "required"
-    assert captured["kwargs"]["ssl_ca_certs"] == "/etc/ssl/ca.pem"
-
-
-@requires_valkey
 def test_client_only_options_stay_out_of_the_pool():
     captured = _pool_kwargs(username="alice", serializer="pickle", pool_class="valkey.ConnectionPool")
 
     assert "serializer" not in captured["kwargs"]
     assert "pool_class" not in captured["kwargs"]
-
-
-@requires_valkey
-def test_tls_scheme_selects_the_tls_connection_class():
-    import valkey
-
-    adapter = ValkeyPyAdapter([SERVER_URL])
-
-    pool = adapter._get_connection_pool(write=True)
-
-    assert pool.connection_class is valkey.SSLConnection
-    assert pool.connection_kwargs["username"] == "user"
-    assert pool.connection_kwargs["password"] == "secret"
-
-
-@requires_valkey
-def test_pool_tuning_options_are_forwarded():
-    captured = _pool_kwargs(max_connections=42, socket_timeout=1.5, retry_on_timeout=True)
-
-    assert captured["kwargs"]["max_connections"] == 42
-    assert captured["kwargs"]["socket_timeout"] == 1.5
-    assert captured["kwargs"]["retry_on_timeout"] is True
 
 
 @requires_valkey

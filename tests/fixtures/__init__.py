@@ -17,6 +17,9 @@ from tests.fixtures.containers import (
     RedisContainerInfo,
     ReplicaSetContainerInfo,
     SentinelContainerInfo,
+    TlsCertificates,
+    acl_container,
+    acl_container_factory,
     cluster_container,
     cluster_container_factory,
     redis_container,
@@ -26,6 +29,9 @@ from tests.fixtures.containers import (
     resp_images,
     sentinel_container,
     sentinel_container_factory,
+    tls_certificates,
+    tls_container,
+    tls_container_factory,
 )
 
 __all__ = [
@@ -33,6 +39,9 @@ __all__ = [
     "ReplicaSetContainerInfo",
     "RespCache",
     "SentinelContainerInfo",
+    "TlsCertificates",
+    "acl_container",
+    "acl_container_factory",
     "cache",
     "client_class",
     "cluster_container",
@@ -51,5 +60,8 @@ __all__ = [
     "serializers",
     "stampede_cache",
     "stampede_topology",
+    "tls_certificates",
+    "tls_container",
+    "tls_container_factory",
     "topology",
 ]

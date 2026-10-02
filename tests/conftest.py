@@ -8,6 +8,8 @@ import pytest_asyncio
 from django.core.cache import caches
 
 from tests.fixtures import (
+    acl_container,
+    acl_container_factory,
     cache,
     client_class,
     cluster_container,
@@ -26,6 +28,9 @@ from tests.fixtures import (
     serializers,
     stampede_cache,
     stampede_topology,
+    tls_certificates,
+    tls_container,
+    tls_container_factory,
     topology,
 )
 
@@ -55,6 +60,8 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 # Re-export fixtures so pytest can discover them
 __all__ = [
+    "acl_container",
+    "acl_container_factory",
     "cache",
     "client_class",
     "cluster_container",
@@ -73,5 +80,8 @@ __all__ = [
     "serializers",
     "stampede_cache",
     "stampede_topology",
+    "tls_certificates",
+    "tls_container",
+    "tls_container_factory",
     "topology",
 ]

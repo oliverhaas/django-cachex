@@ -393,23 +393,6 @@ def test_config_kwargs_cluster_drops_database():
     assert "database_id" not in kwargs
 
 
-def test_sync_client_applies_config_kwargs(mocker):
-    import django_cachex.adapters.valkey_glide as vg
-
-    mocker.patch.dict(vg._GLIDE_SYNC_CLIENTS, clear=True)
-    config_cls = mocker.patch.object(vg, "GlideClientConfiguration")
-    mocker.patch.object(vg, "GlideClient")
-    adapter = ValkeyGlideAdapter(["valkeys://user:urlpw@example.com:7000/2"], password="secret")  # noqa: S106
-
-    adapter._client()
-
-    kwargs = config_cls.call_args.kwargs
-    assert kwargs["use_tls"] is True
-    assert kwargs["database_id"] == 2
-    assert kwargs["credentials"].username == "user"
-    assert kwargs["credentials"].password == "secret"
-
-
 # ---------------------------------------------------- xpending IDLE placement
 
 

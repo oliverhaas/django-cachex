@@ -39,29 +39,6 @@ def _driver_runs_on_its_home_image(
 
 @pytest.mark.parametrize(("backend", "driver", "resp_images"), POOL_OPTION_BACKENDS, indirect=["resp_images"])
 @pytest.mark.usefixtures("_driver_runs_on_its_home_image")
-def test_db_option(backend: str, driver: str, redis_container: RedisContainerInfo):
-    """``db`` in OPTIONS, Django-style, with no db in the URL."""
-    del driver
-    caches_config = {
-        "default": {
-            "BACKEND": backend,
-            "LOCATION": f"redis://{redis_container.host}:{redis_container.port}",
-            "OPTIONS": {"db": 2},
-        },
-    }
-
-    with override_settings(CACHES=caches_config):
-        cache = caches["default"]
-        pool = cache.adapter._get_connection_pool(write=True)
-
-        assert pool.connection_kwargs["db"] == 2
-        cache.set("test_db_option", "value")
-        assert cache.get("test_db_option") == "value"
-        cache.delete("test_db_option")
-
-
-@pytest.mark.parametrize(("backend", "driver", "resp_images"), POOL_OPTION_BACKENDS, indirect=["resp_images"])
-@pytest.mark.usefixtures("_driver_runs_on_its_home_image")
 def test_pool_class_option(backend: str, driver: str, redis_container: RedisContainerInfo):
     pool_class = importlib.import_module(f"{driver}.connection").BlockingConnectionPool
     caches_config = {

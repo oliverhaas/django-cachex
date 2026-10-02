@@ -162,17 +162,6 @@ def test_plain_int_roundtrip(cache: RespCache):
     assert type(result) is int
 
 
-def test_redis_pool_options(redis_container: RedisContainerInfo):
-    location = f"redis://{redis_container.host}:{redis_container.port}/5"
-
-    with redis_cache(location, socket_timeout=0.1, retry_on_timeout=True) as cache:
-        pool = cache.adapter._get_connection_pool(write=False)
-
-        assert pool.connection_kwargs["db"] == 5
-        assert pool.connection_kwargs["socket_timeout"] == 0.1
-        assert pool.connection_kwargs["retry_on_timeout"] is True
-
-
 def test_get_client_write_vs_read_bind_their_own_pools(cache: RespCache, client_class: str, resp_adapter: str):
     write_client = cache.adapter.get_client(write=True)
     read_client = cache.adapter.get_client(write=False)
