@@ -14,7 +14,7 @@ from django.db import DEFAULT_DB_ALIAS, connections
 
 from django_cachex.orm import transaction
 from django_cachex.orm.exceptions import InvalidationError
-from django_cachex.orm.settings import orm_settings
+from django_cachex.orm.settings import SETTING_NAME, orm_settings
 from django_cachex.orm.store import get_store
 from django_cachex.orm.utils import are_all_cachable, filter_cachable, known_tables
 
@@ -37,9 +37,17 @@ def _table_names(tables_or_models: Iterable[Any]) -> Iterator[str]:
         yield (table_or_model if isinstance(table_or_model, str) else table_or_model._meta.db_table)
 
 
+def _table_key(db_alias: str, table: str) -> str:
+    table_key = orm_settings.TABLE_KEYGEN(db_alias=db_alias, table=table)
+    if not isinstance(table_key, str):
+        msg = f"`{SETTING_NAME}['TABLE_KEYGEN']` must return a str, not {table_key!r}."
+        raise TypeError(msg)
+    return table_key
+
+
 def _table_keys(db_alias: str, tables: Iterable[str]) -> list[str]:
     # Without duplicates when tables share a key.
-    return sorted({orm_settings.TABLE_KEYGEN(db_alias=db_alias, table=table) for table in tables})
+    return sorted({_table_key(db_alias, table) for table in tables})
 
 
 def _invalidation_failed(error: Exception, message: str) -> None:
@@ -117,7 +125,7 @@ def table_generations(*tables_or_models: Any, db_alias: str = DEFAULT_DB_ALIAS) 
     if store is None:
         return None
     # Outside the try, so a TABLE_KEYGEN error propagates instead of reading as a cache outage.
-    table_keys = [orm_settings.TABLE_KEYGEN(db_alias=db_alias, table=table) for table in tables]
+    table_keys = [_table_key(db_alias, table) for table in tables]
     try:
         generations = store.generations(db_alias, table_keys)
     except Exception:

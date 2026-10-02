@@ -107,6 +107,19 @@ def test_query_key_that_is_not_a_str(mocker, query_key):
         list(Test.objects.all())
 
 
+@pytest.mark.parametrize(
+    "call",
+    [
+        pytest.param(lambda: list(Test.objects.all()), id="read"),
+        pytest.param(lambda: table_generations(Test), id="table_generations"),
+    ],
+)
+def test_table_key_that_is_not_a_str(mocker, call):
+    keygen = mocker.Mock(return_value=b"key")
+    with override_orm_settings(TABLE_KEYGEN=keygen), pytest.raises(TypeError, match="TABLE_KEYGEN"):
+        call()
+
+
 def test_tables_sharing_a_key_invalidate_each_other():
     queryset = Test.objects.all()
     with override_orm_settings(TABLE_KEYGEN=shared_table_key):
