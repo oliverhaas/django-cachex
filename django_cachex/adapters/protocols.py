@@ -5,8 +5,8 @@ pipeline layers rely on.
 
 - :class:`RespPipelineProtocol`: sync pipeline-adapter contract.
 - :class:`RespAsyncPipelineProtocol`: async pipeline-adapter contract.
-  Identical to the sync one except ``execute()`` is awaitable; chainable
-  methods stay sync because queueing never performs I/O.
+  Identical to the sync one except ``execute()`` and ``reset()`` are
+  awaitable; chainable methods stay sync because queueing never does I/O.
 - :class:`RespAdapterProtocol`: adapter contract; what
   :class:`~django_cachex.cache.resp.RespCache` calls on its
   underlying adapter. Concrete adapters
@@ -57,7 +57,7 @@ class _RespPipelineCommandsProtocol(Protocol):
     implement the chainable methods against their underlying pipeline /
     batch object. Queueing is sync regardless of whether ``execute()`` is
     sync or async, so both protocols share the chainable surface here and
-    differ only in ``execute()``'s return type.
+    differ only in ``execute()`` and ``reset()``, which the async one awaits.
     """
 
     # -------------------------------------------------------------------------
