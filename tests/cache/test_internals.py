@@ -9,6 +9,7 @@ Reference: https://github.com/django/django/blob/main/tests/cache/tests.py
 import asyncio
 import enum
 import gc
+import importlib
 import weakref
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
@@ -20,6 +21,7 @@ from django.test import override_settings
 
 from django_cachex.adapters import RedisPyAdapter
 from django_cachex.exceptions import WrongTypeError
+from tests.fixtures.cache import ADAPTER_IMAGES
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -54,25 +56,23 @@ def skip_without_generic_async_pool(cache: RespCache) -> None:
     Cluster and Sentinel both have async clients; they just reach them
     through the cluster registry and the Sentinel pool class respectively.
     """
+    if not hasattr(cache.adapter, "_async_pool_class"):
+        pytest.skip("valkey-glide has no async pools, only one client per event loop")
     if cache.adapter._async_pool_class is None:
         pytest.skip("Cluster and Sentinel adapters manage their own async pools")
 
 
-def test_incr_write_connection(cache: RespCache, mocker):
+def test_incr_write_connection(cache: RespCache, resp_adapter: str, mocker):
+    if resp_adapter == "valkey-glide":
+        pytest.skip("valkey-glide routes writes to the primary itself, not through get_client(write=True)")
     cache.set("number", 42)
     mocked_get_client = mocker.patch.object(cache.adapter, "get_client", wraps=cache.adapter.get_client)
     cache.incr("number")
     assert mocked_get_client.call_args.kwargs.get("write") is True
 
 
-def test_adapter_class(cache: RespCache):
-    from django_cachex.adapters import RedisPyClusterAdapter, RedisPySentinelAdapter
-    from django_cachex.adapters.redis_py import _RedisPyMixin
-
-    assert issubclass(
-        cache._adapter_class,
-        (RedisPyAdapter, RedisPyClusterAdapter, RedisPySentinelAdapter),
-    ) or issubclass(cache._adapter_class, _RedisPyMixin)
+def test_adapter_class(cache: RespCache, resp_adapter: str):
+    assert cache._adapter_class.__module__ == f"django_cachex.adapters.{resp_adapter.replace('-', '_')}"
     assert isinstance(cache.adapter, cache._adapter_class)
 
 
@@ -83,7 +83,9 @@ def test_get_backend_timeout_method(cache: RespCache):
     assert cache.get_backend_timeout(None) is None
 
 
-def test_get_connection_pool_index(cache: RespCache):
+def test_get_connection_pool_index(cache: RespCache, resp_adapter: str):
+    if resp_adapter == "valkey-glide":
+        pytest.skip("valkey-glide has no pool per server; its client routes reads to replicas itself")
     assert cache.adapter._get_connection_pool_index(write=True) == 0
 
     pool_index = cache.adapter._get_connection_pool_index(write=False)
@@ -93,19 +95,23 @@ def test_get_connection_pool_index(cache: RespCache):
         assert 1 <= pool_index < len(cache.adapter._servers)
 
 
-def test_get_connection_pool(cache: RespCache):
-    import redis
+def test_get_connection_pool(cache: RespCache, resp_adapter: str):
+    if resp_adapter == "valkey-glide":
+        pytest.skip("valkey-glide has no connection pools, only one multiplexed client per config")
+    driver = importlib.import_module(ADAPTER_IMAGES[resp_adapter][1])
 
-    assert isinstance(cache.adapter._get_connection_pool(write=True), redis.ConnectionPool)
-    assert isinstance(cache.adapter._get_connection_pool(write=False), redis.ConnectionPool)
+    assert isinstance(cache.adapter._get_connection_pool(write=True), driver.ConnectionPool)
+    assert isinstance(cache.adapter._get_connection_pool(write=False), driver.ConnectionPool)
 
 
-def test_get_client(cache: RespCache):
-    """Test Redis client creation returns redis.Redis or redis.RedisCluster instance."""
-    import redis
+def test_get_client(cache: RespCache, resp_adapter: str):
+    """Test client creation returns the driver's Redis or RedisCluster instance."""
+    if resp_adapter == "valkey-glide":
+        pytest.skip("valkey-glide's get_client() returns an error-translating proxy over its client")
+    driver = importlib.import_module(ADAPTER_IMAGES[resp_adapter][1])
 
     client = cache.adapter.get_client()
-    assert isinstance(client, (redis.Redis, redis.RedisCluster))
+    assert isinstance(client, (driver.Redis, driver.RedisCluster))
 
 
 def test_serializer_dumps(cache: RespCache):
@@ -162,11 +168,11 @@ def test_redis_pool_options(redis_container: RedisContainerInfo):
         assert pool.connection_kwargs["retry_on_timeout"] is True
 
 
-def test_get_client_write_vs_read_bind_their_own_pools(cache: RespCache, client_class: str):
+def test_get_client_write_vs_read_bind_their_own_pools(cache: RespCache, client_class: str, resp_adapter: str):
     write_client = cache.adapter.get_client(write=True)
     read_client = cache.adapter.get_client(write=False)
 
-    if client_class == "cluster":
+    if client_class == "cluster" or resp_adapter == "valkey-glide":
         assert write_client is read_client
         return
     assert write_client.connection_pool is cache.adapter._pools[0]
@@ -175,7 +181,9 @@ def test_get_client_write_vs_read_bind_their_own_pools(cache: RespCache, client_
         assert read_client.connection_pool is not write_client.connection_pool
 
 
-def test_connection_pool_caching(cache: RespCache):
+def test_connection_pool_caching(cache: RespCache, resp_adapter: str):
+    if resp_adapter == "valkey-glide":
+        pytest.skip("valkey-glide has no connection pools, only one multiplexed client per config")
     pool1 = cache.adapter._get_connection_pool(write=True)
     pool2 = cache.adapter._get_connection_pool(write=True)
 
@@ -300,8 +308,10 @@ def test_async_pool_different_per_loop(redis_container: RedisContainerInfo):
             loop2.close()
 
 
-def test_close_keeps_sync_pools(cache: RespCache):
+def test_close_keeps_sync_pools(cache: RespCache, resp_adapter: str):
     """Django fires close() on every request_finished, so the sync pool has to survive it."""
+    if resp_adapter == "valkey-glide":
+        pytest.skip("valkey-glide has no connection pools, only one multiplexed client per config")
     pool = cache.adapter._get_connection_pool(write=True)
 
     cache.adapter.close()

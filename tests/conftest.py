@@ -3,7 +3,7 @@
 import os
 from typing import TYPE_CHECKING
 
-import pytest
+import pytest  # noqa: TC002 (pluggy evaluates hook annotations)
 import pytest_asyncio
 from django.core.cache import caches
 
@@ -28,7 +28,6 @@ from tests.fixtures import (
     stampede_topology,
     topology,
 )
-from tests.fixtures.cache import REDIS_PY_INTERNALS_TEST_FILES
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -49,20 +48,9 @@ async def _aclose_caches() -> AsyncIterator[None]:
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    skip_non_redis_py = pytest.mark.skip(
-        reason="redis-py-specific internals (pools, parsers) don't apply to this adapter",
-    )
     for item in items:
         if item.get_closest_marker("asyncio"):
             item.fixturenames.append("_aclose_caches")
-        callspec = getattr(item, "callspec", None)
-        if callspec is None:
-            continue
-        adapter = callspec.params.get("resp_adapter")
-        if adapter is None or adapter == "redis-py":
-            continue
-        if item.path.name in REDIS_PY_INTERNALS_TEST_FILES:
-            item.add_marker(skip_non_redis_py)
 
 
 # Re-export fixtures so pytest can discover them

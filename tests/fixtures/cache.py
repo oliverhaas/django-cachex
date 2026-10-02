@@ -66,15 +66,6 @@ POOL_OPTION_ADAPTERS = frozenset({"redis-py", "valkey-py"})
 
 RESP_PROTOCOL_OPTIONS = {"protocol": 3} if environ.get("CACHEX_TEST_RESP_PROTOCOL") == "3" else {}
 
-# Modules that poke redis-py's own objects; tests/conftest.py skips them on other adapters.
-REDIS_PY_INTERNALS_TEST_FILES = frozenset(
-    {
-        "test_internals.py",
-        "test_client.py",
-        "test_replica.py",
-    },
-)
-
 # ``client_class`` and ``sentinel_mode`` derive from the topology so existing skips keep working.
 TOPOLOGIES = ("default", "cluster", "sentinel")
 
