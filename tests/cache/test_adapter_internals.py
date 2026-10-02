@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
+from django_cachex.adapters import valkey_py
 from django_cachex.adapters.protocols import Invalidation
 from django_cachex.adapters.redis_py import RedisPyAdapter, RedisPyClusterAdapter, RedisPySentinelAdapter
 from django_cachex.adapters.valkey_py import (
@@ -26,6 +27,7 @@ from django_cachex.adapters.valkey_py import (
 from django_cachex.exceptions import NotSupportedError, WrongTypeError, translate_server_error
 from django_cachex.script import script_sha
 from django_cachex.types import KeyType
+from tests.cache.support import run_forked_while_held
 
 SERVER_URL = "rediss://user:secret@example.com:7000/0?socket_timeout=5"
 
@@ -309,6 +311,39 @@ async def test_sentinel_kwargs_retry_list_keeps_one_async_pool(monkeypatch: pyte
         assert retry_on_error == [ConnectionError]
     finally:
         await adapter.aclose()
+
+
+FORK_LOCATION = ["redis://fork:6379/0"]
+
+
+@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded:DeprecationWarning")
+@pytest.mark.parametrize(
+    ("held_lock", "call"),
+    [
+        pytest.param(
+            lambda: valkey_py._SYNC_POOLS_LOCK,
+            lambda: ValkeyPyAdapter(FORK_LOCATION).get_client(write=True),
+            marks=requires_valkey,
+            id="pools",
+        ),
+        pytest.param(
+            lambda: valkey_py._ASYNC_REGISTRY_LOCK,
+            lambda: ValkeyPyAdapter(FORK_LOCATION).close(),
+            marks=requires_valkey,
+            id="async-pools",
+        ),
+        pytest.param(
+            lambda: ValkeyPyClusterAdapter._clusters_lock,
+            lambda: ValkeyPyClusterAdapter(FORK_LOCATION).get_client(),
+            marks=requires_valkey,
+            id="valkey-py-clusters",
+        ),
+    ],
+)
+def test_a_forked_child_skips_a_lock_held_at_the_fork(mocker, held_lock, call):
+    mocker.patch.object(ValkeyPyClusterAdapter, "_cluster_class")
+
+    run_forked_while_held(held_lock(), call)
 
 
 @pytest.mark.asyncio

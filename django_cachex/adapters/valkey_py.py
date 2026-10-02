@@ -22,6 +22,7 @@ and ``_missing_lib_error`` to redirect the check.
 
 import asyncio
 import inspect
+import os
 import random
 import threading
 import weakref
@@ -4466,6 +4467,21 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         """Construct an async cluster pipeline adapter. ``ClusterPipeline`` doesn't use MULTI/EXEC."""
         client = await self.get_async_client(write=True)
         return ValkeyPyAsyncPipelineAdapter(client.pipeline(transaction=False))
+
+
+def _reset_locks() -> None:
+    """Replace the registry locks in a forked child, where no thread of the parent can release them.
+
+    The cluster adapter keeps the cluster registry's lock as a class attribute.
+    """
+    global _ASYNC_REGISTRY_LOCK, _SYNC_POOLS_LOCK, _VALKEY_CLUSTERS_LOCK  # noqa: PLW0603
+    _ASYNC_REGISTRY_LOCK = threading.RLock()
+    _SYNC_POOLS_LOCK = threading.Lock()
+    _VALKEY_CLUSTERS_LOCK = ValkeyPyClusterAdapter._clusters_lock = threading.Lock()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_locks)
 
 
 class ValkeyPyPipelineAdapter(RespPipelineProtocol):
