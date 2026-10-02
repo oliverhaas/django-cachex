@@ -29,7 +29,13 @@ if TYPE_CHECKING:
 from django_cachex.exceptions import KeyNotFoundError, NotSupportedError, maybe_wrap_set_nx_get, translate_server_error
 from django_cachex.script import ScriptHelpers, reject_stray_encoded
 from django_cachex.types import KeyType
-from django_cachex.utils import _validate_zadd_flags, _validate_zrange_limit
+from django_cachex.utils import (
+    _validate_linsert_where,
+    _validate_lpos_args,
+    _validate_pop_count,
+    _validate_zadd_flags,
+    _validate_zrange_limit,
+)
 
 # Alias for the ``set`` builtin shadowed by the ``set`` method (PEP 649
 # defers annotations at runtime, but type checkers still resolve them in
@@ -679,6 +685,7 @@ class Pipeline:
         version: int | None = None,
     ) -> Self:
         """Queue LPOP command (remove from head)."""
+        _validate_pop_count(count)
         nkey = self._make_key(key, version)
         self._pipeline_adapter.lpop(nkey, count=count)
         self._decoders.append(self._decode_single_or_list)
@@ -691,6 +698,7 @@ class Pipeline:
         version: int | None = None,
     ) -> Self:
         """Queue RPOP command (remove from tail)."""
+        _validate_pop_count(count)
         nkey = self._make_key(key, version)
         self._pipeline_adapter.rpop(nkey, count=count)
         self._decoders.append(self._decode_single_or_list)
@@ -782,6 +790,7 @@ class Pipeline:
         version: int | None = None,
     ) -> Self:
         """Queue LINSERT command (insert before/after pivot)."""
+        _validate_linsert_where(where)
         nkey = self._make_key(key, version)
         encoded_pivot = self._encode(pivot)
         encoded_value = self._encode(value)
@@ -799,6 +808,7 @@ class Pipeline:
         version: int | None = None,
     ) -> Self:
         """Queue LPOS command (find position of element)."""
+        _validate_lpos_args(rank, count, maxlen)
         nkey = self._make_key(key, version)
         encoded_value = self._encode(value)
         self._pipeline_adapter.lpos(nkey, encoded_value, rank=rank, count=count, maxlen=maxlen)
@@ -991,6 +1001,7 @@ class Pipeline:
         version: int | None = None,
     ) -> Self:
         """Queue SPOP command (remove and return random member(s))."""
+        _validate_pop_count(count)
         nkey = self._make_key(key, version)
         self._pipeline_adapter.spop(nkey, count)
         self._decoders.append(self._decode_set_or_single)
@@ -1487,6 +1498,7 @@ class Pipeline:
         version: int | None = None,
     ) -> Self:
         """Queue ZPOPMAX command (pop highest scoring members)."""
+        _validate_pop_count(count)
         nkey = self._make_key(key, version)
         self._pipeline_adapter.zpopmax(nkey, count)
         self._decoders.append(self._decode_zpop)
@@ -1499,6 +1511,7 @@ class Pipeline:
         version: int | None = None,
     ) -> Self:
         """Queue ZPOPMIN command (pop lowest scoring members)."""
+        _validate_pop_count(count)
         nkey = self._make_key(key, version)
         self._pipeline_adapter.zpopmin(nkey, count)
         self._decoders.append(self._decode_zpop)

@@ -1385,6 +1385,33 @@ def test_one_sided_limit_is_rejected_at_queue_time(cache: RespCache, method: str
     assert pipe.execute() == []
 
 
+@pytest.mark.parametrize(
+    ("method", "kwargs", "match"),
+    [
+        ("lpop", {"count": -1}, "must be positive"),
+        ("rpop", {"count": -1}, "must be positive"),
+        ("spop", {"count": -1}, "must be positive"),
+        ("zpopmax", {"count": -1}, "must be positive"),
+        ("zpopmin", {"count": -1}, "must be positive"),
+        ("linsert", {"where": "MIDDLE", "pivot": "a", "value": "b"}, "syntax error"),
+        ("lpos", {"value": "a", "rank": 0}, "RANK can't be zero"),
+        ("lpos", {"value": "a", "count": -1}, "COUNT can't be negative"),
+        ("lpos", {"value": "a", "maxlen": -1}, "MAXLEN can't be negative"),
+    ],
+)
+def test_bad_list_set_and_zset_arguments_are_rejected_at_queue_time(
+    cache: RespCache,
+    method: str,
+    kwargs: dict[str, object],
+    match: str,
+):
+    pipe = cache.pipeline()
+    pipe.set("pipe_bad_args_marker", 1)
+    with pytest.raises(ValueError, match=match):
+        getattr(pipe, method)("pipe_bad_args", **kwargs)
+    assert pipe.execute() == [True]
+
+
 def test_zadd_incr_returns_the_new_score(cache: RespCache):
     cache.zadd("pipe_zadd_incr", {"a": 1.0})
 
