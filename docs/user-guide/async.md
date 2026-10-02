@@ -1,6 +1,6 @@
 # Async Support
 
-Django's cache methods and the django-cachex extensions have async twins with an `a` prefix, such as `aget()`, `attl()` and `ahset()`. `cache.get()` and `await cache.aget()` use the same alias, with no separate configuration. The API reference covers the twins under [Async Methods](../reference/api.md#async-methods).
+Django's cache methods and the django-cachex extensions have async twins with an `a` prefix, such as `aget()`, `attl()` and `ahset()`. The exceptions are `get_client()`, `info()`, `slowlog_get()` and `slowlog_len()`. `cache.get()` and `await cache.aget()` use the same alias, with no separate configuration. The API reference covers the twins under [Async Methods](../reference/api.md#async-methods).
 
 ```python
 from django.core.cache import cache

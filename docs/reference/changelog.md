@@ -23,7 +23,7 @@
 ### Documentation
 
 - The quickstart and the configuration reference say that the redis-py backends reject `valkey://` and `valkeys://` URLs, with a `ValueError` on the first cache call.
-- The API reference and the `TrackingCache` docs no longer claim async twins for `info()`, `slowlog_get()` and `slowlog_len()`, which have none.
+- The API reference, the async guide and the `TrackingCache` docs no longer claim async twins for `info()`, `slowlog_get()` and `slowlog_len()`, which have none.
 
 ## 0.12.1 (October 2026)
 
