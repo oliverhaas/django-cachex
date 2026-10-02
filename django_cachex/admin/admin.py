@@ -163,7 +163,7 @@ class KeyAdmin(_NoObjectRoutesMixin, KeyAdminMixin, _KeyBase):  # type: ignore[m
             "numbers (integers, floats) appear unquoted, "
             "objects as <code>{...}</code>, arrays as <code>[...]</code>.<br>"
             "If the existing value is not JSON-serializable, updating is disabled "
-            "for safety. Any input must be valid JSON.<br><br>"
+            "for safety. Input that is not valid JSON is stored as a string.<br><br>"
             "<strong>Operations</strong><br>"
             "• Edit the value in the textarea and click <strong>Update</strong><br>"
             "• Set TTL to control expiration (empty = no expiry)<br>"
