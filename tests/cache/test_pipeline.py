@@ -926,6 +926,18 @@ def test_pipeline_xreadgroup_returns_original_keys(cache: RespCache):
     assert len(results[0]["pipe_xrg_stream"]) == 1
 
 
+def test_pipeline_xreadgroup_history_returns_a_deleted_entry_with_no_fields(cache: RespCache):
+    gone = cache.xadd("pipe_xrg_nil", {"msg": "gone"})
+    kept = cache.xadd("pipe_xrg_nil", {"msg": "kept"})
+    cache.xgroup_create("pipe_xrg_nil", "readers", entry_id="0")
+    cache.xreadgroup("readers", "consumer1", {"pipe_xrg_nil": ">"})
+    cache.xdel("pipe_xrg_nil", gone)
+
+    pipe = cache.pipeline()
+    pipe.xreadgroup("readers", "consumer1", {"pipe_xrg_nil": "0"})
+    assert pipe.execute() == [{"pipe_xrg_nil": [(gone, {}), (kept, {"msg": "kept"})]}]
+
+
 def test_default_pipeline_no_warnings(cache: RespCache):
     with warnings.catch_warnings():
         warnings.simplefilter("error")

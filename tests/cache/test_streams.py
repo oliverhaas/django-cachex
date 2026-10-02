@@ -144,6 +144,17 @@ def test_xreadgroup(cache: RespCache):
     assert len(result["stream_rg"]) == 2
 
 
+def test_xreadgroup_history_returns_a_deleted_entry_with_no_fields(cache: RespCache):
+    gone = cache.xadd("stream_rg_nil", {"msg": "gone"})
+    kept = cache.xadd("stream_rg_nil", {"msg": "kept"})
+    cache.xgroup_create("stream_rg_nil", "readers", entry_id="0")
+    cache.xreadgroup("readers", "consumer1", {"stream_rg_nil": ">"})
+    cache.xdel("stream_rg_nil", gone)
+
+    result = cache.xreadgroup("readers", "consumer1", {"stream_rg_nil": "0"})
+    assert result == {"stream_rg_nil": [(gone, {}), (kept, {"msg": "kept"})]}
+
+
 def test_xack(cache: RespCache):
     eid = cache.xadd("stream_ack", {"msg": "test"})
     cache.xgroup_create("stream_ack", "ack_grp", entry_id="0")

@@ -11,6 +11,7 @@
 ### Fixes
 
 - `DatabaseCache.scan()` skipped keys when others were deleted mid-iteration, so a loop that scans and deletes left about half of them. Its cursor is now a position in hash order, like `LocMemCache`'s. The 0.11.0 fix had missed it.
+- On valkey-glide, `xreadgroup()` with id `0` raised `TypeError` when a pending entry had been removed by `XDEL` or `XTRIM`. That entry now comes back with an empty field dict, as on redis-py and valkey-py.
 
 ## 0.12.1 (October 2026)
 

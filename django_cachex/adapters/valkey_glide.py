@@ -626,7 +626,8 @@ def _decode_stream_entries(raw: Any) -> list[tuple[str, dict[str, Any]]]:
     out: list[tuple[str, dict[str, Any]]] = []
     for entry_id, pairs in raw.items():
         fields: dict[str, Any] = {}
-        for pair in pairs:
+        # A pending id deleted before XREADGROUP re-reads it comes back nil.
+        for pair in pairs or ():
             f, v = pair[0], pair[1]
             fields[_dec_str(f)] = v
         out.append((_dec_str(entry_id), fields))
@@ -721,7 +722,7 @@ def _decode_xread_pipeline(raw: Any) -> Any:
         if isinstance(entries, dict):
             for entry_id, pairs in entries.items():
                 fields: dict[Any, Any] = {}
-                for pair in pairs:
+                for pair in pairs or ():
                     fields[pair[0]] = pair[1]
                 shaped.append((entry_id, fields))
         out.append((stream, shaped))
