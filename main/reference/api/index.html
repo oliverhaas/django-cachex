@@ -1976,7 +1976,7 @@
 </tbody>
 </table>
 <p><code>sdiff</code>, <code>sinter</code>, <code>sunion</code> and their <code>*store</code> forms take <code>keys</code> as one key or a sequence. Write <code>sdiff(["a", "b"])</code>, because <code>sdiff("a", "b")</code> passes <code>"b"</code> as <code>version</code>.</p>
-<p>Members must stay hashable after a round trip through the serializer. The JSON and MessagePack serializers return a tuple as a list, so <code>sadd</code> rejects tuples there. <code>smembers</code>, <code>sdiff</code>, <code>sinter</code>, <code>sunion</code>, <code>spop</code> and <code>sscan</code> return a Python <code>set</code>. <code>1</code>, <code>True</code> and <code>1.0</code> are one entry in it but three members on the server, and <code>scard</code> counts three.</p>
+<p>Members must stay hashable after a round trip through the serializer. The JSON and MessagePack serializers return a tuple as a list, so <code>sadd</code> rejects tuples there. <code>smembers</code>, <code>sdiff</code>, <code>sinter</code>, <code>sunion</code>, <code>spop</code> and <code>sscan</code> return a Python <code>set</code>. <code>1</code>, <code>True</code> and <code>1.0</code> are one entry in it but three members on the server, and <code>scard</code> counts three. <code>LocMemCache</code> and <code>DatabaseCache</code> store one member, see <a href="../../user-guide/configuration/#local-backends">Local backends</a>.</p>
 <h3 id="sorted-set-methods">Sorted Set Methods<a class="headerlink" href="#sorted-set-methods" title="Permanent link">&para;</a></h3>
 <table>
 <thead>

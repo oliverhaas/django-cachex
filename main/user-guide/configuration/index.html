@@ -1627,6 +1627,13 @@ database vendor. These methods and their <code>a*</code> twins raise <code>NotSu
 TTL, like Redis <code>RENAME</code>. <code>DatabaseCache.incr()</code> and <code>decr()</code> update the row
 atomically and keep the key's TTL. Like Django, they raise <code>ValueError</code> on a
 missing key, where the Valkey/Redis backends create it.</p>
+<p>Members compare as Python values, where the Valkey/Redis backends compare
+their serialized bytes. <code>1</code>, <code>True</code> and <code>1.0</code> are one member of a set or a
+sorted set, where the server stores three, and <code>lrem()</code> with any one of them
+removes all three. Sorted set members with equal scores sort by
+<code>str(member)</code>, where the server sorts them by their serialized bytes, so
+<code>zrange()</code> and the other range reads can return tied members in another
+order.</p>
 <p>On MySQL, keep the connection at <code>READ COMMITTED</code>, Django's default for MySQL.
 The compound operations (<code>lpush()</code>, <code>sadd()</code>, <code>hincrby()</code> and the rest) lock
 their row with <code>SELECT ... FOR UPDATE</code>. Under the InnoDB default of

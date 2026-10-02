@@ -3124,6 +3124,7 @@
 <li>The admin's help for a string key said that its input must be valid JSON. It now says that input which is not JSON is stored as a string.</li>
 <li>The API reference said that a pipelined <code>zadd(..., incr=True)</code> sends <code>ZINCRBY</code>, which takes none of the <code>nx</code>, <code>xx</code>, <code>gt</code> and <code>lt</code> flags. It now says that the pipeline sends <code>ZADD ... INCR</code>.</li>
 <li>The configuration reference says that on the redis-py and valkey-py backends a database in the <code>LOCATION</code> URL overrides <code>OPTIONS["db"]</code>, whereas on valkey-glide backends <code>OPTIONS["db"]</code> overrides the URL.</li>
+<li>The configuration reference says that on <code>LocMemCache</code> and <code>DatabaseCache</code>, <code>1</code>, <code>True</code> and <code>1.0</code> are one set or sorted set member and one <code>lrem()</code> value, and that sorted set members with equal scores sort by <code>str(member)</code>.</li>
 </ul>
 <h2 id="0121-october-2026">0.12.1 (October 2026)<a class="headerlink" href="#0121-october-2026" title="Permanent link">&para;</a></h2>
 <h3 id="fixes_1">Fixes<a class="headerlink" href="#fixes_1" title="Permanent link">&para;</a></h3>
