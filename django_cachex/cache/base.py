@@ -51,6 +51,10 @@ def _scan_page(keys: Iterable[str], cursor: int, count: int) -> tuple[int, list[
     keys between calls never skips a key. Keys sharing that last position stay
     on the page, which can then exceed ``count``.
     """
+    if count < 1:
+        # As Redis does: a page of none would hand back cursor 0, which ends a scan loop.
+        msg = "count must be at least 1"
+        raise ValueError(msg)
     ranked = sorted((position, key) for key in keys if (position := _scan_hash(key)) >= cursor)
     page: list[str] = []
     last = -1

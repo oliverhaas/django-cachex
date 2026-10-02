@@ -50,6 +50,7 @@
 - `KeyType`, which `type()` returns, was missing from the names that `django_cachex` exports, so `from django_cachex import KeyType` raised `ImportError`. It now works.
 - On the Valkey and Redis backends, `semaphore()` and `asemaphore()` raised `TypeError` for a name that `scan()` returned for a key name that is not valid UTF-8. They now take that name, as `get()` and the other key commands do.
 - On `LocMemCache` and `DatabaseCache`, `hincrbyfloat()` stored a whole result such as `5200.0` as a float, so a later `hincrby()` on the field raised `ValueError` and `hget()` returned `5200.0`. Redis stores it as `"5200"`, which `HINCRBY` takes and `hget()` returns as `5200`. Both backends now store a whole result as an integer.
+- On `LocMemCache` and `DatabaseCache`, `scan()` with a `count` below 1 returned no keys and cursor 0, so a scan loop stopped as if no key matched. The server rejects `COUNT 0`. They now raise `ValueError`.
 
 ### Documentation
 
@@ -495,7 +496,7 @@
 - `StreamCache` raises `NotSupportedError` rather than `AttributeError` for the cachex operations it does not implement, and `expire()` accepts a float.
 - `StreamCache` joins its consumer thread with a bound at interpreter exit; `close()` stays a no-op.
 - Key patterns on `LocMemCache` and `StreamCache` match case-sensitively on Windows, like Redis globs.
-- `scan(count=0)` is honored on the `BaseCachex` default, `DatabaseCache` and `StreamCache`, which turned it into 100.
+- `scan(count=0)` on the `BaseCachex` default, `DatabaseCache` and `StreamCache` no longer turns the count into 100. It returns no keys and cursor 0, which ends a scan loop.
 - `OrmsgpackSerializer` accepts non-string mapping keys, like `MsgpackSerializer` with its `strict_map_key=False`.
 - `LocMemCache.info()` sizes modules, classes and functions opaquely instead of walking the import graph under the cache's lock; a value holding `sys` cost 11 ms and 2.4 MB.
 - A LocMem or Database `BACKEND` no longer imports redis-py or valkey-py; names resolve on first access.

@@ -144,10 +144,10 @@ def five_key_cache() -> KeysOnlyCache:
     return KeysOnlyCache({f"k{i}": i for i in range(5)})
 
 
-def test_scan_explicit_count_zero_is_honored(five_key_cache: KeysOnlyCache):
-    next_cursor, keys = five_key_cache.scan(count=0)
-    assert keys == []
-    assert next_cursor == 0
+@pytest.mark.parametrize("count", [0, -1])
+def test_scan_rejects_a_count_below_one(five_key_cache: KeysOnlyCache, count: int):
+    with pytest.raises(ValueError, match="count must be at least 1"):
+        five_key_cache.scan(count=count)
 
 
 def test_scan_default_count_paginates():
