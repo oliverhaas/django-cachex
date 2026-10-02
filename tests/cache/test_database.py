@@ -877,11 +877,24 @@ def test_scan_paginates(db_cache: DatabaseCache):
     for i in range(5):
         db_cache.set(f"k{i}", i)
     cursor, page = db_cache.scan(count=2)
-    assert page == ["k0", "k1"]
-    cursor, page = db_cache.scan(cursor=cursor, count=2)
-    assert page == ["k2", "k3"]
-    cursor, page = db_cache.scan(cursor=cursor, count=2)
-    assert (cursor, page) == (0, ["k4"])
+    pages = [page]
+    while cursor:
+        cursor, page = db_cache.scan(cursor=cursor, count=2)
+        pages.append(page)
+    assert [len(page) for page in pages] == [2, 2, 1]
+    assert sorted(key for page in pages for key in page) == ["k0", "k1", "k2", "k3", "k4"]
+
+
+def test_scan_returns_remaining_keys_after_earlier_pages_are_deleted(db_cache: DatabaseCache):
+    for i in range(10):
+        db_cache.set(f"k{i}", i)
+    cursor, first = db_cache.scan(count=3)
+    db_cache.delete_many(first)
+    seen = []
+    while cursor:
+        cursor, keys = db_cache.scan(cursor, count=3)
+        seen.extend(keys)
+    assert sorted(seen) == sorted(db_cache.keys())
 
 
 def test_scan_combines_pattern_and_type(typed_cache: DatabaseCache):

@@ -55,7 +55,7 @@ from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.cache.backends.db import DatabaseCache as DjangoDatabaseCache
 from django.db import IntegrityError, connections, models, router, transaction
 
-from django_cachex.cache.base import BaseCachex, CachexSupportLevel
+from django_cachex.cache.base import BaseCachex, CachexSupportLevel, _scan_page
 from django_cachex.exceptions import NotSupportedError, WrongTypeError
 from django_cachex.types import KeyType
 from django_cachex.utils import (
@@ -631,17 +631,14 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         version: int | None = None,
         key_type: str | None = None,
     ) -> tuple[int, list[str]]:
-        """Perform a single SCAN iteration using cursor-based pagination.
+        """Perform a single SCAN iteration in the ``BaseCachex.scan`` hash order.
 
         ``key_type`` is resolved in the query that lists the keys, so a typed
         scan costs one round trip; the ``BaseCachex.scan`` default calls
         :meth:`type` once per matching key instead.
         """
-        all_keys = sorted(self._matching_keys(pattern, version=version, key_type=key_type))
-        if count is None:
-            count = 100
-        end_idx = cursor + count
-        return (end_idx if end_idx < len(all_keys) else 0, all_keys[cursor:end_idx])
+        keys = self._matching_keys(pattern, version=version, key_type=key_type)
+        return _scan_page(keys, cursor, 100 if count is None else count)
 
     def _matching_keys(self, pattern: str, version: int | None, key_type: str | None = None) -> list[str]:
         """Return the user keys matching ``pattern``, optionally of one type.

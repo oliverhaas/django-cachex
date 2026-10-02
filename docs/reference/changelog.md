@@ -8,6 +8,10 @@
 - The ORM cache sorts the values of an `__in` filter before it keys a query, so a `prefetch_related()` under another order of its parent rows, or over a set of strings in another process, hits the cache. It compiles a query on an uncachable table once, not twice.
 - The ORM cache finds the tables of a query with 10,000 `__in` values in 0.2 ms instead of 8 ms.
 
+### Fixes
+
+- `DatabaseCache.scan()` skipped keys when others were deleted mid-iteration, so a loop that scans and deletes left about half of them. Its cursor is now a position in hash order, like `LocMemCache`'s. The 0.11.0 fix had missed it.
+
 ## 0.12.1 (October 2026)
 
 ### Fixes
