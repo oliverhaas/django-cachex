@@ -91,7 +91,6 @@ class Pipeline:
         pipeline_adapter: RespPipelineProtocol,
         version: int | None = None,
     ) -> None:
-        """Initialize the wrapped pipeline."""
         self._cache = cache
         # Only for ``get_timeout_with_buffer``; everything else lives on the cache.
         self._adapter = cache.adapter
@@ -207,7 +206,6 @@ class Pipeline:
         return self._cache.decode(value)
 
     def _decode_set(self, value: _set[bytes]) -> _set[Any]:
-        """Decode a set of values."""
         return {self._cache.decode(item) for item in value}
 
     def _decode_set_or_single(self, value: _set[bytes] | bytes | None) -> _set[Any] | Any:
@@ -255,7 +253,6 @@ class Pipeline:
         return None if value is None else float(value)
 
     def _make_zset_decoder(self, *, withscores: bool) -> Callable[[Any], list[Any]]:
-        """Create decoder based on whether scores are included."""
         if withscores:
             return self._decode_zset_with_scores
         return self._decode_values
@@ -271,7 +268,7 @@ class Pipeline:
             return KeyType.UNKNOWN
 
     def _decode_entry_id(self, value: bytes | str) -> str:
-        """Decode stream entry ID."""
+        """Decode a stream entry ID (bytes on redis-py, str on glide)."""
         return value.decode() if isinstance(value, bytes) else value
 
     def _decode_stream_entries(
@@ -335,12 +332,11 @@ class Pipeline:
     # -------------------------------------------------------------------------
 
     def _make_key(self, key: str, version: int | None = None) -> str:
-        """Create a prefixed key."""
+        """Prefix and validate ``key`` at the pipeline's version unless ``version`` is given."""
         v = version if version is not None else self._version
         return self._cache.make_and_validate_key(key, version=v)
 
     def _encode(self, value: Any) -> bytes | int:
-        """Encode a value for storage."""
         return self._cache.encode(value)
 
     def _encode_member(self, member: Any) -> bytes | int:
@@ -2105,7 +2101,6 @@ class AsyncPipeline(Pipeline):
         pipeline_adapter: RespAsyncPipelineProtocol,
         version: int | None = None,
     ) -> None:
-        """Initialize the wrapped async pipeline."""
         super().__init__(cache, pipeline_adapter, version=version)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
     async def __aenter__(self) -> Self:

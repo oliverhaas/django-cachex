@@ -978,12 +978,10 @@ class RespCache(BaseCachex):
 
     @override
     def close(self, **kwargs: Any) -> None:
-        """Delegate to the adapter."""
         self.adapter.close(**kwargs)
 
     @override
     async def aclose(self, **kwargs: Any) -> None:
-        """Delegate to the adapter."""
         await self.adapter.aclose(**kwargs)
 
     # =========================================================================
@@ -4138,7 +4136,7 @@ class RespCache(BaseCachex):
     # =========================================================================
 
     def _create_script_helpers(self, version: int | None) -> ScriptHelpers:
-        """Create a ScriptHelpers instance for script processing."""
+        """Bind this cache's key and value codecs for a script's pre/post hooks, at the cache's version by default."""
         return ScriptHelpers(
             make_key=self.make_and_validate_key,
             encode=self.encode,
