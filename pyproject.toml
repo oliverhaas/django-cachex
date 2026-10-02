@@ -64,11 +64,11 @@ dev = [
   "redis[hiredis]==8.1.0",
   "beautifulsoup4==4.15.0",
   "django-stubs==6.1.1",
-  "djlint==1.46.3",
+  "djlint==1.46.4",
   "lz4==4.4.5",
   "msgpack==1.2.3",
   "ormsgpack==1.12.2",
-  "mypy==2.3.1",
+  "mypy==2.4.0",
   "pre-commit==4.6.2",
   # ORM cache tests (tests/orm) on PostgreSQL. The pure-Python build loads the
   # system libpq, so it installs on the free-threaded interpreter as well.
@@ -80,7 +80,7 @@ dev = [
   "pytest-mock==3.16.0",
   "pytest-xdist==3.8.0",
   "pytest==9.1.1",
-  "ruff==0.16.9",
+  "ruff==0.16.10",
   "testcontainers==4.15.0",
   "ty==0.0.84",
   "types-docker==7.2.0.20260923",
