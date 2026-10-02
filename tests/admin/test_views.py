@@ -15,9 +15,10 @@ from bs4 import BeautifulSoup
 from django.conf import settings
 from django.contrib.admin import site
 from django.contrib.admin.utils import quote
-from django.contrib.auth.models import Permission, User
+from django.contrib.auth.models import Group, Permission, User
+from django.contrib.contenttypes.models import ContentType
 from django.core.cache import caches
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, PermissionDenied
 from django.core.management import call_command
 from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
@@ -2651,17 +2652,16 @@ def test_view_only_user_cannot_flush_cache(db, test_cache):
 
 
 def test_view_only_user_cannot_delete_keys(db, test_cache):
-    """Staff user with only view_key perm cannot bulk-delete keys."""
+    """Staff user with view_key but not delete_key cannot bulk-delete keys."""
     staff_user = User.objects.create_user(
         username="staff_viewer",
         password="password",  # noqa: S106
         is_staff=True,
     )
-    view_key = Permission.objects.get(
-        codename="view_key",
-        content_type__app_label="django_cachex",
-    )
-    staff_user.user_permissions.add(view_key)
+    for codename in ("view_key", "access_default"):
+        staff_user.user_permissions.add(
+            Permission.objects.get(codename=codename, content_type__app_label="django_cachex"),
+        )
 
     client = Client()
     client.force_login(staff_user)
@@ -2736,11 +2736,10 @@ def test_change_key_only_cannot_clear_cache(db, test_cache):
         password="password",  # noqa: S106
         is_staff=True,
     )
-    perm = Permission.objects.get(
-        codename="change_key",
-        content_type__app_label="django_cachex",
-    )
-    staff_user.user_permissions.add(perm)
+    for codename in ("change_key", "access_default"):
+        staff_user.user_permissions.add(
+            Permission.objects.get(codename=codename, content_type__app_label="django_cachex"),
+        )
     staff_user = User.objects.get(pk=staff_user.pk)
 
     client = Client()
@@ -2765,7 +2764,7 @@ def test_change_cache_permits_clear_cache(db, test_cache):
         password="password",  # noqa: S106
         is_staff=True,
     )
-    for codename in ("view_key", "change_cache"):
+    for codename in ("view_key", "change_cache", "access_default"):
         perm = Permission.objects.get(
             codename=codename,
             content_type__app_label="django_cachex",
@@ -2828,12 +2827,10 @@ def test_staff_without_add_perm_denied_on_get(db, test_cache):
         password="password",  # noqa: S106
         is_staff=True,
     )
-    # view_key grants module access but NOT add_key.
-    perm = Permission.objects.get(
-        codename="view_key",
-        content_type__app_label="django_cachex",
-    )
-    staff_user.user_permissions.add(perm)
+    for codename in ("view_key", "access_default"):
+        staff_user.user_permissions.add(
+            Permission.objects.get(codename=codename, content_type__app_label="django_cachex"),
+        )
     staff_user = User.objects.get(pk=staff_user.pk)
 
     client = Client()
@@ -3084,10 +3081,20 @@ def test_key_add_tools(admin_client: Client, test_cache):
     _assert_tools(response.content.decode(), labels=["Help"])
 
 
-def _staff_client(perms: list[str]) -> Client:
-    """Log in a staff user holding exactly ``perms`` on ``django_cachex``."""
+def _access_permission(alias: str) -> Permission:
+    """Return the ``access_<alias>`` permission, creating it for an alias only a test adds."""
+    permission, _created = Permission.objects.get_or_create(
+        codename=f"access_{alias}",
+        content_type=ContentType.objects.get_for_model(Cache),
+        defaults={"name": f"Can access keys in cache '{alias}'"},
+    )
+    return permission
+
+
+def _staff_client(perms: list[str], *, aliases: tuple[str, ...] = ("default",)) -> Client:
+    """Log in a staff user holding exactly ``perms`` on ``django_cachex`` and access to ``aliases``."""
     user = User.objects.create_user(
-        username="staff_" + "_".join(perms),
+        username="staff_" + "_".join([*perms, *aliases]),
         password="password",  # noqa: S106
         is_staff=True,
     )
@@ -3095,6 +3102,8 @@ def _staff_client(perms: list[str]) -> Client:
         user.user_permissions.add(
             Permission.objects.get(codename=codename, content_type__app_label="django_cachex"),
         )
+    for alias in aliases:
+        user.user_permissions.add(_access_permission(alias))
     user = User.objects.get(pk=user.pk)
     client = Client()
     client.force_login(user)
@@ -4658,3 +4667,309 @@ def test_confirm_dialogs_escape_translated_text(admin_client: Client, test_cache
     confirms = re.findall(r"confirm\('([^)]*)'\)", response.content.decode())
     assert len(confirms) > 1
     assert all("&#x27;" not in text for text in confirms)
+
+
+def test_migrate_creates_an_access_permission_per_alias(db):
+    access = Permission.objects.filter(content_type__app_label="django_cachex", codename__startswith="access_")
+
+    assert {permission.codename for permission in access} == {f"access_{alias}" for alias in settings.CACHES}
+    assert "'default'" in access.get(codename="access_default").name
+
+
+def _cache_filter_choices(content: bytes) -> list[str]:
+    """Return the aliases the key list's cache filter offers."""
+    soup = BeautifulSoup(content, "html.parser")
+    return [link.get_text(strip=True) for link in soup.select('details[data-filter-title="cache"] a')]
+
+
+def test_key_list_is_forbidden_without_the_alias_permission(db, test_cache):
+    client = _staff_client(["view_key"])
+
+    response = client.get(_key_list_url("local"))
+
+    assert response.status_code == 403
+
+
+def test_key_list_defaults_to_the_first_granted_alias(db, test_cache: RespCache):
+    test_cache.set("default:hidden", "value")
+    caches["local"].set("local:shown", "value")
+    client = _staff_client(["view_key"], aliases=("local",))
+
+    response = client.get(reverse("admin:django_cachex_key_changelist"))
+
+    assert response.status_code == 200
+    keys = _result_column(response.content, "key_name")
+    assert "local:shown" in keys
+    assert "default:hidden" not in keys
+    assert _cache_filter_choices(response.content) == []
+
+
+def test_key_list_filter_offers_only_granted_aliases(db, test_cache):
+    client = _staff_client(["view_key"], aliases=("default", "local"))
+
+    with _extra_cache("other", {"BACKEND": "django_cachex.cache.LocMemCache", "LOCATION": "admin-test-other"}):
+        response = client.get(_key_list_url("default"))
+
+    assert response.status_code == 200
+    assert _cache_filter_choices(response.content) == ["default", "local"]
+
+
+def test_key_list_without_any_alias_permission_is_forbidden(db, test_cache):
+    client = _staff_client(["view_key"], aliases=())
+
+    response = client.get(reverse("admin:django_cachex_key_changelist"))
+
+    assert response.status_code == 403
+
+
+def test_key_list_of_an_unknown_alias_still_says_not_found(db, test_cache):
+    client = _staff_client(["view_key"])
+
+    response = client.get(_key_list_url("nonexistent"))
+
+    assert response.status_code == 302
+    assert response.url == _cache_list_url()
+
+
+def test_key_queryset_refuses_an_alias_without_permission(db, test_cache, rf):
+    request = rf.get(_key_list_url("local"))
+    request.user = User.objects.create_user(username="staff_queryset", is_staff=True)
+
+    with pytest.raises(PermissionDenied):
+        site._registry[Key].get_queryset(request)
+
+
+@pytest.mark.usefixtures("_allow_flush")
+def test_clear_tool_is_forbidden_without_the_alias_permission(db, test_cache: RespCache):
+    test_cache.set("guarded:clear", "value")
+    client = _staff_client(["view_key", "view_cache", "change_cache"], aliases=("local",))
+
+    response = client.post(_key_list_url("default"), {"action": "clear_cache", "cache_name": "default"})
+
+    assert response.status_code == 403
+    assert test_cache.get("guarded:clear") == "value"
+
+
+def test_a_group_grant_opens_the_key_list(db, test_cache):
+    caches["local"].set("group:granted", "value")
+    group = Group.objects.create(name="cache readers")
+    group.permissions.add(
+        Permission.objects.get(codename="view_key", content_type__app_label="django_cachex"),
+        _access_permission("local"),
+    )
+    user = User.objects.create_user(username="staff_in_group", is_staff=True)
+    user.groups.add(group)
+    client = Client()
+    client.force_login(user)
+
+    response = client.get(reverse("admin:django_cachex_key_changelist"))
+
+    assert response.status_code == 200
+    assert "group:granted" in _result_column(response.content, "key_name")
+
+
+def test_key_detail_is_forbidden_without_the_alias_permission(db, test_cache):
+    caches["local"].set("forbidden:detail", "classified-value")
+    client = _staff_client(["view_key"])
+
+    response = client.get(_key_detail_url("local", "forbidden:detail"))
+
+    assert response.status_code == 403
+    assert "classified-value" not in response.content.decode()
+
+
+def test_add_key_is_forbidden_without_the_alias_permission(db, test_cache):
+    client = _staff_client(["view_key", "add_key"])
+
+    response = client.get(_key_add_url("local"))
+
+    assert response.status_code == 403
+
+
+def test_add_key_defaults_to_the_first_granted_alias(db, test_cache):
+    client = _staff_client(["view_key", "add_key"], aliases=("local",))
+
+    response = client.get(reverse("admin:django_cachex_key_add"))
+
+    assert response.status_code == 200
+    heading = BeautifulSoup(response.content, "html.parser").select_one("#content h1")
+    assert heading is not None
+    assert "local" in heading.get_text()
+
+
+def test_bulk_delete_spanning_a_forbidden_alias_deletes_nothing(db, test_cache: RespCache):
+    test_cache.set("allowed:bulk", "value")
+    caches["local"].set("forbidden:span", "value")
+    client = _staff_client(["view_key", "delete_key"])
+
+    response = client.post(
+        _key_list_url("default"),
+        {
+            "action": "delete_selected_keys",
+            "_selected_action": [Key.make_pk("default", "allowed:bulk"), Key.make_pk("local", "forbidden:span")],
+        },
+    )
+
+    assert response.status_code == 403
+    assert test_cache.get("allowed:bulk") == "value"
+    assert caches["local"].get("forbidden:span") == "value"
+
+
+@pytest.mark.usefixtures("_allow_flush")
+def test_flush_spanning_a_forbidden_cache_flushes_nothing(db, test_cache: RespCache):
+    test_cache.set("allowed:flush", "value")
+    caches["local"].set("forbidden:flush", "value")
+    client = _staff_client(["view_cache", "change_cache"])
+
+    response = client.post(
+        _cache_list_url(),
+        {"action": "flush_selected", "_selected_action": ["default", "local"]},
+        follow=True,
+    )
+
+    soup = BeautifulSoup(response.content, "html.parser")
+    errors = [item.get_text() for item in soup.select("ul.messagelist li.error")]
+    assert any("'local'" in error for error in errors)
+    assert test_cache.get("allowed:flush") == "value"
+    assert caches["local"].get("forbidden:flush") == "value"
+
+
+def test_cache_list_links_only_the_keys_of_granted_caches(db, test_cache):
+    client = _staff_client(["view_cache"])
+
+    response = client.get(_cache_list_url())
+
+    assert response.status_code == 200
+    names = _result_column(response.content, "name")
+    links = _result_column(response.content, "keys_link")
+    assert dict(zip(names, links, strict=True)) == {"default": "List Keys", "local": "-"}
+
+
+@pytest.mark.usefixtures("_allow_flush")
+@pytest.mark.parametrize(
+    ("action", "aliases"),
+    [
+        pytest.param("clear_all_versions", ("local",), id="clear-without-the-page-alias"),
+        pytest.param("flush_db", ("default",), id="flushdb-without-every-alias"),
+    ],
+)
+def test_cache_detail_actions_need_their_aliases(db, test_cache: RespCache, action: str, aliases: tuple[str, ...]):
+    client = _staff_client(["view_cache", "change_cache"], aliases=aliases)
+    test_cache.set("gated:aliases", "value")
+
+    response = client.post(_cache_detail_url("default"), {"action": action})
+
+    assert response.status_code == 403
+    assert test_cache.get("gated:aliases") == "value"
+
+
+@pytest.mark.usefixtures("_allow_flush")
+@pytest.mark.parametrize(
+    ("aliases", "buttons"),
+    [
+        pytest.param((), set(), id="no-alias"),
+        pytest.param(("default",), {"clear_all_versions"}, id="page-alias"),
+        pytest.param(("default", "local"), {"clear_all_versions", "flush_db"}, id="every-alias"),
+    ],
+)
+def test_danger_zone_offers_what_the_aliases_allow(db, test_cache, aliases, buttons):
+    client = _staff_client(["view_cache", "change_cache"], aliases=aliases)
+
+    response = client.get(_cache_detail_url("default"))
+
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.content, "html.parser")
+    assert {field["value"] for field in soup.select('.danger-zone input[name="action"]')} == buttons
+
+
+@pytest.mark.parametrize(
+    ("aliases", "command", "shown"),
+    [
+        pytest.param(("default",), ["SET :1:session:abc123 secret"], "SET", id="valkey-py-without-every-alias"),
+        pytest.param(("default",), ["SET", ":1:session:abc123", "secret"], "SET", id="glide-without-every-alias"),
+        pytest.param(
+            ("default", "local"),
+            ["SET", ":1:session:abc123", "secret"],
+            "SET :1:session:abc123 secret",
+            id="glide-with-every-alias",
+        ),
+    ],
+)
+def test_slow_log_shows_arguments_only_with_every_alias(db, test_cache, mocker, aliases, command, shown):
+    mocker.patch.object(type(test_cache), "slowlog_get", return_value=[{"command": command}])
+    client = _staff_client(["view_cache"], aliases=aliases)
+
+    response = client.get(_cache_detail_url("default"))
+
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.content, "html.parser")
+    assert [cell.get_text(strip=True) for cell in soup.select("#result_list .command-cell")] == [shown]
+
+
+@pytest.mark.parametrize(
+    ("aliases", "tools"),
+    [
+        pytest.param((), ["Help"], id="no-alias"),
+        pytest.param(("default",), ["List Keys", "Help"], id="page-alias"),
+    ],
+)
+def test_cache_detail_links_the_keys_only_with_the_alias_permission(db, test_cache, aliases, tools):
+    client = _staff_client(["view_cache"], aliases=aliases)
+
+    response = client.get(_cache_detail_url("default"))
+
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.content, "html.parser")
+    assert [link.get_text(strip=True) for link in soup.select("ul.object-tools a")] == tools
+
+
+def test_a_tracking_cache_needs_the_permission_of_its_transport(db, test_cache):
+    client = _staff_client(["view_key"], aliases=("tracking",))
+
+    with _extra_cache(
+        "tracking",
+        {"BACKEND": "django_cachex.cache.TrackingCache", "OPTIONS": {"transport": "default"}},
+    ):
+        response = client.get(_key_list_url("tracking"))
+
+    assert response.status_code == 403
+
+
+@pytest.mark.usefixtures("_allow_flush")
+@pytest.mark.parametrize(
+    "backend",
+    [
+        pytest.param("django.core.cache.backends.redis.RedisCache", id="redis-flushdb"),
+        pytest.param("django.core.cache.backends.memcached.PyMemcacheCache", id="memcached-flush-all"),
+    ],
+)
+def test_clear_tool_on_a_server_wide_backend_needs_every_alias(db, test_cache: RespCache, backend: str):
+    test_cache.set("shared:clear", "value")
+    client = _staff_client(["view_key", "change_cache"], aliases=("stock",))
+
+    with _extra_cache("stock", {"BACKEND": backend, "LOCATION": settings.CACHES["default"]["LOCATION"]}):
+        response = client.post(_key_list_url("stock"), {"action": "clear_cache", "cache_name": "stock"})
+
+    assert response.status_code == 403
+    assert test_cache.get("shared:clear") == "value"
+
+
+@pytest.mark.usefixtures("_allow_flush")
+def test_flush_action_on_a_server_wide_backend_needs_every_alias(db, test_cache: RespCache):
+    test_cache.set("shared:flush", "value")
+    client = _staff_client(["view_cache", "change_cache"], aliases=("stock",))
+
+    with _extra_cache(
+        "stock",
+        {"BACKEND": "django.core.cache.backends.redis.RedisCache", "LOCATION": settings.CACHES["default"]["LOCATION"]},
+    ):
+        response = client.post(
+            _cache_list_url(),
+            {"action": "flush_selected", "_selected_action": ["stock"]},
+            follow=True,
+        )
+
+    soup = BeautifulSoup(response.content, "html.parser")
+    errors = [item.get_text() for item in soup.select("ul.messagelist li.error")]
+    assert any("'stock'" in error for error in errors)
+    assert test_cache.get("shared:flush") == "value"

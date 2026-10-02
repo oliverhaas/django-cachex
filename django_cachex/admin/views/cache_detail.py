@@ -10,6 +10,8 @@ from django.shortcuts import redirect, render
 
 from django_cachex.admin.helpers import (
     CacheUnavailableError,
+    can_access_all_caches,
+    can_access_cache,
     can_flush,
     get_cache,
     get_slowlog,
@@ -52,6 +54,10 @@ def _handle_danger_zone_post(
     if action not in ("clear_all_versions", "flush_db"):
         return None
 
+    allowed = can_access_all_caches(request) if action == "flush_db" else can_access_cache(request, cache_name)
+    if not allowed:
+        raise PermissionDenied
+
     try:
         cache = get_cache(cache_name)
     except CacheUnavailableError as exc:
@@ -77,6 +83,22 @@ def _handle_danger_zone_post(
     except Exception as exc:  # noqa: BLE001
         messages.error(request, f"Could not flush the database: {mask_credentials(str(exc))}")
     return redirect(request.get_full_path())
+
+
+def _redact_slowlog(request: HttpRequest, slowlog_data: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Keep only each slow log entry's command name unless ``request`` may access every alias.
+
+    The slow log is server-wide, so its arguments can hold keys and values of any alias.
+    """
+    if not slowlog_data or can_access_all_caches(request):
+        return slowlog_data
+    entries = []
+    for entry in slowlog_data.get("entries") or []:
+        command = entry.get("command") or []
+        # valkey-py and redis-py join the command into one string, valkey-glide splits it.
+        first = str(command[0]) if command else ""
+        entries.append({**entry, "command": first.split(maxsplit=1)[:1]})
+    return {**slowlog_data, "entries": entries, "args_hidden": True}
 
 
 def cache_detail_view(
@@ -132,10 +154,13 @@ def cache_detail_view(
     except Exception as e:  # noqa: BLE001
         messages.error(request, f"Error retrieving slow log: {mask_credentials(str(e))}")
 
+    slowlog_data = _redact_slowlog(request, slowlog_data)
+
     raw_info_json = None
     if raw_info:
         raw_info_json = json.dumps(raw_info, indent=2, default=str)
 
+    danger_zone = can_flush(request) and supports_danger_zone(cache)
     context = admin.site.each_context(request)
     context.update(
         {
@@ -146,7 +171,9 @@ def cache_detail_view(
             "raw_info_json": raw_info_json,
             "slowlog_data": slowlog_data,
             "help_active": help_active,
-            "show_danger_zone": can_flush(request) and supports_danger_zone(cache),
+            "can_list_keys": can_access_cache(request, cache_name),
+            "can_clear_all_versions": danger_zone and can_access_cache(request, cache_name),
+            "can_flush_db": danger_zone and can_access_all_caches(request),
         },
     )
     return render(request, config.template("cache/change_form.html"), context)

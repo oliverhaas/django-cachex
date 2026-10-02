@@ -158,6 +158,9 @@
         {% if slowlog_data.error %}
         <p class="warningnote">{% blocktrans with error=slowlog_data.error %}The slow log could not be read: {{ error }}{% endblocktrans %}</p>
         {% elif slowlog_data.entries %}
+        {% if slowlog_data.args_hidden %}
+        <p class="help slowlog-note">{% trans "Arguments are hidden: the slow log covers the whole server, so they can hold keys of caches you have no access to." %}</p>
+        {% endif %}
         <div class="results">
             <table id="result_list" style="width: 100%;">
                 <thead>
@@ -207,11 +210,12 @@
     </fieldset>
     {% endif %}
 
-    {% if show_danger_zone %}
+    {% if can_clear_all_versions or can_flush_db %}
     <!-- Danger Zone -->
     <fieldset class="module aligned danger-zone">
         <h2 class="danger-zone-header">{% trans "Danger Zone" %}</h2>
         <div class="danger-zone-content">
+            {% if can_clear_all_versions %}
             <div class="danger-action">
                 <div>
                     <strong>{% trans "Clear all versions" %}</strong>
@@ -226,6 +230,8 @@
                     </button>
                 </form>
             </div>
+            {% endif %}
+            {% if can_flush_db %}
             <div class="danger-action">
                 <div>
                     <strong>{% trans "Flush database" %}</strong>
@@ -240,6 +246,7 @@
                     </button>
                 </form>
             </div>
+            {% endif %}
         </div>
     </fieldset>
     {% endif %}

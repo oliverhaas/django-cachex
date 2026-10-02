@@ -13,10 +13,16 @@ class Cache(models.Model):
     # Fake primary key - corresponds to cache name
     name = models.CharField(max_length=255, primary_key=True)
 
+    # Whether the requesting user can list this cache's keys. CacheAdmin.get_queryset
+    # sets it per request, since the keys_link column gets no request.
+    keys_accessible = True
+
     class Meta:
         managed = False
         app_label = "django_cachex"
         default_permissions = ("view", "change")
+        # migrate writes the rows, so an alias added later needs another migrate.
+        permissions = tuple((f"access_{alias}", f"Can access keys in cache '{alias}'") for alias in settings.CACHES)
         verbose_name = "Cache"
         verbose_name_plural = "Caches"
 
