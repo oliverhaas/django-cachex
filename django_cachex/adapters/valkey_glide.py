@@ -88,7 +88,6 @@ try:
         ConditionalChange,
         ExpirySet,
         ExpiryType,
-        FlushMode,
         GlideClientConfiguration,
         GlideClusterClient,
         GlideClusterClientConfiguration,
@@ -2023,7 +2022,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return self._client().unlink(list(keys))
 
     def clear(self) -> bool:
-        return self._client().flushdb(FlushMode.SYNC) == "OK"
+        return self._client().flushdb() == "OK"
 
     def close(self, **kwargs: Any) -> None:
         """Reap async clients whose event loop has been closed.
@@ -3058,7 +3057,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return await (await self.get_async_client()).unlink(list(keys))
 
     async def aclear(self) -> bool:
-        return (await (await self.get_async_client()).flushdb(FlushMode.SYNC)) == "OK"
+        return (await (await self.get_async_client()).flushdb()) == "OK"
 
     async def aclose(self, **kwargs: Any) -> None:
         """Close and drop this config's async client for the running loop."""

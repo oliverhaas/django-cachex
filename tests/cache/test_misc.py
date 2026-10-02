@@ -1,6 +1,7 @@
 """Tests for miscellaneous cache operations: scan, decr_version, clear_all_versions, flush_db."""
 
 import asyncio
+import time
 from typing import TYPE_CHECKING
 
 import pytest
@@ -8,6 +9,8 @@ import pytest
 from django_cachex.exceptions import NotSupportedError
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from django_cachex.cache import RespCache
 
 
@@ -95,6 +98,51 @@ def test_flush_db(cache: RespCache):
     result = cache.flush_db()
     assert result is True
     assert cache.get("flush_key") is None
+
+
+@pytest.fixture
+def _lazy_user_flush(
+    cache: RespCache,
+    client_class: str,
+    sentinel_mode: str | bool,
+    resp_adapter: str,
+) -> Iterator[None]:
+    """Turn on ``lazyfree-lazy-user-flush`` for one test, then restore it."""
+    if client_class == "cluster" and not sentinel_mode:
+        pytest.skip("CONFIG SET and INFO are per node on cluster")
+    name = "lazyfree-lazy-user-flush"
+    client = cache.get_client(write=True)
+    if resp_adapter == "valkey-glide":
+        old = client.config_get([name])[name.encode()]
+        client.config_set({name: "yes"})
+        yield
+        client.config_set({name: old})
+    else:
+        old = client.config_get(name)[name]
+        client.config_set(name, "yes")
+        yield
+        client.config_set(name, old)
+
+
+def _lazyfreed_objects(cache: RespCache, at_least: int) -> int:
+    """``lazyfreed_objects`` from INFO, polled for up to 5 s until it reaches ``at_least``.
+
+    A lazy flush frees the keys in a background thread, after the reply.
+    """
+    deadline = time.monotonic() + 5
+    while (freed := cache.info("memory")["lazyfreed_objects"]) < at_least and time.monotonic() < deadline:
+        time.sleep(0.01)
+    return freed
+
+
+@pytest.mark.usefixtures("_lazy_user_flush")
+def test_flush_db_follows_lazyfree_lazy_user_flush(cache: RespCache):
+    before = cache.info("memory")["lazyfreed_objects"]
+    cache.set_many({"lazy_a": 1, "lazy_b": 2, "lazy_c": 3})
+
+    assert cache.flush_db() is True
+    assert cache.get_many(["lazy_a", "lazy_b", "lazy_c"]) == {}
+    assert _lazyfreed_objects(cache, at_least=before + 3) >= before + 3
 
 
 @pytest.mark.asyncio
@@ -263,3 +311,14 @@ async def test_aflush_db(cache: RespCache):
     result = await cache.aflush_db()
     assert result is True
     assert cache.get("aflush_key") is None
+
+
+@pytest.mark.usefixtures("_lazy_user_flush")
+@pytest.mark.asyncio
+async def test_aflush_db_follows_lazyfree_lazy_user_flush(cache: RespCache):
+    before = cache.info("memory")["lazyfreed_objects"]
+    cache.set_many({"alazy_a": 1, "alazy_b": 2, "alazy_c": 3})
+
+    assert await cache.aflush_db() is True
+    assert cache.get_many(["alazy_a", "alazy_b", "alazy_c"]) == {}
+    assert _lazyfreed_objects(cache, at_least=before + 3) >= before + 3
