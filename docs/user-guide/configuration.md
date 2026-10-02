@@ -279,6 +279,9 @@ Compression applies only to values longer than the compressor's `min_length`
 }
 ```
 
+`socket_connect_timeout` defaults to 5 seconds when neither it nor
+`socket_timeout` is in `OPTIONS` or the `LOCATION` query.
+
 Every thread in the process shares a pool, and so does every alias with the
 same `LOCATION` and connection options, so `max_connections` caps them all
 together. redis-py 8 defaults it to 100. Past the cap a command fails with

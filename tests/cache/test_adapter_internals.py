@@ -973,7 +973,7 @@ def _capture(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
 
 @requires_valkey
-def test_missing_sentinel_kwargs_is_passed_as_none(monkeypatch: pytest.MonkeyPatch):
+def test_missing_sentinel_kwargs_gives_discovery_the_socket_options(monkeypatch: pytest.MonkeyPatch):
     # Regression: an empty dict suppressed the driver's socket_* fallback,
     # so a blackholing sentinel blocked discovery instead of timing out.
     captured = _capture(monkeypatch)
@@ -984,7 +984,7 @@ def test_missing_sentinel_kwargs_is_passed_as_none(monkeypatch: pytest.MonkeyPat
         socket_timeout=0.5,
     )
 
-    assert captured["sentinel_kwargs"] is None
+    assert captured["sentinel_kwargs"] == {"socket_timeout": 0.5}
 
 
 @requires_valkey
@@ -1307,6 +1307,85 @@ def test_options_win_in_the_cluster_client(monkeypatch: pytest.MonkeyPatch):
 
     assert captured["url"] == "redis://example.com:7000/2?socket_timeout=5"
     assert captured["kwargs"] == {"username": "bob", "password": "optpw"}
+
+
+@requires_valkey
+@pytest.mark.parametrize("adapter_class", _STANDALONE_DRIVERS)
+@pytest.mark.parametrize(
+    ("url", "options", "expected"),
+    [
+        pytest.param("redis://host:7000/0", {}, 5, id="unset"),
+        pytest.param("redis://host:7000/0", {"socket_timeout": None}, 5, id="no-read-timeout"),
+        pytest.param("redis://host:7000/0?socket_connect_timeout=2", {}, 2, id="url"),
+        pytest.param("redis://host:7000/0", {"socket_timeout": 0.5}, None, id="read-timeout"),
+        pytest.param("redis://host:7000/0?socket_timeout=0.5", {}, None, id="url-read-timeout"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_pools_connect_under_a_default_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    adapter_class: Any,
+    url: str,
+    options: dict[str, Any],
+    expected: float | None,
+):
+    monkeypatch.setattr(adapter_class, "_sync_pools", {})
+    monkeypatch.setattr(adapter_class, "_async_pools", weakref.WeakKeyDictionary())
+    adapter = adapter_class([url], **options)
+    client = await adapter.get_async_client(write=True)
+    try:
+        pools = [adapter.get_client(write=True).connection_pool, client.connection_pool]
+
+        assert [pool.connection_kwargs.get("socket_connect_timeout") for pool in pools] == [expected, expected]
+    finally:
+        await adapter.aclose()
+
+
+@pytest.mark.parametrize("adapter_class", SENTINEL_ADAPTERS)
+@pytest.mark.parametrize(
+    ("url", "sentinel_kwargs"),
+    [
+        pytest.param("redis://mymaster/0", None, id="unset"),
+        pytest.param("redis://mymaster/0?socket_connect_timeout=2", None, id="url"),
+        pytest.param("redis://mymaster/0", {"password": "secret"}, id="sentinel-kwargs"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_sentinel_discovery_connects_under_a_default_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    adapter_class: Any,
+    url: str,
+    sentinel_kwargs: dict[str, Any] | None,
+):
+    monkeypatch.setattr(adapter_class, "_sync_pools", {})
+    monkeypatch.setattr(adapter_class, "_async_pools", weakref.WeakKeyDictionary())
+    adapter = adapter_class([url], sentinels=[("sentinel-a", 26379)], sentinel_kwargs=sentinel_kwargs)
+    client = await adapter.get_async_client(write=True)
+    try:
+        managers = [
+            adapter.get_client(write=True).connection_pool.sentinel_manager,
+            client.connection_pool.sentinel_manager,
+        ]
+
+        assert [manager.sentinel_kwargs.get("socket_connect_timeout") for manager in managers] == [5, 5]
+    finally:
+        await adapter.aclose()
+
+
+@pytest.mark.parametrize("adapter_class", CLUSTER_ADAPTERS)
+@pytest.mark.asyncio
+async def test_cluster_clients_connect_under_a_default_timeout(mocker, adapter_class: Any):
+    cluster_class = mocker.patch.object(adapter_class, "_cluster_class")
+    async_cluster_class = mocker.patch.object(adapter_class, "_async_cluster_class")
+    mocker.patch.object(adapter_class, "_clusters", {})
+    mocker.patch.object(adapter_class, "_async_clusters", weakref.WeakKeyDictionary())
+    adapter = adapter_class(["redis://node-a:7000"])
+
+    adapter.get_client()
+    await adapter.get_async_client()
+
+    calls = [cluster_class.from_url.call_args, async_cluster_class.from_url.call_args]
+    assert [call.kwargs["socket_connect_timeout"] for call in calls] == [5, 5]
 
 
 def _build(pool_class: Any) -> ValkeyPySentinelAdapter:

@@ -208,6 +208,18 @@ def _driver_copy(value: Any, depth: int = 0) -> Any:
     return value
 
 
+# Seconds. Without it, redis-py 7 and the sync valkey-py Sentinel clients wait out
+# the kernel's TCP connect timeout, about two minutes, on an unreachable host.
+_DEFAULT_SOCKET_CONNECT_TIMEOUT = 5
+
+
+def _connect_timeout_given(options: Mapping[str, Any], urls: Sequence[str] = ()) -> bool:
+    """Count a ``socket_timeout`` too: without ``socket_connect_timeout``, valkey-py and redis-py 7 connect under it."""
+    if "socket_connect_timeout" in options or options.get("socket_timeout") is not None:
+        return True
+    return any({"socket_connect_timeout", "socket_timeout"} & parse_qs(urlsplit(url).query).keys() for url in urls)
+
+
 def _strip_url_credentials(url: str, overridden: frozenset[str]) -> str:
     """Drop the ``username`` / ``password`` a URL carries when OPTIONS overrides them.
 
@@ -798,10 +810,12 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             parser_class = self._lib.connection.DefaultParser
 
         # Filter out client-only options before passing to the pool.
-        self._pool_options = {"parser_class": parser_class}
+        self._pool_options: dict[str, Any] = {"parser_class": parser_class}
         for key, value in options.items():
             if key not in self._CLIENT_ONLY_OPTIONS:
                 self._pool_options[key] = value
+        if not _connect_timeout_given(self._pool_options, self._servers):
+            self._pool_options["socket_connect_timeout"] = _DEFAULT_SOCKET_CONNECT_TIMEOUT
 
         # parser_class is sync-only. Precomputed because the async path looks
         # its pool up on every awaited command.
@@ -3698,9 +3712,6 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         if not sentinels:
             raise ImproperlyConfigured("sentinels must be provided as a list of (host, port) tuples")
 
-        # None, not {}: only then does the driver give sentinel clients the
-        # connection's ``socket_*`` timeouts, bounding discovery.
-        sentinel_kwargs = _driver_copy(self._options.get("sentinel_kwargs"))
         pool_options = _driver_copy(self._pool_options)
 
         if self._sentinel_class is None:
@@ -3708,9 +3719,22 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
             raise RuntimeError(msg)
         self._sentinel = self._sentinel_class(
             sentinels,
-            sentinel_kwargs=sentinel_kwargs,
+            sentinel_kwargs=self._discovery_kwargs(pool_options),
             **pool_options,
         )
+
+    def _discovery_kwargs(self, pool_options: Mapping[str, Any]) -> dict[str, Any]:
+        """The ``sentinel_kwargs`` for the clients that ask the Sentinels where the servers are.
+
+        Without OPTIONS ``sentinel_kwargs`` they take the ``socket_*`` pool
+        options, as the driver does for None; the URL query never reaches them.
+        """
+        sentinel_kwargs = _driver_copy(self._options.get("sentinel_kwargs"))
+        if sentinel_kwargs is None:
+            sentinel_kwargs = {k: v for k, v in pool_options.items() if k.startswith("socket_")}
+        if not _connect_timeout_given(sentinel_kwargs):
+            sentinel_kwargs["socket_connect_timeout"] = _DEFAULT_SOCKET_CONNECT_TIMEOUT
+        return sentinel_kwargs
 
     @staticmethod
     def _checked_pool_class(option: str, pool_class: Any, base_pool_class: builtins.type[Any] | None) -> Any:
@@ -3840,13 +3864,12 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
                 raise RuntimeError(msg)
 
             sentinels = self._options.get("sentinels")
-            # None, not {}: see the note in __init__ about socket_* inheritance.
-            sentinel_kwargs = _driver_copy(self._options.get("sentinel_kwargs"))
+            pool_options = self._async_sentinel_pool_options()
 
             async_sentinel = self._async_sentinel_class(
                 sentinels,
-                sentinel_kwargs=sentinel_kwargs,
-                **self._async_sentinel_pool_options(),
+                sentinel_kwargs=self._discovery_kwargs(pool_options),
+                **pool_options,
             )
             self._async_sentinels[loop] = async_sentinel
             return async_sentinel
@@ -4062,6 +4085,8 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         cluster_options = {
             key_opt: value for key_opt, value in self._options.items() if key_opt not in self._CLIENT_ONLY_OPTIONS
         }
+        if not _connect_timeout_given(cluster_options, self._servers[:1]):
+            cluster_options["socket_connect_timeout"] = _DEFAULT_SOCKET_CONNECT_TIMEOUT
         return cluster_options, (self._cluster_class, tuple(self._servers), _options_key(cluster_options))
 
     @cached_property
