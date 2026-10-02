@@ -129,7 +129,7 @@ Field expiration needs Redis 7.4+ or Valkey 9.0+, and `hsetex` and `hgetex` need
 
 `sdiff`, `sinter`, `sunion` and their `*store` forms take `keys` as one key or a sequence. Write `sdiff(["a", "b"])`, because `sdiff("a", "b")` passes `"b"` as `version`.
 
-Members must stay hashable after a round trip through the serializer. The JSON and MessagePack serializers return a tuple as a list, so `sadd` rejects tuples there. `smembers`, `sdiff`, `sinter`, `sunion`, `spop` and `sscan` return a Python `set`. `1`, `True` and `1.0` are one entry in it but three members on the server, and `scard` counts three.
+Members must stay hashable after a round trip through the serializer. The JSON and MessagePack serializers return a tuple as a list, so `sadd` rejects tuples there. `smembers`, `sdiff`, `sinter`, `sunion`, `spop` and `sscan` return a Python `set`. `1`, `True` and `1.0` are one entry in it but three members on the server, and `scard` counts three. `LocMemCache` and `DatabaseCache` store one member, see [Local backends](../user-guide/configuration.md#local-backends).
 
 ### Sorted Set Methods
 

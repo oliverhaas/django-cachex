@@ -132,6 +132,14 @@ TTL, like Redis `RENAME`. `DatabaseCache.incr()` and `decr()` update the row
 atomically and keep the key's TTL. Like Django, they raise `ValueError` on a
 missing key, where the Valkey/Redis backends create it.
 
+Members compare as Python values, where the Valkey/Redis backends compare
+their serialized bytes. `1`, `True` and `1.0` are one member of a set or a
+sorted set, where the server stores three, and `lrem()` with any one of them
+removes all three. Sorted set members with equal scores sort by
+`str(member)`, where the server sorts them by their serialized bytes, so
+`zrange()` and the other range reads can return tied members in another
+order.
+
 On MySQL, keep the connection at `READ COMMITTED`, Django's default for MySQL.
 The compound operations (`lpush()`, `sadd()`, `hincrby()` and the rest) lock
 their row with `SELECT ... FOR UPDATE`. Under the InnoDB default of

@@ -68,6 +68,7 @@
 - The admin's help for a string key said that its input must be valid JSON. It now says that input which is not JSON is stored as a string.
 - The API reference said that a pipelined `zadd(..., incr=True)` sends `ZINCRBY`, which takes none of the `nx`, `xx`, `gt` and `lt` flags. It now says that the pipeline sends `ZADD ... INCR`.
 - The configuration reference says that on the redis-py and valkey-py backends a database in the `LOCATION` URL overrides `OPTIONS["db"]`, whereas on valkey-glide backends `OPTIONS["db"]` overrides the URL.
+- The configuration reference says that on `LocMemCache` and `DatabaseCache`, `1`, `True` and `1.0` are one set or sorted set member and one `lrem()` value, and that sorted set members with equal scores sort by `str(member)`.
 
 ## 0.12.1 (October 2026)
 
