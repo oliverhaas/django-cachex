@@ -239,7 +239,7 @@ The `helpers` argument of both hooks:
 
 ## Async Methods
 
-Every cache method on this page except `get_client()` has an async twin with an `a` prefix, such as `aget()` or `ahset()`. `alock()`, `asemaphore()` and `apipeline()` are `async def`, so `async with` needs an extra `await`, as in `async with await cache.alock("k"):`. See [Async Support](../user-guide/async.md).
+Every cache method on this page except `get_client()`, `info()`, `slowlog_get()` and `slowlog_len()` has an async twin with an `a` prefix, such as `aget()` or `ahset()`. `alock()`, `asemaphore()` and `apipeline()` are `async def`, so `async with` needs an extra `await`, as in `async with await cache.alock("k"):`. See [Async Support](../user-guide/async.md).
 
 ## Raw Client Access
 

@@ -43,7 +43,7 @@ The server sends invalidations per key prefix. With Django's default `KEY_FUNCTI
 
 ## Supported operations
 
-`TrackingCache` supports the standard Django cache API and the `nx`, `xx` and `get` flags of `set()`. It passes `keys`, `iter_keys`, `scan`, `ttl`, `pttl`, `type`, `expire`, `persist`, `delete_pattern`, `memory_usage`, `largest_keys`, `slowlog_get` and `slowlog_len` to the transport, and each has its async twin. `delete_pattern()`, `incr_version()` and `decr_version()` also evict the matching local copies. Other methods, such as the hash, list, set, sorted-set and stream commands, `lock()` and `pipeline()`, raise `NotSupportedError`; call them on the transport alias.
+`TrackingCache` supports the standard Django cache API and the `nx`, `xx` and `get` flags of `set()`. It passes `keys`, `iter_keys`, `scan`, `ttl`, `pttl`, `type`, `expire`, `persist`, `delete_pattern`, `memory_usage`, `largest_keys`, `slowlog_get` and `slowlog_len` to the transport, and each but the two slowlog methods has its async twin. `delete_pattern()`, `incr_version()` and `decr_version()` also evict the matching local copies. Other methods, such as the hash, list, set, sorted-set and stream commands, `lock()` and `pipeline()`, raise `NotSupportedError`; call them on the transport alias.
 
 `info()` adds a `tracking` section with the listener state, the store size and the hit, miss, invalidation and flush counters. The admin lists a `TrackingCache` alias as limited, without key browsing. Browse its keys through the transport alias.
 
