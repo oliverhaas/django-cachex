@@ -25,6 +25,7 @@ from django.utils import translation
 
 from django_cachex.adapters.pipeline import Pipeline
 from django_cachex.admin.models import Cache, Key
+from django_cachex.admin.views.key_detail import _MAX_STRING_BYTES
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
@@ -2957,6 +2958,21 @@ def test_key_list_renders_with_broken_value(admin_client, test_cache):
     assert response.status_code == 200
     # Broken key still appears in the list; operator needs to see it to delete it.
     assert BROKEN_KEY in response.content.decode()
+
+
+def test_oversized_string_is_neither_read_nor_rendered(admin_client: Client, test_cache: RespCache, mocker):
+    test_cache.set("big:string", "x" * (_MAX_STRING_BYTES + 1))
+    read = mocker.patch.object(test_cache, "eval_script", wraps=test_cache.eval_script)
+
+    response = admin_client.get(_key_detail_url("default", "big:string"))
+
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert "too large" in content
+    assert "x" * 100 not in content
+    read.assert_not_called()
+    assert 'name="ttl_value"' in content
+    assert 'id="delete-form"' in content
 
 
 def _assert_breadcrumbs(content: str, *, trail: list[str]) -> None:

@@ -114,6 +114,21 @@ _UNHASHABLE_MEMBER_ERROR = "JSON arrays and objects cannot be used as sorted set
 _CAS_NAME_TAKEN = -2
 
 
+# Strings above this many stored bytes are not read: the GET and the SHA1 hold
+# the server for the whole value, and the page would carry all of it.
+_MAX_STRING_BYTES = 1024 * 1024
+
+
+def _stored_string_size(cache: Any, key: str) -> int | None:
+    """Return a string key's stored length, or None where the backend has no STRLEN."""
+    if not hasattr(cache, "get_client"):
+        return None
+    try:
+        return cache.get_client(write=False).strlen(cache.make_key(key))
+    except NotSupportedError:
+        return None
+
+
 def _apply_cas_result(
     request: HttpRequest,
     cas_result: int,
@@ -920,9 +935,14 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     value_is_editable = True
     value_error_display: str | None = None
     string_sha1 = None
+    value_size = None
+    value_too_large = False
     if key_exists and not opaque_type and (not key_type or key_type == KeyType.STRING):
         try:
-            raw_value, string_sha1 = read_value_with_sha1(cache, key)
+            value_size = _stored_string_size(cache, key)
+            value_too_large = value_size is not None and value_size > _MAX_STRING_BYTES
+            if not value_too_large:
+                raw_value, string_sha1 = read_value_with_sha1(cache, key)
         except (CompressorError, SerializerError) as exc:
             detail = mask_credentials(str(exc)) or exc.__class__.__name__
             value_error_display = f"<value cannot be decoded: {detail}>"
@@ -954,6 +974,8 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
 
     if value_error_display is not None:
         value_display = value_error_display
+    elif value_too_large:
+        value_display, value_is_editable = "", False
     elif raw_value is not None:
         value_display, value_is_editable = format_value_for_display(raw_value)
     else:
@@ -1004,6 +1026,8 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             "create_mode": create_mode,
             "value_display": value_display,
             "value_is_editable": value_is_editable,
+            "value_too_large": value_too_large,
+            "value_size": value_size,
             "string_sha1": string_sha1,
             "cas_supported": supports_cas(cache),
             "key_type": key_type,
