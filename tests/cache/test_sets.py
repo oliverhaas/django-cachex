@@ -4,8 +4,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from django_cachex.serializers.pickle import PickleSerializer
-
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
 
@@ -185,8 +183,7 @@ async def test_asadd_rejects_unhashable_member(cache: RespCache):
 
 
 def test_sadd_tuple_member_follows_the_serializer(cache: RespCache, serializers: str | None):
-    # Sentinel configs ignore the ``serializers`` param, so ask the cache which one it got.
-    if isinstance(cache._serializers[0], PickleSerializer):
+    if serializers is None:
         assert cache.sadd("tuple_member", (1, 2)) == 1
         assert cache.smembers("tuple_member") == {(1, 2)}
     else:
@@ -197,7 +194,7 @@ def test_sadd_tuple_member_follows_the_serializer(cache: RespCache, serializers:
 
 @pytest.mark.asyncio
 async def test_asadd_tuple_member_follows_the_serializer(cache: RespCache, serializers: str | None):
-    if isinstance(cache._serializers[0], PickleSerializer):
+    if serializers is None:
         assert await cache.asadd("atuple_member", (1, 2)) == 1
         assert await cache.asmembers("atuple_member") == {(1, 2)}
     else:

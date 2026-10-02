@@ -193,6 +193,7 @@ def build_sentinel_cache_config(
     sentinel_port: int,
     *,
     compressor: str | None = None,
+    serializer: str | None = None,
     resp_adapter: str = "redis-py",
     native_parser: bool = False,
     db: int = 7,
@@ -202,6 +203,8 @@ def build_sentinel_cache_config(
     base_options: dict = {"sentinels": sentinels}
     if compressor and compressor in COMPRESSORS:
         base_options["compressor"] = COMPRESSORS[compressor]
+    if serializer and serializer in SERIALIZERS:
+        base_options["serializer"] = SERIALIZERS[serializer]
 
     client_library = ADAPTER_IMAGES[resp_adapter][1]
     if resp_adapter in POOL_OPTION_ADAPTERS:
@@ -388,6 +391,7 @@ def cache(
             sentinel_info.host,
             sentinel_info.port,
             compressor=compressor_val,
+            serializer=serializer_val,
             resp_adapter=resp_adapter,
             native_parser=native_parser_val,
         )
