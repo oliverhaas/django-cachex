@@ -2109,15 +2109,19 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return int(_dec_str(result[0])), keys
 
     def iter_keys(self, pattern: str, itersize: int | None = None) -> Iterator[str]:
+        for k in self._scan_keys(pattern, itersize):
+            yield k.decode(errors="surrogateescape") if isinstance(k, bytes) else k
+
+    def _scan_keys(self, match: str, count: int | None) -> Iterator[Any]:
+        """Run SCAN to the end and yield each key name as the server sent it."""
         client = self._client()
-        if itersize is None:
-            itersize = self._default_scan_itersize
+        if count is None:
+            count = self._default_scan_itersize
         cursor: Any = b"0"
         while True:
-            result = client.scan(cursor, match=pattern, count=itersize)
+            result = client.scan(cursor, match=match, count=count)
             cursor, keys = cast("Any", result[0]), result[1]
-            for k in keys:
-                yield k.decode(errors="surrogateescape") if isinstance(k, bytes) else k
+            yield from keys
             if cursor in (b"0", "0", 0):
                 return
 
@@ -2126,7 +2130,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         if itersize is None:
             itersize = self._default_scan_itersize
         deleted = 0
-        for batch_keys in batched(self.iter_keys(pattern, itersize=itersize), itersize, strict=False):
+        for batch_keys in batched(self._scan_keys(pattern, itersize), itersize, strict=False):
             deleted += client.unlink(list(batch_keys))
         return deleted
 
@@ -3154,15 +3158,20 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return int(_dec_str(result[0])), keys
 
     async def aiter_keys(self, pattern: str, itersize: int | None = None):
+        async for k in self._ascan_keys(pattern, itersize):
+            yield k.decode(errors="surrogateescape") if isinstance(k, bytes) else k
+
+    async def _ascan_keys(self, match: str, count: int | None):
+        """Run SCAN to the end and yield each key name as the server sent it."""
         client = await self.get_async_client()
-        if itersize is None:
-            itersize = self._default_scan_itersize
+        if count is None:
+            count = self._default_scan_itersize
         cursor: Any = b"0"
         while True:
-            result = await client.scan(cursor, match=pattern, count=itersize)
+            result = await client.scan(cursor, match=match, count=count)
             cursor, keys = cast("Any", result[0]), result[1]
             for k in keys:
-                yield k.decode(errors="surrogateescape") if isinstance(k, bytes) else k
+                yield k
             if cursor in (b"0", "0", 0):
                 return
 
@@ -3172,7 +3181,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             itersize = self._default_scan_itersize
         deleted = 0
         keys: list[Any] = []
-        async for k in self.aiter_keys(pattern, itersize=itersize):
+        async for k in self._ascan_keys(pattern, itersize):
             keys.append(k)
             if len(keys) >= itersize:
                 deleted += await client.unlink(keys)
@@ -3985,7 +3994,7 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
     # A ``ClusterScanCursor`` can't round-trip through the protocol's int cursor,
     # so drive the loop here and report one finished scan.
 
-    def _scan_keys(self, match: str | None, count: int | None, _type: str | None) -> Iterator[str]:
+    def _scan_keys(self, match: str | None, count: int | None, _type: str | None = None) -> Iterator[Any]:
         client = self._client()
         if count is None:
             count = self._default_scan_itersize
@@ -3993,7 +4002,7 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
         object_type = _object_type(_type)
         while not cursor.is_finished():
             cursor, keys = client.scan(cursor, match=match, count=count, type=object_type)
-            yield from (k.decode(errors="surrogateescape") if isinstance(k, bytes) else k for k in keys)
+            yield from keys
 
     def scan(
         self,
@@ -4003,12 +4012,10 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
         _type: str | None = None,
     ) -> tuple[int, list[str]]:
         del cursor  # Only ever 0: the previous call consumed the whole keyspace.
-        return 0, list(self._scan_keys(match, count, _type))
+        keys = self._scan_keys(match, count, _type)
+        return 0, [k.decode(errors="surrogateescape") if isinstance(k, bytes) else k for k in keys]
 
-    def iter_keys(self, pattern: str, itersize: int | None = None) -> Iterator[str]:
-        return self._scan_keys(pattern, itersize, None)
-
-    async def _ascan_keys(self, match: str | None, count: int | None, _type: str | None):
+    async def _ascan_keys(self, match: str | None, count: int | None, _type: str | None = None):
         client: Any = await self.get_async_client()
         if count is None:
             count = self._default_scan_itersize
@@ -4017,7 +4024,7 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
         while not cursor.is_finished():
             cursor, keys = await client.scan(cursor, match=match, count=count, type=object_type)
             for key in keys:
-                yield key.decode(errors="surrogateescape") if isinstance(key, bytes) else key
+                yield key
 
     async def ascan(
         self,
@@ -4027,11 +4034,8 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
         _type: str | None = None,
     ) -> tuple[int, list[str]]:
         del cursor
-        return 0, [key async for key in self._ascan_keys(match, count, _type)]
-
-    async def aiter_keys(self, pattern: str, itersize: int | None = None):
-        async for key in self._ascan_keys(pattern, itersize, None):
-            yield key
+        keys = self._ascan_keys(match, count, _type)
+        return 0, [k.decode(errors="surrogateescape") if isinstance(k, bytes) else k async for k in keys]
 
     def _client(self) -> Any:
         client = _GLIDE_SYNC_CLUSTER_CLIENTS.get(self._config_key)

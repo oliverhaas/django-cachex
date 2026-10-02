@@ -173,6 +173,14 @@ def test_delete_pattern_itersize_smaller_than_match_count(cache: RespCache):
     assert cache.keys("itersize-*") == ["itersize-bar"]
 
 
+def test_delete_pattern_deletes_an_undecodable_name_and_not_its_escaped_spelling(cache: RespCache):
+    cache.set("dpbad_\\xff", "escaped spelling")
+    cache.get_client(write=True).set(cache.make_key("dpbad_").encode() + b"\xff", b"raw")
+
+    assert cache.delete_pattern("dpbad_?") == 1
+    assert cache.keys("dpbad_*") == ["dpbad_\\xff"]
+
+
 def test_glob_characters_in_key_prefix_match_literally(cache: RespCache):
     """A prefix with glob metacharacters is escaped in patterns, and a backslash escapes itself."""
     config = copy.deepcopy(settings.CACHES)
@@ -345,6 +353,15 @@ async def test_adelete_pattern_itersize_smaller_than_match_count(cache: RespCach
     assert res == len(matching)
 
     assert cache.keys("aitersize-*") == ["aitersize-bar"]
+
+
+@pytest.mark.asyncio
+async def test_adelete_pattern_deletes_an_undecodable_name_and_not_its_escaped_spelling(cache: RespCache):
+    cache.set("adpbad_\\xff", "escaped spelling")
+    cache.get_client(write=True).set(cache.make_key("adpbad_").encode() + b"\xff", b"raw")
+
+    assert await cache.adelete_pattern("adpbad_?") == 1
+    assert cache.keys("adpbad_*") == ["adpbad_\\xff"]
 
 
 @pytest.mark.asyncio
