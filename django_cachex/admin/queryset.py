@@ -13,6 +13,8 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.admin import ShowFacets
 from django.contrib.admin.views.main import ERROR_FLAG, PAGE_VAR
+from django.core.cache.backends.db import BaseDatabaseCache
+from django.core.cache.backends.redis import RedisCache as DjangoRedisCache
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseRedirect
 from django.urls import reverse
@@ -32,7 +34,8 @@ from django_cachex.admin.helpers import (
     mask_credentials,
 )
 from django_cachex.admin.models import Cache, Key
-from django_cachex.cache.resp import RespClusterCache
+from django_cachex.cache.resp import RespCache, RespClusterCache
+from django_cachex.cache.tracking import TrackingCache
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
@@ -313,6 +316,18 @@ def _scan_pattern(search_query: str) -> str:
         return search_query
     # Django-style contains search.
     return f"*{search_query}*"
+
+
+def _clear_scope(cache: Any) -> tuple[str, str]:
+    """Say what ``cache.clear()`` removes: for the Clear confirmation, and as a note for its message."""
+    # A TrackingCache clears its transport, which is always a RespCache.
+    if isinstance(cache, RespCache | TrackingCache):
+        return "This removes keys for the current cache version.", "current version"
+    if isinstance(cache, BaseDatabaseCache):
+        return "This empties its whole database table, for every version and every cache using it.", "whole table"
+    if isinstance(cache, DjangoRedisCache):
+        return "This runs FLUSHDB, emptying its whole Redis database.", "whole database"
+    return "This removes every key in its storage, for every version.", "all versions"
 
 
 class KeyQuerySet:
@@ -680,7 +695,7 @@ class KeyAdminMixin:
     # ------------------------------------------------------------------
 
     def _handle_clear_cache(self, request: HttpRequest, cache_name: str) -> HttpResponse:
-        """Clear every key in the current cache version, then redirect back."""
+        """Clear the cache, then redirect back."""
         # Same blast radius as the danger zone, so it takes the danger zone's
         # gate rather than ``change_key``.
         if not can_flush(request):
@@ -688,7 +703,7 @@ class KeyAdminMixin:
         try:
             cache = get_cache(cache_name)
             cache.clear()
-            messages.success(request, f"Cache '{cache_name}' cleared (current version).")
+            messages.success(request, f"Cache '{cache_name}' cleared ({_clear_scope(cache)[1]}).")
         except CacheUnavailableError as exc:
             messages.error(request, str(exc))
         except Exception as exc:  # noqa: BLE001
@@ -712,9 +727,11 @@ class KeyAdminMixin:
         extra_context["title"] = f"Keys in '{cache_name}'"
         extra_context["can_flush"] = can_flush(request)
         with contextlib.suppress(CacheUnavailableError):
+            cache = get_cache(cache_name)
+            extra_context["clear_confirm"] = _clear_scope(cache)[0]
             # Django sets ``has_add_permission`` from the ModelAdmin; the link is
             # also pointless where no key type can be created.
-            if not creatable_types(get_cache(cache_name)):
+            if not creatable_types(cache):
                 extra_context["has_add_permission"] = False
 
         if request.method == "POST" and request.POST.get("action") == "clear_cache":

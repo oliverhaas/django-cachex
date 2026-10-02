@@ -20,6 +20,7 @@
 - The pipeline's `lpop()`, `rpop()`, `spop()`, `zpopmax()` and `zpopmin()` with a negative `count`, `linsert()` with a position other than `BEFORE` or `AFTER`, and `lpos()` with `rank=0` or a negative `count` or `maxlen` queued the command anyway, so `execute()` ran the commands queued before it and then raised the driver's error. They now raise `ValueError` when queued, like the cache methods.
 - `full_encode_pre` encoded an `Encoded(...)` arg as the wrapper, so `get()` returned `Encoded(value=...)` instead of the value, or the JSON serializer raised `SerializerError`. It now encodes the wrapped value.
 - The admin showed Add key to users with `add_key` but not `change_key`, then gave them a key page with no way to add the first value. `add_key` now creates a key that does not exist yet; editing an existing key still takes `change_key`.
+- The admin's Clear tool said it removes only the current cache version, but on `LocMemCache` and `DatabaseCache` it removes every version, and on `DatabaseCache` the whole table, which other aliases may share. Its confirmation and message now say what goes.
 
 ### Documentation
 

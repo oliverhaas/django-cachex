@@ -18,6 +18,7 @@ from django.contrib.admin.utils import quote
 from django.contrib.auth.models import Permission, User
 from django.core.cache import caches
 from django.core.exceptions import ImproperlyConfigured
+from django.core.management import call_command
 from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
 from django.utils import translation
@@ -2787,6 +2788,40 @@ def test_change_cache_permits_clear_cache(db, test_cache):
 
     assert response.status_code == 302
     assert test_cache.get("doomed_key") is None
+
+
+@pytest.mark.usefixtures("_allow_flush")
+@pytest.mark.parametrize(
+    ("backend", "confirm_word", "message_word"),
+    [
+        pytest.param("django_cachex.cache.LocMemCache", "every version", "all versions", id="locmem"),
+        pytest.param("django_cachex.cache.DatabaseCache", "database table", "whole table", id="database"),
+    ],
+)
+def test_clear_says_what_the_backend_removes(
+    admin_client: Client,
+    test_cache,
+    backend: str,
+    confirm_word: str,
+    message_word: str,
+):
+    call_command("createcachetable", "admin_test_clear")
+    with _extra_cache("cleared", {"BACKEND": backend, "LOCATION": "admin_test_clear"}):
+        caches["cleared"].set("other:version", "value", version=2)
+
+        page = admin_client.get(_key_list_url("cleared"))
+        response = admin_client.post(
+            _key_list_url("cleared"),
+            {"action": "clear_cache", "cache_name": "cleared"},
+            follow=True,
+        )
+
+        assert caches["cleared"].get("other:version", version=2) is None
+    clear_link = BeautifulSoup(page.content, "html.parser").select_one("#clear-cache-form a")
+    assert clear_link is not None
+    assert confirm_word in clear_link["onclick"]
+    assert response.status_code == 200
+    assert message_word in response.content.decode()
 
 
 # A user without add_key must not see the add form, fill it in, and only then hit PermissionDenied on submit.
