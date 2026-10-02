@@ -19,7 +19,7 @@ INSTALLED_APPS = [
 Superusers have every permission. Staff users need Django permissions of two kinds: the model permissions say what they can do, and one permission per cache says where.
 
 - `django_cachex.view_cache` / `view_key`: view caches and keys.
-- `django_cachex.change_cache`: the cache list's Flush action, the key browser's Clear tool and the cache info page's danger zone, once [turned on](#flushing-caches). All three delete keys.
+- `django_cachex.change_cache`: the cache list's Flush action, the key browser's Clear tool and the cache info page's danger zone, when [turned on](#flushing-caches). All three delete keys.
 - `django_cachex.add_key`: create keys.
 - `django_cachex.change_key`: edit values and TTLs and run the type operations on the key detail page. Without it, the page shows no edit controls.
 - `django_cachex.delete_key`: delete keys.
@@ -127,4 +127,4 @@ The page shows a string value over 1 MiB, before or after decompression, as its 
 | Cache info | Yes | Yes, no slow log | Configuration only |
 | Flush cache (`clear()`) | Yes | Yes | Yes |
 | Danger zone (clear all versions, FLUSHDB) | Yes | No | No |
-| Conflict detection on edit | Yes | No | No |
+| Conflict detection on edit | Yes | Type changes only | No |

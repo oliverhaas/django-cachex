@@ -49,6 +49,7 @@
 - The configuration reference said every other `OPTIONS` key goes to the driver. It now says that the Valkey/Redis backends reject `decode_responses` and that `MAX_ENTRIES` and `CULL_FREQUENCY` do nothing there.
 - The stampede prevention docs say that `{}` turns it off, that unknown dict keys are dropped with a warning, so a dict of misspelled keys means the defaults, and that bad field values raise `TypeError` or `ValueError`, not `ImproperlyConfigured`.
 - The stampede prevention docs say that counters and data structures get the buffer too, and how to keep it off them.
+- The admin guide's Backend Abilities table said that `LocMemCache` and `DatabaseCache` have no conflict detection on edit. It now says they detect type changes only.
 
 ## 0.12.1 (October 2026)
 
