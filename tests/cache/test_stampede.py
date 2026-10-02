@@ -922,3 +922,26 @@ async def test_aadd_keeps_fresh_and_persistent_keys(stampede_cache: RespCache):
     assert await stampede_cache.aadd("asp_add_forever", "new", timeout=300) is False
     assert await stampede_cache.aget("asp_add_fresh") == "original"
     assert await stampede_cache.aget("asp_add_forever") == "original"
+
+
+def test_set_nx_refills_a_logically_expired_key(stampede_cache: RespCache):
+    stampede_cache.set("sp_nx_stale", "stale", timeout=300)
+    stampede_cache.expire("sp_nx_stale", 50, stampede_prevention=False)
+    assert stampede_cache.get("sp_nx_stale") is None
+
+    assert stampede_cache.set("sp_nx_stale", "fresh", timeout=300, nx=True) is True
+    assert stampede_cache.set("sp_nx_stale", "late", timeout=300, nx=True) is False
+    assert stampede_cache.get("sp_nx_stale") == "fresh"
+    ttl = stampede_cache.ttl("sp_nx_stale", stampede_prevention=False)
+    assert ttl is not None
+    assert 300 < ttl <= 360
+
+
+@pytest.mark.asyncio
+async def test_aset_nx_refills_a_logically_expired_key(stampede_cache: RespCache):
+    await stampede_cache.aset("asp_nx_stale", "stale", timeout=300)
+    await stampede_cache.aexpire("asp_nx_stale", 50, stampede_prevention=False)
+
+    assert await stampede_cache.aset("asp_nx_stale", "fresh", timeout=300, nx=True) is True
+    assert await stampede_cache.aset("asp_nx_stale", "late", timeout=300, nx=True) is False
+    assert await stampede_cache.aget("asp_nx_stale") == "fresh"

@@ -586,8 +586,12 @@ class RespCache(BaseCachex):
         """Set a value in the cache asynchronously.
 
         ``nx=True`` only sets if key doesn't exist, ``xx=True`` only sets
-        if key exists, ``get=True`` returns the old value.
+        if key exists, ``get=True`` returns the old value. With stampede
+        prevention active, a bare ``nx=True`` writes like :meth:`aadd`: a key
+        inside the buffer counts as absent.
         """
+        if nx and not (xx or get) and self._stampede_buffer(stampede_prevention):
+            return await self.aadd(key, value, timeout, version, stampede_prevention=stampede_prevention)
         key = self.make_and_validate_key(key, version=version)
         if nx or xx or get:
             with _set_nx_get_translated(nx=nx, xx=xx, get=get):
@@ -631,8 +635,11 @@ class RespCache(BaseCachex):
         ``nx=True`` only sets if key doesn't exist, ``xx=True`` only sets
         if key exists, ``get=True`` returns the old value. Returns ``bool``
         when ``nx``/``xx`` is used, the old value when ``get=True``, ``None``
-        otherwise.
+        otherwise. With stampede prevention active, a bare ``nx=True`` writes
+        like :meth:`add`: a key inside the buffer counts as absent.
         """
+        if nx and not (xx or get) and self._stampede_buffer(stampede_prevention):
+            return self.add(key, value, timeout, version, stampede_prevention=stampede_prevention)
         key = self.make_and_validate_key(key, version=version)
         if nx or xx or get:
             with _set_nx_get_translated(nx=nx, xx=xx, get=get):
