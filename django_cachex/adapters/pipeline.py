@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from django_cachex.adapters.protocols import RespAsyncPipelineProtocol, RespPipelineProtocol
     from django_cachex.stampede import StampedeConfig
 
+from django_cachex.cache.resp import _wire_key
 from django_cachex.exceptions import KeyNotFoundError, NotSupportedError, maybe_wrap_set_nx_get, translate_server_error
 from django_cachex.script import ScriptHelpers, reject_stray_encoded
 from django_cachex.types import KeyType
@@ -324,8 +325,8 @@ class Pipeline:
                 return None
             decoded: dict[str, list[tuple[str, dict[str, Any]]]] = {}
             for stream_key, entries in self._stream_key_pairs(results):
-                sk = stream_key.decode() if isinstance(stream_key, bytes) else str(stream_key)
-                decoded[key_map.get(sk, sk)] = self._decode_stream_entries(entries or [])
+                sk = stream_key.decode(errors="surrogateescape") if isinstance(stream_key, bytes) else str(stream_key)
+                decoded[key_map.get(_wire_key(sk), sk)] = self._decode_stream_entries(entries or [])
             return decoded
 
         return decode

@@ -3071,12 +3071,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
             pairs = ((stream_key, wrapper[0] if wrapper else None) for stream_key, wrapper in results.items())
         else:
             pairs = results
-        return {
-            (stream_key.decode() if isinstance(stream_key, bytes) else stream_key): self._decode_stream_entries(
-                entries or [],
-            )
-            for stream_key, entries in pairs
-        }
+        return {_text(stream_key): self._decode_stream_entries(entries or []) for stream_key, entries in pairs}
 
     def xlen(self, key: str) -> int:
         """Get the number of entries in a stream."""

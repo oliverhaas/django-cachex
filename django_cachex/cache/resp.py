@@ -3662,7 +3662,7 @@ class RespCache(BaseCachex):
         result = self.adapter.xread(nstreams, count=count, block=block)
         if result is None:
             return None
-        return {key_map.get(k, k): self._decode_stream_entries(v) for k, v in result.items()}
+        return {key_map.get(_wire_key(k), k): self._decode_stream_entries(v) for k, v in result.items()}
 
     async def axread(
         self,
@@ -3677,7 +3677,7 @@ class RespCache(BaseCachex):
         result = await self.adapter.axread(nstreams, count=count, block=block)
         if result is None:
             return None
-        return {key_map.get(k, k): self._decode_stream_entries(v) for k, v in result.items()}
+        return {key_map.get(_wire_key(k), k): self._decode_stream_entries(v) for k, v in result.items()}
 
     def xtrim(
         self,
@@ -3835,7 +3835,7 @@ class RespCache(BaseCachex):
         result = self.adapter.xreadgroup(group, consumer, nstreams, count=count, block=block, noack=noack)
         if result is None:
             return None
-        return {key_map.get(k, k): self._decode_stream_entries(v) for k, v in result.items()}
+        return {key_map.get(_wire_key(k), k): self._decode_stream_entries(v) for k, v in result.items()}
 
     async def axreadgroup(
         self,
@@ -3853,7 +3853,7 @@ class RespCache(BaseCachex):
         result = await self.adapter.axreadgroup(group, consumer, nstreams, count=count, block=block, noack=noack)
         if result is None:
             return None
-        return {key_map.get(k, k): self._decode_stream_entries(v) for k, v in result.items()}
+        return {key_map.get(_wire_key(k), k): self._decode_stream_entries(v) for k, v in result.items()}
 
     def xack(self, key: str, group: str, *entry_ids: str, version: int | None = None) -> int:
         """Acknowledge message processing."""

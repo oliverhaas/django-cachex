@@ -566,3 +566,29 @@ def test_xread_that_times_out_returns_an_empty_dict(cache: RespCache):
 @pytest.mark.asyncio
 async def test_axread_that_times_out_returns_an_empty_dict(cache: RespCache):
     assert await cache.axread({"astream_timed_out": "$"}, block=10) == {}
+
+
+@pytest.mark.asyncio
+async def test_xread_returns_an_undecodable_stream_under_the_name_scan_returns(cache: RespCache):
+    entry_id = cache.adapter.xadd(cache.make_key("{xrbad}").encode() + b"\xff", {"msg": cache.encode("hello")})
+    expected = {"{xrbad}\udcff": [(entry_id, {"msg": "hello"})]}
+
+    assert cache.xread({"{xrbad}\udcff": "0"}) == expected
+    assert await cache.axread({"{xrbad}\udcff": "0"}) == expected
+    with cache.pipeline() as pipe:
+        pipe.xread({"{xrbad}\udcff": "0"})
+        assert pipe.execute() == [expected]
+
+
+@pytest.mark.asyncio
+async def test_xreadgroup_returns_an_undecodable_stream_under_the_name_scan_returns(cache: RespCache):
+    raw_key = cache.make_key("{xgbad}").encode() + b"\xff"
+    entry_id = cache.adapter.xadd(raw_key, {"msg": cache.encode("hello")})
+    cache.adapter.xgroup_create(raw_key, "readers", "0")
+    expected = {"{xgbad}\udcff": [(entry_id, {"msg": "hello"})]}
+
+    assert cache.xreadgroup("readers", "first", {"{xgbad}\udcff": ">"}) == expected
+    assert await cache.axreadgroup("readers", "first", {"{xgbad}\udcff": "0"}) == expected
+    with cache.pipeline() as pipe:
+        pipe.xreadgroup("readers", "first", {"{xgbad}\udcff": "0"})
+        assert pipe.execute() == [expected]

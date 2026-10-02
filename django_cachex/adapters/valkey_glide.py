@@ -646,7 +646,10 @@ def _decode_xread(raw: Any) -> dict[str, list[tuple[str, dict[str, Any]]]]:
 
     A read that found nothing answers nil, which becomes ``{}`` as on valkey-py.
     """
-    return {_dec_str(stream): _decode_stream_entries(entries) for stream, entries in (raw or {}).items()}
+    return {
+        (key.decode(errors="surrogateescape") if isinstance(key, bytes) else key): _decode_stream_entries(entries)
+        for key, entries in (raw or {}).items()
+    }
 
 
 def _decode_xinfo(raw: Any) -> Any:
