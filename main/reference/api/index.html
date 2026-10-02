@@ -1775,7 +1775,7 @@
 </tr>
 <tr>
 <td><code>scan(cursor=0, pattern="*", count=None, version=None, key_type=None)</code></td>
-<td>Single SCAN iteration. <code>key_type</code> keeps only keys of that type. A key name that is not valid UTF-8 comes back decoded with the <code>surrogateescape</code> error handler, as from <code>os.listdir()</code>, and the key commands take it back as is</td>
+<td>Single SCAN iteration. <code>key_type</code> keeps only keys of that type</td>
 </tr>
 <tr>
 <td><code>delete_pattern(pattern)</code></td>
@@ -1793,6 +1793,7 @@
 </table>
 <h4 id="key-patterns">Key patterns<a class="headerlink" href="#key-patterns" title="Permanent link">&para;</a></h4>
 <p><code>keys()</code>, <code>iter_keys()</code>, <code>scan()</code> and <code>delete_pattern()</code> take a case-sensitive Redis glob on every backend. The glob supports <code>*</code>, <code>?</code>, <code>[abc]</code>, <code>[a-z]</code>, <code>[^abc]</code>, and <code>\</code> to escape any of them. The empty pattern matches only the empty key, so <code>delete_pattern("")</code> deletes at most one key. Use <code>"*"</code> to match every key.</p>
+<p><code>keys()</code>, <code>iter_keys()</code> and <code>scan()</code> return a key name that is not valid UTF-8 decoded with the <code>surrogateescape</code> error handler, as <code>os.listdir()</code> does, and the key commands take that name back as is.</p>
 <h3 id="data-structure-calls-with-no-arguments">Data-structure calls with no arguments<a class="headerlink" href="#data-structure-calls-with-no-arguments" title="Permanent link">&para;</a></h3>
 <p><code>sadd</code>, <code>srem</code>, <code>hdel</code>, <code>hset</code>, <code>lpush</code>, <code>rpush</code>, <code>zrem</code>, <code>xdel</code> and <code>xack</code> return <code>0</code> when called with no members, fields, values or entry ids. So does <code>zadd</code> with an empty mapping. <code>smismember</code>, <code>zmscore</code>, <code>hgetex</code> and the field-TTL methods from <code>hexpire</code> to <code>hpersist</code> return <code>[]</code>. These calls send no command and create no key. In a pipeline, such a call still adds its <code>0</code> or <code>[]</code> to the <code>execute()</code> result, so the results line up with the calls.</p>
 <h3 id="hash-methods">Hash Methods<a class="headerlink" href="#hash-methods" title="Permanent link">&para;</a></h3>
