@@ -1080,6 +1080,22 @@ def test_stampede_buffer_is_stripped_from_the_local_expiry(
         assert cache._state.store == {}
 
 
+@BOTH_MODES
+def test_a_key_in_its_last_half_second_reads_as_a_miss(
+    redis_container: RedisContainerInfo,
+    resp_adapter: str,
+    coherence: str,
+):
+    _skip_unless_usable(resp_adapter, coherence)
+    options = _coherence_options(coherence)
+    with _connected(_stampede_transport_config(redis_container, resp_adapter, options=options)) as cache:
+        transport = caches["transport"]
+        transport.set("last", "stale", timeout=300)
+        transport.pexpire("last", 400, stampede_prevention=False)
+        assert cache.get("last") is None
+        assert cache.get_many(["last"]) == {}
+
+
 def test_local_hits_roll_the_stampede_dice(redis_container: RedisContainerInfo, resp_adapter: str, mocker):
     _skip_unless_trackable(resp_adapter)
     with _connected(_stampede_transport_config(redis_container, resp_adapter, delta=1.0)) as cache:

@@ -1006,7 +1006,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         config = self.resolve_stampede(stampede_prevention)
         if config:
             ttl = client.ttl(key)
-            if ttl > 0 and should_recompute(ttl, config):
+            if should_recompute(ttl, config):
                 return None
         return val
 
@@ -1018,7 +1018,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         config = self.resolve_stampede(stampede_prevention)
         if config:
             ttl = await client.ttl(key)
-            if ttl > 0 and should_recompute(ttl, config):
+            if should_recompute(ttl, config):
                 return None
         return val
 
@@ -1151,7 +1151,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
                 pipe.ttl(k)
             ttls = pipe.execute()
             for k, ttl in zip(list(found), ttls, strict=False):
-                if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
+                if isinstance(ttl, int) and should_recompute(ttl, config):
                     del found[k]
 
         return found
@@ -1178,7 +1178,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
                 pipe.ttl(k)
             ttls = await pipe.execute()
             for k, ttl in zip(list(found), ttls, strict=False):
-                if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
+                if isinstance(ttl, int) and should_recompute(ttl, config):
                     del found[k]
 
         return found
@@ -4125,7 +4125,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
                 pipe.ttl(k)
             ttls = pipe.execute()
             for k, ttl in zip(list(found), ttls, strict=False):
-                if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
+                if isinstance(ttl, int) and should_recompute(ttl, config):
                     del found[k]
 
         return found
@@ -4287,7 +4287,7 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
                 pipe.ttl(k)
             ttls = await pipe.execute()
             for k, ttl in zip(list(found), ttls, strict=False):
-                if isinstance(ttl, int) and ttl > 0 and should_recompute(ttl, config):
+                if isinstance(ttl, int) and should_recompute(ttl, config):
                     del found[k]
 
         return found

@@ -548,6 +548,27 @@ def test_recompute_stores_with_buffer(stampede_cache: RespCache):
     assert ttl > 300
 
 
+def test_get_and_add_agree_on_a_key_in_its_last_half_second(stampede_cache: RespCache):
+    stampede_cache.set("sp_last_ms", "stale", timeout=300)
+    stampede_cache.pexpire("sp_last_ms", 400, stampede_prevention=False)
+
+    assert stampede_cache.get("sp_last_ms") is None
+    assert stampede_cache.get_many(["sp_last_ms"]) == {}
+    assert stampede_cache.add("sp_last_ms", "fresh", timeout=300) is True
+    assert stampede_cache.get("sp_last_ms") == "fresh"
+
+
+@pytest.mark.asyncio
+async def test_aget_and_aadd_agree_on_a_key_in_its_last_half_second(stampede_cache: RespCache):
+    await stampede_cache.aset("asp_last_ms", "stale", timeout=300)
+    await stampede_cache.apexpire("asp_last_ms", 400, stampede_prevention=False)
+
+    assert await stampede_cache.aget("asp_last_ms") is None
+    assert await stampede_cache.aget_many(["asp_last_ms"]) == {}
+    assert await stampede_cache.aadd("asp_last_ms", "fresh", timeout=300) is True
+    assert await stampede_cache.aget("asp_last_ms") == "fresh"
+
+
 def test_pipeline_set_get(stampede_cache: RespCache):
     with stampede_cache.pipeline() as pipe:
         pipe.set("sp_pipe1", "value1", timeout=300)

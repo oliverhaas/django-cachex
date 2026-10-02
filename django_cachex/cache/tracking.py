@@ -629,7 +629,7 @@ class TrackingCache(DelegatingCacheMixin, BaseCachex):
             logical_expires_at: float | None = None
             if isinstance(pttl, int) and pttl >= 0:
                 ttl_s = (pttl + 500) // 1000
-                if roll and config and ttl_s > 0 and should_recompute(ttl_s, config):
+                if roll and config and should_recompute(ttl_s, config):
                     state.forget(made_key, token)
                     continue
                 remaining = (pttl - buffer_ms) / 1000
