@@ -319,6 +319,19 @@ def test_close_keeps_sync_pools(cache: RespCache, resp_adapter: str):
     assert cache.adapter._pools[0] is pool
 
 
+def test_close_leaves_other_instances_connected(cache: RespCache, client_class: str, resp_adapter: str):
+    """One thread's request_finished closes its instance while other threads keep using theirs."""
+    if client_class == "cluster" and resp_adapter == "valkey-glide":
+        pytest.skip("valkey-glide sends CLIENT ID to a random cluster node")
+    other = caches.create_connection("default")
+    assert other.adapter.get_client(write=True) is cache.adapter.get_client(write=True)
+    connection_id = other.adapter.get_client(write=True).client_id()
+
+    cache.close()
+
+    assert other.adapter.get_client(write=True).client_id() == connection_id
+
+
 @pytest.mark.asyncio
 async def test_aclose_disconnects_the_running_loops_pools(cache: RespCache):
     skip_without_generic_async_pool(cache)
