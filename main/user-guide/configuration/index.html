@@ -1707,6 +1707,9 @@ scheme, username and password, and on <code>ValkeyGlideCache</code> also on the 
 </tr>
 </tbody>
 </table>
+<p>On the redis-py and valkey-py backends, a database in the <code>LOCATION</code> URL
+overrides <code>OPTIONS["db"]</code>, because the driver's <code>from_url()</code> applies URL values
+last. On valkey-glide backends, <code>OPTIONS["db"]</code> overrides the URL.</p>
 <p><code>MAX_ENTRIES</code> and <code>CULL_FREQUENCY</code> stay with Django and do nothing on these
 backends. Every Valkey/Redis backend rejects a true
 <code>OPTIONS["decode_responses"]</code>, and <code>decode_responses</code> in the <code>LOCATION</code> query,
