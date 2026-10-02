@@ -315,14 +315,12 @@ class Pipeline:
     def _make_stream_key_decoder(
         self,
         key_map: dict[str, Any],
-    ) -> Callable[[Any], dict[str, list[tuple[str, dict[str, Any]]]] | None]:
+    ) -> Callable[[Any], dict[str, list[tuple[str, dict[str, Any]]]]]:
         """Create a decoder that un-prefixes stream keys in xread/xreadgroup results."""
 
         def decode(
-            results: list[tuple[Any, list[tuple[Any, dict[Any, Any]]]]] | dict[Any, Any] | None,
-        ) -> dict[str, list[tuple[str, dict[str, Any]]]] | None:
-            if results is None:
-                return None
+            results: list[tuple[Any, list[tuple[Any, dict[Any, Any]]]]] | dict[Any, Any],
+        ) -> dict[str, list[tuple[str, dict[str, Any]]]]:
             decoded: dict[str, list[tuple[str, dict[str, Any]]]] = {}
             for stream_key, entries in self._stream_key_pairs(results):
                 sk = stream_key.decode(errors="surrogateescape") if isinstance(stream_key, bytes) else str(stream_key)

@@ -1769,7 +1769,6 @@ def test_xread_step_survives_nil_entries(cache: RespCache):
     assert decode([[nkey.encode(), None]]) == {"pipe_nil_xread": []}
     assert decode({nkey.encode(): []}) == {"pipe_nil_xread": []}
     assert decode({nkey.encode(): [[]]}) == {"pipe_nil_xread": []}
-    assert decode(None) is None
 
 
 # The cursor is lost in the pipelined JUSTID reply, so the call is refused up front.
