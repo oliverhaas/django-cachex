@@ -873,22 +873,17 @@ def test_multiple_execute_calls(cache: RespCache):
     assert results2 == [True, "val2"]
 
 
-def test_context_manager_resets_decoders(cache: RespCache):
-    """After context manager exit, pipeline decoders are cleared."""
+def test_context_manager_exit_drops_the_unexecuted_commands(cache: RespCache):
     pipe = cache.pipeline()
 
     with pipe:
         pipe.set("ctx_key", "ctx_val")
         pipe.get("ctx_key")
-        results = pipe.execute()
-        assert results == [True, "ctx_val"]
 
-    # After __exit__, decoders should be cleared.
-    # Queuing new commands and executing should work without length mismatch.
     pipe.set("ctx_key2", "ctx_val2")
     pipe.get("ctx_key2")
-    results2 = pipe.execute()
-    assert results2 == [True, "ctx_val2"]
+    assert pipe.execute() == [True, "ctx_val2"]
+    assert cache.get("ctx_key") is None
 
 
 def test_execute_empty_after_previous(cache: RespCache):

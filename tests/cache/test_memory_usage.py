@@ -7,6 +7,7 @@ from django.core.cache import caches
 from django.test import override_settings
 
 from django_cachex.exceptions import NotSupportedError
+from tests.fixtures.cache import server_version
 
 if TYPE_CHECKING:
     from django_cachex.cache import RespCache
@@ -24,11 +25,11 @@ def test_memory_usage_missing_key_is_none(cache: RespCache):
 
 
 def test_memory_usage_samples_is_forwarded(cache: RespCache):
-    cache.hset("mu_hash", mapping={f"f{i}": "v" * 100 for i in range(50)})
-    exact = cache.memory_usage("mu_hash", samples=0)
-    sampled = cache.memory_usage("mu_hash", samples=1)
-    assert isinstance(exact, int) and exact > 0
-    assert isinstance(sampled, int) and sampled > 0
+    server, version = server_version(cache)
+    if server == "redis" and version >= (8, 4):
+        pytest.skip("Redis 8.4+ measures every element whatever SAMPLES says")
+    cache.hset("mu_hash", mapping={"big": "v" * 10_000} | {f"f{i}": "v" * 100 for i in range(50)})
+    assert cache.memory_usage("mu_hash", samples=1) != cache.memory_usage("mu_hash", samples=0)
 
 
 def test_memory_usage_version_selects_the_key(cache: RespCache):

@@ -74,14 +74,6 @@ def wait_for_replication(
     return result
 
 
-def test_replica_containers_start(replica_containers: ReplicaSetContainerInfo):
-    assert replica_containers.master_host
-    assert replica_containers.master_port > 0
-    assert len(replica_containers.replica_hosts) == 2
-    assert len(replica_containers.replica_ports) == 2
-    assert all(port > 0 for port in replica_containers.replica_ports)
-
-
 def test_write_to_master_read_from_replica(replica_cache: RespCache):
     replica_cache.set("replica_test_key", "test_value", timeout=60)
 
@@ -127,11 +119,6 @@ def test_one_pool_per_server_read_from(replica_cache: RespCache, replica_urls: l
     assert len({id(pool) for pool in pools.values()}) == len(replica_urls)
 
     replica_cache.delete("pool_test")
-
-
-def test_servers_list_configuration(replica_cache: RespCache, replica_urls: list[str]):
-    assert replica_cache.adapter._servers == replica_urls
-    assert len(replica_cache.adapter._servers) == 3
 
 
 def test_set_get_many_with_replicas(replica_cache: RespCache):

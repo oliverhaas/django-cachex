@@ -94,10 +94,20 @@ def test_decompress_non_bytes_raises_compressor_error(compressor):
         compressor.decompress(object())
 
 
-def test_custom_level(compressor):
-    cls = type(compressor)
-    custom = cls(level=1)
-    assert custom.level == 1
-    # Roundtrip still works at custom level.
-    data = b"abcdefghij" * 100
-    assert custom.decompress(custom.compress(data)) == data
+@pytest.mark.parametrize(
+    ("cls", "low", "high"),
+    [
+        (GzipCompressor, 1, 9),
+        (Lz4Compressor, 0, 12),
+        (LzmaCompressor, 0, 9),
+        (ZlibCompressor, 1, 9),
+        (ZstdCompressor, 1, 19),
+    ],
+    ids=lambda value: value.__name__ if isinstance(value, type) else None,
+)
+def test_higher_level_compresses_smaller(cls, low, high):
+    data = b"".join(f"{i}:{i * i % 977},".encode() for i in range(5000))
+    fast = cls(level=low).compress(data)
+    strong = cls(level=high).compress(data)
+    assert len(strong) < len(fast)
+    assert cls(level=high).decompress(strong) == data

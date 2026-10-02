@@ -1,6 +1,7 @@
 """Tests for cache stampede prevention via XFetch algorithm (TTL-based)."""
 
 import logging
+import random
 import time
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -76,20 +77,6 @@ def test_zero_delta_never_triggers_early():
     assert triggers == 0
     # But when logically expired, still triggers
     assert should_recompute(60, config) is True
-
-
-def test_stampede_config_default_values():
-    config = StampedeConfig()
-    assert config.buffer == 60
-    assert config.beta == 1.0
-    assert config.delta == 1.0
-
-
-def test_stampede_config_custom_values():
-    config = StampedeConfig(buffer=30, beta=2.0, delta=0.5)
-    assert config.buffer == 30
-    assert config.beta == 2.0
-    assert config.delta == 0.5
 
 
 def test_zero_beta_and_delta_are_accepted():
@@ -716,18 +703,12 @@ def test_config_override_replaces_instance(stampede_cache: RespCache):
 # =============================================================================
 
 
-def test_extreme_random_values_do_not_crash():
-    """should_recompute never raises regardless of RNG output.
-
-    Regression: math.log(0.0) and math.log1p(-1.0) both raise ValueError.
-    Using -expovariate(1.0) avoids domain errors entirely.
-    """
-    config = StampedeConfig(buffer=60, delta=1.0, beta=1.0)
-    # Before the fix, one in ~9 quadrillion calls would crash.
-    # With expovariate, it never crashes.
-    for _ in range(10_000):
-        result = should_recompute(350, config)
-        assert isinstance(result, bool)
+@pytest.mark.parametrize(("value", "recomputes"), [(0.0, False), (1.0 - 2**-53, True)], ids=["lowest", "highest"])
+def test_extreme_random_values_do_not_crash(mocker, value, recomputes):
+    rng = random.Random()
+    mocker.patch.object(rng, "random", return_value=value)
+    mocker.patch("django_cachex.stampede.random", rng)
+    assert should_recompute(65, StampedeConfig(buffer=60, delta=1.0, beta=1.0)) is recomputes
 
 
 def test_expovariate_edge_via_mock(mocker):

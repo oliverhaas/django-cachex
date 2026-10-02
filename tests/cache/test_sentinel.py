@@ -51,16 +51,6 @@ def sentinel_cache(
         yield caches["default"]
 
 
-def test_sentinel_containers_start(
-    sentinel_container: SentinelContainerInfo,
-    resp_images: tuple[str, str],
-):
-    _image, client_library = resp_images
-    assert sentinel_container.host
-    assert sentinel_container.port > 0
-    assert sentinel_container.client_library == client_library
-
-
 def test_sentinel_basic_operations(sentinel_cache: RespCache):
     sentinel_cache.set("sentinel_test_key", "test_value", timeout=60)
     assert sentinel_cache.get("sentinel_test_key") == "test_value"

@@ -8,6 +8,7 @@ parametrized RESP tests do, without a container.
 import copy
 import inspect
 import pickle
+import sys
 import time
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -2173,7 +2174,9 @@ def test_deepcopy_does_not_duplicate_members():
 
 
 def test_reported_memory_counts_the_sidecar():
-    assert _deep_getsizeof(_ZSet({"a": 1.0})) > _deep_getsizeof({"a": 1.0})
+    zset = _ZSet({f"m{i}": float(i) for i in range(100)})
+    sidecar_entries = sum(sys.getsizeof(entry) for entry in zset._sorted)
+    assert _deep_getsizeof(zset) >= _deep_getsizeof(dict(zset)) + sidecar_entries
 
 
 # ``_glob_to_regex`` follows Redis's ``stringmatchlen`` on ranges.

@@ -962,11 +962,11 @@ def test_incr_version_collection_key_moves(db_cache: DatabaseCache):
 
 
 def test_incr_version_string_key_keeps_its_ttl(db_cache: DatabaseCache):
-    db_cache.set("s", "v", timeout=300)
+    db_cache.set("s", "v", timeout=100)
     db_cache.incr_version("s")
     ttl = db_cache.ttl("s", version=2)
     assert ttl is not None
-    assert 290 < ttl <= 300
+    assert 90 < ttl <= 100
 
 
 def test_incr_version_persistent_key_stays_persistent(db_cache: DatabaseCache):

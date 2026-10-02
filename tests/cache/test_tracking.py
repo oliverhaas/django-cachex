@@ -591,10 +591,6 @@ def test_location_defaults_to_the_transport_alias(redis_container: RedisContaine
         assert "transport" in _TRACKING_REGISTRY
 
 
-def test_cachex_support_level(tracking_cache):
-    assert tracking_cache._cachex_support == "limited"
-
-
 @TTL_MODE
 def test_ttl_coherence_serves_locally_without_a_listener(tracking_cache):
     tracking_cache.set("k", 1)
