@@ -3090,6 +3090,7 @@
 </ul>
 <h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
 <ul>
+<li>The ORM cache guide says that under django-tenants' per-tenant <code>search_path</code> or a row-level security policy, one tenant can be served another's cached rows, and shows a <code>QUERY_KEYGEN</code> that adds the tenant to the query key.</li>
 <li>The quickstart and the configuration reference say that the redis-py backends reject <code>valkey://</code> and <code>valkeys://</code> URLs, with a <code>ValueError</code> on the first cache call.</li>
 <li>The API reference, the async guide and the <code>TrackingCache</code> docs no longer claim async twins for <code>info()</code>, <code>slowlog_get()</code> and <code>slowlog_len()</code>, which have none.</li>
 <li>The <code>TrackingCache</code> guide says which calls open the listener connection. Reads and <code>info()</code> do, writes do not.</li>
