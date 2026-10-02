@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Self
 from weakref import WeakValueDictionary
 
 from django_cachex.exceptions import CachexError
+from django_cachex.utils import _wire_key
 
 if TYPE_CHECKING:
     from types import FrameType, TracebackType
@@ -536,7 +537,7 @@ class RespSemaphore:
     def __init__(
         self,
         adapter: RespAdapterProtocol,
-        name: str,
+        name: str | bytes,
         capacity: int,
         *,
         weight: int = 1,
@@ -547,6 +548,9 @@ class RespSemaphore:
         if lease is None or not math.isfinite(lease) or lease <= 0:
             msg = "lease must be a positive finite number of seconds (Redis backend)"
             raise ValueError(msg)
+        if isinstance(name, bytes):
+            # A name from scan() that is not UTF-8 comes from make_and_validate_key as its bytes.
+            name = name.decode(errors="surrogateescape")
         self._adapter = adapter
         self.name = name
         self.capacity = capacity
@@ -556,9 +560,9 @@ class RespSemaphore:
         self._token: str | None = None
         self._claim_lock = threading.Lock()
         prefix = "{" + name + "}"
-        self._state_key = f"{prefix}:state"
-        self._claims_key = f"{prefix}:claims"
-        self._queue_key = f"{prefix}:queue"
+        self._state_key = _wire_key(f"{prefix}:state")
+        self._claims_key = _wire_key(f"{prefix}:claims")
+        self._queue_key = _wire_key(f"{prefix}:queue")
 
     def _claim(self) -> str:
         """Check and mint in one critical section so racing threads cannot both claim."""

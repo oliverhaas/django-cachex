@@ -46,6 +46,7 @@
 - On redis-py 7, with `OPTIONS["socket_timeout"] = None` on valkey-py, and in valkey-py's sync Sentinel lookups, a connect had no timeout, so an unreachable host held each call for the kernel's TCP timeout of about two minutes. A connect now gives up after 5 seconds unless `socket_connect_timeout` or `socket_timeout` says otherwise in `OPTIONS`, the `LOCATION` query or `sentinel_kwargs`.
 - On `ValkeyGlideClusterCache`, the `ImproperlyConfigured` error for seed URLs that disagree on TLS, username or password called the `LOCATION` list a primary and its replicas. It now says that valkey-glide applies one set of these settings to every URL in the list.
 - `KeyType`, which `type()` returns, was missing from the names that `django_cachex` exports, so `from django_cachex import KeyType` raised `ImportError`. It now works.
+- On the Valkey and Redis backends, `semaphore()` and `asemaphore()` raised `TypeError` for a name that `scan()` returned for a key name that is not valid UTF-8. They now take that name, as `get()` and the other key commands do.
 
 ### Documentation
 

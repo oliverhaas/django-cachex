@@ -730,6 +730,19 @@ def test_resp_weight(cache):
             sem_c.release()
 
 
+def test_resp_semaphore_takes_an_undecodable_name_that_scan_returned(cache):
+    name = b"resp_bad_\xff".decode(errors="surrogateescape")
+    holder = cache.semaphore(name, capacity=1, lease=10)
+    other = cache.semaphore(name, capacity=1, lease=10)
+    assert holder.acquire(blocking=False) is True
+    try:
+        assert other.acquire(blocking=False) is False
+        claims_key = ("{" + cache.make_key(name) + "}:claims").encode(errors="surrogateescape")
+        assert cache.adapter.has_key(claims_key) is True
+    finally:
+        holder.release()
+
+
 def test_resp_double_acquire_raises(cache):
     """One RespSemaphore instance is non-reentrant."""
     sem = cache.semaphore("resp_nonreentrant", capacity=2, lease=10)
