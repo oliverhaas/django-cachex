@@ -12,6 +12,7 @@
 
 - `DatabaseCache.scan()` skipped keys when others were deleted mid-iteration, so a loop that scans and deletes left about half of them. Its cursor is now a position in hash order, like `LocMemCache`'s. The 0.11.0 fix had missed it.
 - On valkey-glide, `xreadgroup()` with id `0` raised `TypeError` when a pending entry had been removed by `XDEL` or `XTRIM`. That entry now comes back with an empty field dict, as on redis-py and valkey-py.
+- On valkey-glide, each sync blocking call (`blpop()`, `brpop()`, `blmove()`, `xread()` and `xreadgroup()` with `block`, or a pipeline holding one) built a client and kept about 2 KB of it for the life of the process, because glide registers every client in a fork hook. Those calls now reuse idle clients.
 
 ## 0.12.1 (October 2026)
 

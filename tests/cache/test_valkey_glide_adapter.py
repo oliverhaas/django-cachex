@@ -13,6 +13,7 @@ pytest.importorskip("glide")
 
 from django.core.exceptions import ImproperlyConfigured
 from glide_sync import (
+    ClosingError,
     ClusterBatch,
     ConditionalChange,
     ExpirySet,
@@ -2193,18 +2194,42 @@ def test_blocking_request_timeout_outlasts_the_block(options, block_seconds, tim
     assert _blocking_request_timeout(options, block_seconds) == timeout_ms
 
 
-def test_blpop_runs_on_its_own_client_and_closes_it(mocker):
+def _blocking_adapter(mocker, dedicated):
+    import django_cachex.adapters.valkey_glide as vg
+
+    mocker.patch.dict(vg._GLIDE_SYNC_BLOCKING_CLIENTS, clear=True)
     adapter, shared = _adapter(mocker)
     adapter._options = {}
+    adapter._config_key = ("config",)
+    create = mocker.patch.object(ValkeyGlideAdapter, "_create_client", return_value=dedicated)
+    return adapter, shared, create
+
+
+def test_blocking_calls_reuse_one_client_of_their_own(mocker):
+    # Regression: each call built a client, and glide's fork hook pins every one.
     dedicated = mocker.MagicMock()
     dedicated.custom_command.return_value = [b"k", b"v"]
-    create = mocker.patch.object(ValkeyGlideAdapter, "_create_client", return_value=dedicated)
+    adapter, shared, create = _blocking_adapter(mocker, dedicated)
 
     assert adapter.blpop("k", timeout=2) == ("k", b"v")
+    assert adapter.brpop("k", timeout=3) == ("k", b"v")
 
-    create.assert_called_once_with(request_timeout=2250)
-    dedicated.__exit__.assert_called_once()
+    create.assert_called_once_with(request_timeout=4096)
+    dedicated.close.assert_not_called()
     shared.custom_command.assert_not_called()
+
+
+def test_a_failed_blocking_call_closes_its_client(mocker):
+    dedicated = mocker.MagicMock()
+    dedicated.custom_command.side_effect = ClosingError("gone")
+    adapter, _, create = _blocking_adapter(mocker, dedicated)
+
+    for _ in range(2):
+        with pytest.raises(ClosingError):
+            adapter.blpop("k", timeout=2)
+
+    assert create.call_count == 2
+    assert dedicated.close.call_count == 2
 
 
 @pytest.mark.asyncio

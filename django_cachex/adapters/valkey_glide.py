@@ -209,6 +209,9 @@ class _WrongTypeClient:
 
 _GLIDE_SYNC_CLIENTS: dict[tuple[Any, ...], Any] = {}
 _GLIDE_SYNC_LOCK = threading.Lock()
+# Idle clients for sync blocking commands, by adapter class, config and request timeout.
+_GLIDE_SYNC_BLOCKING_CLIENTS: dict[tuple[Any, ...], list[Any]] = {}
+_GLIDE_SYNC_BLOCKING_LOCK = threading.Lock()
 _GLIDE_ASYNC_CLIENTS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[tuple[Any, ...], Any]] = (
     weakref.WeakKeyDictionary()
 )
@@ -762,7 +765,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         # ``self._batch.commands``; a reply that already fits skips this.
         self._post: dict[int, Any] = {}
         # A batch that queues a BLOCK runs on the client ``blocking_client(seconds)``
-        # builds, so the wait can't stall the shared one; ``_blocks`` holds the seconds.
+        # lends, so the wait can't stall the shared one; ``_blocks`` holds the seconds.
         self._blocking_client = blocking_client
         self._blocks: list[float] = []
 
@@ -1826,21 +1829,38 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         client: Any = await self.get_async_client()
         return await client.custom_command(args)
 
-    def _blocking_client(self, block_seconds: float) -> Any:
-        """A new client whose request timeout outlasts ``block_seconds``, closed by ``with``.
+    @contextlib.contextmanager
+    def _blocking_client(self, block_seconds: float) -> Iterator[Any]:
+        """Lend an idle client whose request timeout outlasts ``block_seconds``.
 
         Glide multiplexes each client over one connection, so a command that
         parks it runs here instead of stalling every call on the shared client.
         """
+        # Pooled: glide pins every client it builds in an ``os.register_at_fork``
+        # hook. Rounding the timeout up to a power of two keeps the pools few.
         timeout = _blocking_request_timeout(self._options, block_seconds)
-        return _WrongTypeClient(self._create_client(request_timeout=timeout))
+        timeout = min(1 << (timeout - 1).bit_length(), _GLIDE_MAX_REQUEST_TIMEOUT_MS)
+        key = (type(self), self._config_key, timeout)
+        with _GLIDE_SYNC_BLOCKING_LOCK:
+            idle = _GLIDE_SYNC_BLOCKING_CLIENTS.get(key)
+            client = idle.pop() if idle else None
+        if client is None:
+            client = _WrongTypeClient(self._create_client(request_timeout=timeout))
+        try:
+            yield client
+        except BaseException:
+            # The reply can still be on its way, so the connection can't be reused.
+            client.close()
+            raise
+        with _GLIDE_SYNC_BLOCKING_LOCK:
+            _GLIDE_SYNC_BLOCKING_CLIENTS.setdefault(key, []).append(client)
 
     def _blocking_cmd(self, args: list[Any], block_seconds: float) -> Any:
         with self._blocking_client(block_seconds) as client:
             return client.custom_command(args)
 
     async def _ablocking_client(self, block_seconds: float) -> Any:
-        """Async twin of :meth:`_blocking_client`, closed by ``async with``."""
+        """A new client whose request timeout outlasts ``block_seconds``, closed by ``async with``."""
         timeout = _blocking_request_timeout(self._options, block_seconds)
         return _WrongTypeClient(await self._create_async_client(request_timeout=timeout))
 
