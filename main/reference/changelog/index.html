@@ -3116,6 +3116,7 @@
 <li>The stampede prevention docs say that <code>{}</code> turns it off, that unknown dict keys are dropped with a warning, so a dict of misspelled keys means the defaults, and that bad field values raise <code>TypeError</code> or <code>ValueError</code>, not <code>ImproperlyConfigured</code>.</li>
 <li>The stampede prevention docs say that counters and data structures get the buffer too, and how to keep it off them.</li>
 <li>The admin guide's Backend Abilities table said that <code>LocMemCache</code> and <code>DatabaseCache</code> have no conflict detection on edit. It now says they detect type changes only.</li>
+<li>The admin's help for a string key said that its input must be valid JSON. It now says that input which is not JSON is stored as a string.</li>
 <li>The API reference said that a pipelined <code>zadd(..., incr=True)</code> sends <code>ZINCRBY</code>, which takes none of the <code>nx</code>, <code>xx</code>, <code>gt</code> and <code>lt</code> flags. It now says that the pipeline sends <code>ZADD ... INCR</code>.</li>
 <li>The configuration reference says that on the redis-py and valkey-py backends a database in the <code>LOCATION</code> URL overrides <code>OPTIONS["db"]</code>, whereas on valkey-glide backends <code>OPTIONS["db"]</code> overrides the URL.</li>
 </ul>
