@@ -3109,6 +3109,7 @@
 <li>The stampede prevention docs say that <code>{}</code> turns it off, that unknown dict keys are dropped with a warning, so a dict of misspelled keys means the defaults, and that bad field values raise <code>TypeError</code> or <code>ValueError</code>, not <code>ImproperlyConfigured</code>.</li>
 <li>The stampede prevention docs say that counters and data structures get the buffer too, and how to keep it off them.</li>
 <li>The admin guide's Backend Abilities table said that <code>LocMemCache</code> and <code>DatabaseCache</code> have no conflict detection on edit. It now says they detect type changes only.</li>
+<li>The API reference said that a pipelined <code>zadd(..., incr=True)</code> sends <code>ZINCRBY</code>, which takes none of the <code>nx</code>, <code>xx</code>, <code>gt</code> and <code>lt</code> flags. It now says that the pipeline sends <code>ZADD ... INCR</code>.</li>
 </ul>
 <h2 id="0121-october-2026">0.12.1 (October 2026)<a class="headerlink" href="#0121-october-2026" title="Permanent link">&para;</a></h2>
 <h3 id="fixes_1">Fixes<a class="headerlink" href="#fixes_1" title="Permanent link">&para;</a></h3>

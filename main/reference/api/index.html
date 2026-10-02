@@ -2513,7 +2513,7 @@
 <p>The queueing methods take the parameters of the cache methods. Their flags decide what a step adds to the results:</p>
 <ul>
 <li><code>set()</code> adds <code>True</code>, or <code>False</code> when <code>nx</code> or <code>xx</code> blocks the write. With <code>get=True</code> it adds the previous value or <code>None</code> instead.</li>
-<li><code>zadd(key, mapping, *, ..., incr=False)</code> takes <code>incr=True</code> on the pipeline only. It sends <code>ZINCRBY</code> for the single pair in <code>mapping</code> and adds the new score, or <code>None</code> when <code>nx</code>, <code>xx</code>, <code>gt</code> or <code>lt</code> blocked it.</li>
+<li><code>zadd(key, mapping, *, ..., incr=False)</code> takes <code>incr=True</code> on the pipeline only. It sends <code>ZADD ... INCR</code> for the single pair in <code>mapping</code> and adds the new score, or <code>None</code> when <code>nx</code>, <code>xx</code>, <code>gt</code> or <code>lt</code> blocked it.</li>
 <li><code>zrange(key, start, end, *, withscores=False, desc=False)</code> takes <code>desc=True</code> on the pipeline only, which gives the result of <code>zrevrange</code>.</li>
 <li><code>xautoclaim(..., justid=True)</code> raises <code>NotSupportedError</code> when queued. Use <code>justid=False</code>, or call <code>cache.xautoclaim()</code>.</li>
 </ul>
