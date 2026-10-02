@@ -16,6 +16,10 @@
 - On Redis before 7.0, `set(nx=True, get=True)` and its pipeline form raised the driver's `syntax error`. They now raise `NotSupportedError`, as the [requirements](../getting-started/installation.md#requirements) say.
 - On valkey-glide, `flush_db()`, `aflush_db()` and the admin's Flush database button sent `FLUSHDB SYNC`, so a large flush blocked the server and raised `TimeoutError` after `request_timeout` (250 ms by default), though the flush went through. They now send a plain `FLUSHDB`, as redis-py and valkey-py do, and the server's `lazyfree-lazy-user-flush` decides whether to free the keys in the background.
 
+### Documentation
+
+- The quickstart and the configuration reference say that the redis-py backends reject `valkey://` and `valkeys://` URLs, with a `ValueError` on the first cache call.
+
 ## 0.12.1 (October 2026)
 
 ### Fixes

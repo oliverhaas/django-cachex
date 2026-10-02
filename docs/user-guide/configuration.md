@@ -27,7 +27,8 @@ To cache ORM query results in this alias too, add `"django_cachex.orm"` to
 
 All backends live in `django_cachex.cache`. Valkey and Redis are
 protocol-compatible, so the Valkey and Redis backends each work with either
-server.
+server. The redis-py backends reject `valkey://` and `valkeys://` URLs, though:
+the first cache call raises `ValueError`.
 
 `RespCache`, `RespClusterCache` and `RespSentinelCache` are the Valkey/Redis
 base classes. They bind no driver, so use them for subclassing and typing, not

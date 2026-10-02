@@ -24,7 +24,7 @@ All backends live in `django_cachex.cache`. The [configuration reference](../use
 | `LocMemCache` / `DatabaseCache` | Drop-in replacements for Django's backends of the same name |
 | `TrackingCache` | Local read cache over a Redis or Valkey alias, kept coherent by `CLIENT TRACKING` |
 
-Valkey and Redis are protocol-compatible, so either backend works with either server.
+Valkey and Redis are protocol-compatible, so either backend works with either server. The redis-py backends reject `valkey://` and `valkeys://` URLs, though: the first cache call raises `ValueError`.
 
 ## Connection URL Formats
 
