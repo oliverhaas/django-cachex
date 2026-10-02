@@ -2,6 +2,7 @@
 
 import pytest
 
+from django_cachex.compressors.base import BaseCompressor
 from django_cachex.compressors.gzip import GzipCompressor
 from django_cachex.compressors.lz4 import Lz4Compressor
 from django_cachex.compressors.lzma import LzmaCompressor
@@ -75,13 +76,22 @@ def test_data_above_boundary(compressor):
     assert decompressed == data
 
 
-def test_custom_min_length():
-    comp = ZlibCompressor(min_length=10)
-    assert comp.min_length == 10
-    data = b"x" * 20
-    compressed = comp.compress(data)
-    decompressed = comp.decompress(compressed)
-    assert decompressed == data
+@pytest.mark.parametrize("cls", ALL_COMPRESSORS, ids=lambda c: c.__name__)
+@pytest.mark.parametrize(
+    ("min_length", "size", "compressed"),
+    [
+        (BaseCompressor.min_length // 4, BaseCompressor.min_length // 2, True),
+        (BaseCompressor.min_length * 4, BaseCompressor.min_length * 2, False),
+    ],
+    ids=["lowered", "raised"],
+)
+def test_custom_min_length_decides_whether_a_value_is_compressed(cls, min_length, size, compressed):
+    """Each size lies between the custom and the default ``min_length``, where the two disagree."""
+    data = b"x" * size
+
+    stored = cls(min_length=min_length).compress(data)
+
+    assert (stored != data) is compressed
 
 
 def test_invalid_data_raises_error(compressor):

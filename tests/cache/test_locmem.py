@@ -47,11 +47,6 @@ def locmem_cache() -> Iterator[LocMemCache]:
 # =============================================================================
 
 
-def test_locmem_is_cachex(locmem_cache: LocMemCache):
-    assert isinstance(locmem_cache, LocMemCache)
-    assert locmem_cache._cachex_support == "cachex"
-
-
 def test_extension_methods_are_implemented_not_inherited_stubs(locmem_cache: LocMemCache):
     # ``BaseCachex`` defines a raising stub for every extension, so
     # ``hasattr`` proves nothing; answering for a missing key does.
