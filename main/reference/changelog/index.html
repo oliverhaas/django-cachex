@@ -3105,6 +3105,7 @@
 <li>The configuration reference said every other <code>OPTIONS</code> key goes to the driver. It now says that the Valkey/Redis backends reject <code>decode_responses</code> and that <code>MAX_ENTRIES</code> and <code>CULL_FREQUENCY</code> do nothing there.</li>
 <li>The stampede prevention docs say that <code>{}</code> turns it off, that unknown dict keys are dropped with a warning, so a dict of misspelled keys means the defaults, and that bad field values raise <code>TypeError</code> or <code>ValueError</code>, not <code>ImproperlyConfigured</code>.</li>
 <li>The stampede prevention docs say that counters and data structures get the buffer too, and how to keep it off them.</li>
+<li>The admin guide's Backend Abilities table said that <code>LocMemCache</code> and <code>DatabaseCache</code> have no conflict detection on edit. It now says they detect type changes only.</li>
 </ul>
 <h2 id="0121-october-2026">0.12.1 (October 2026)<a class="headerlink" href="#0121-october-2026" title="Permanent link">&para;</a></h2>
 <h3 id="fixes_1">Fixes<a class="headerlink" href="#fixes_1" title="Permanent link">&para;</a></h3>

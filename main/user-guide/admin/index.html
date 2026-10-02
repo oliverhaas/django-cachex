@@ -1326,7 +1326,7 @@
 <p>Superusers have every permission. Staff users need Django permissions of two kinds: the model permissions say what they can do, and one permission per cache says where.</p>
 <ul>
 <li><code>django_cachex.view_cache</code> / <code>view_key</code>: view caches and keys.</li>
-<li><code>django_cachex.change_cache</code>: the cache list's Flush action, the key browser's Clear tool and the cache info page's danger zone, once <a href="#flushing-caches">turned on</a>. All three delete keys.</li>
+<li><code>django_cachex.change_cache</code>: the cache list's Flush action, the key browser's Clear tool and the cache info page's danger zone, when <a href="#flushing-caches">turned on</a>. All three delete keys.</li>
 <li><code>django_cachex.add_key</code>: create keys.</li>
 <li><code>django_cachex.change_key</code>: edit values and TTLs and run the type operations on the key detail page. Without it, the page shows no edit controls.</li>
 <li><code>django_cachex.delete_key</code>: delete keys.</li>
@@ -1453,7 +1453,7 @@
 <tr>
 <td>Conflict detection on edit</td>
 <td>Yes</td>
-<td>No</td>
+<td>Type changes only</td>
 <td>No</td>
 </tr>
 </tbody>
