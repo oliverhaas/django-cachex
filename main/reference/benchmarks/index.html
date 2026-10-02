@@ -1403,17 +1403,23 @@
 run, so trust the ordering more than the exact values.</p>
 <h2 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h2>
 <ul>
-<li>AMD Ryzen 9 5950X (16C/32T) · 32 GiB RAM · Ubuntu 24.04 · Linux 6.17</li>
-<li>CPython 3.14.2 (GIL build), Django 6.0</li>
-<li>Redis 8 / Valkey 8 in local Docker, paired natively per adapter
+<li>AMD Ryzen 9 5950X (16C/32T) · 32 GiB RAM · Ubuntu 24.04 · Linux 7.0</li>
+<li>CPython 3.14.2 (GIL build), Django 6.1.1</li>
+<li>Redis 8 / Valkey 9 in local Docker, paired natively per adapter
   (<code>redis-py</code> → redis, <code>valkey-py</code> / <code>valkey-glide</code> → valkey, <code>django (builtin)</code> → redis)</li>
+<li>Every round trip 250 µs longer than on the local Docker network, as within
+  a cloud availability zone</li>
 </ul>
 <p>Each column from <code>get</code> to <code>delete</code> is a phase of 1,000 calls, or 100 calls of
 10 keys for <code>mget</code> and <code>mset</code>. Throughput is in calls per second. A phase has
 10 timed runs after a warmup pass. The cached value pickles to ~150 B, except
 in the compressor benchmarks.</p>
 <h2 id="sync-direct">Sync direct<a class="headerlink" href="#sync-direct" title="Permanent link">&para;</a></h2>
-<p>Cache calls such as <code>cache.get(...)</code>, with no Django request and no asyncio.</p>
+<p>Cache calls such as <code>cache.get(...)</code>, with no Django request and no asyncio.
+The round trip takes most of each call, so the django-cachex adapters land
+within 7% of each other. Django's built-in <code>RedisCache</code> builds a <code>redis.Redis</code>
+client for every call, about 40 µs, and its <code>incr</code> makes two round trips
+(<code>EXISTS</code>, then <code>INCRBY</code>).</p>
 <table>
 <thead>
 <tr>
@@ -1431,69 +1437,69 @@ in the compressor benchmarks.</p>
 <tbody>
 <tr>
 <td>redis-py</td>
-<td style="text-align: right;">2,179</td>
-<td style="text-align: right;">2,327</td>
-<td style="text-align: right;">2,150</td>
-<td style="text-align: right;">1,368</td>
-<td style="text-align: right;">1,226</td>
-<td style="text-align: right;">2,345</td>
-<td style="text-align: right;">1,132</td>
-<td style="text-align: right;">111</td>
+<td style="text-align: right;">2,789</td>
+<td style="text-align: right;">2,896</td>
+<td style="text-align: right;">2,782</td>
+<td style="text-align: right;">2,362</td>
+<td style="text-align: right;">2,213</td>
+<td style="text-align: right;">2,887</td>
+<td style="text-align: right;">2,879</td>
+<td style="text-align: right;">64</td>
 </tr>
 <tr>
 <td>redis-py+hiredis</td>
-<td style="text-align: right;">2,235</td>
-<td style="text-align: right;">2,365</td>
-<td style="text-align: right;">2,176</td>
-<td style="text-align: right;">1,448</td>
-<td style="text-align: right;">1,289</td>
-<td style="text-align: right;">2,374</td>
-<td style="text-align: right;">1,147</td>
-<td style="text-align: right;">51</td>
+<td style="text-align: right;">2,783</td>
+<td style="text-align: right;">2,887</td>
+<td style="text-align: right;">2,777</td>
+<td style="text-align: right;">2,391</td>
+<td style="text-align: right;">2,215</td>
+<td style="text-align: right;">2,901</td>
+<td style="text-align: right;">2,905</td>
+<td style="text-align: right;">36</td>
 </tr>
 <tr>
 <td>valkey-py</td>
-<td style="text-align: right;">2,639</td>
-<td style="text-align: right;">2,823</td>
-<td style="text-align: right;">2,603</td>
-<td style="text-align: right;">1,513</td>
-<td style="text-align: right;">1,347</td>
-<td style="text-align: right;">2,873</td>
-<td style="text-align: right;">1,374</td>
-<td style="text-align: right;">109</td>
+<td style="text-align: right;">2,869</td>
+<td style="text-align: right;">2,946</td>
+<td style="text-align: right;">2,883</td>
+<td style="text-align: right;">2,396</td>
+<td style="text-align: right;">2,301</td>
+<td style="text-align: right;">2,953</td>
+<td style="text-align: right;">2,953</td>
+<td style="text-align: right;">91</td>
 </tr>
 <tr>
 <td>valkey-py+libvalkey</td>
-<td style="text-align: right;">2,707</td>
-<td style="text-align: right;">2,865</td>
-<td style="text-align: right;">2,613</td>
-<td style="text-align: right;">1,617</td>
-<td style="text-align: right;">1,421</td>
-<td style="text-align: right;">2,887</td>
-<td style="text-align: right;">1,394</td>
-<td style="text-align: right;">48</td>
+<td style="text-align: right;">2,920</td>
+<td style="text-align: right;">2,990</td>
+<td style="text-align: right;">2,922</td>
+<td style="text-align: right;">2,535</td>
+<td style="text-align: right;">2,383</td>
+<td style="text-align: right;">2,989</td>
+<td style="text-align: right;">2,979</td>
+<td style="text-align: right;">31</td>
 </tr>
 <tr>
 <td>valkey-glide</td>
-<td style="text-align: right;">7,110</td>
-<td style="text-align: right;">8,821</td>
-<td style="text-align: right;">6,887</td>
-<td style="text-align: right;">1,928</td>
-<td style="text-align: right;">1,844</td>
-<td style="text-align: right;">9,076</td>
-<td style="text-align: right;">3,980</td>
+<td style="text-align: right;">2,733</td>
+<td style="text-align: right;">2,837</td>
+<td style="text-align: right;">2,743</td>
+<td style="text-align: right;">2,337</td>
+<td style="text-align: right;">2,297</td>
+<td style="text-align: right;">2,840</td>
+<td style="text-align: right;">2,834</td>
 <td style="text-align: right;">29</td>
 </tr>
 <tr>
 <td>django (builtin)</td>
-<td style="text-align: right;">2,218</td>
-<td style="text-align: right;">2,360</td>
-<td style="text-align: right;">2,205</td>
-<td style="text-align: right;">1,416</td>
-<td style="text-align: right;">1,290</td>
-<td style="text-align: right;">1,855</td>
-<td style="text-align: right;">1,143</td>
-<td style="text-align: right;">51</td>
+<td style="text-align: right;">2,511</td>
+<td style="text-align: right;">2,535</td>
+<td style="text-align: right;">2,458</td>
+<td style="text-align: right;">2,227</td>
+<td style="text-align: right;">2,032</td>
+<td style="text-align: right;">1,366</td>
+<td style="text-align: right;">2,526</td>
+<td style="text-align: right;">50</td>
 </tr>
 </tbody>
 </table>
@@ -1515,53 +1521,53 @@ in the compressor benchmarks.</p>
 <tbody>
 <tr>
 <td>pickle</td>
-<td style="text-align: right;">2,502</td>
-<td style="text-align: right;">2,732</td>
-<td style="text-align: right;">2,578</td>
-<td style="text-align: right;">1,565</td>
-<td style="text-align: right;">1,249</td>
-<td style="text-align: right;">2,771</td>
-<td style="text-align: right;">1,328</td>
+<td style="text-align: right;">2,906</td>
+<td style="text-align: right;">2,976</td>
+<td style="text-align: right;">2,924</td>
+<td style="text-align: right;">2,499</td>
+<td style="text-align: right;">2,383</td>
+<td style="text-align: right;">2,984</td>
+<td style="text-align: right;">2,980</td>
 </tr>
 <tr>
 <td>json</td>
-<td style="text-align: right;">2,464</td>
-<td style="text-align: right;">2,783</td>
-<td style="text-align: right;">2,361</td>
-<td style="text-align: right;">1,419</td>
-<td style="text-align: right;">898</td>
-<td style="text-align: right;">2,846</td>
-<td style="text-align: right;">1,348</td>
+<td style="text-align: right;">2,883</td>
+<td style="text-align: right;">2,967</td>
+<td style="text-align: right;">2,861</td>
+<td style="text-align: right;">2,395</td>
+<td style="text-align: right;">2,215</td>
+<td style="text-align: right;">2,963</td>
+<td style="text-align: right;">2,962</td>
 </tr>
 <tr>
 <td>msgpack</td>
-<td style="text-align: right;">2,459</td>
-<td style="text-align: right;">2,726</td>
-<td style="text-align: right;">2,609</td>
-<td style="text-align: right;">1,653</td>
-<td style="text-align: right;">1,165</td>
-<td style="text-align: right;">2,831</td>
-<td style="text-align: right;">1,344</td>
+<td style="text-align: right;">2,917</td>
+<td style="text-align: right;">2,982</td>
+<td style="text-align: right;">2,914</td>
+<td style="text-align: right;">2,551</td>
+<td style="text-align: right;">2,392</td>
+<td style="text-align: right;">2,981</td>
+<td style="text-align: right;">2,990</td>
 </tr>
 <tr>
 <td>orjson</td>
-<td style="text-align: right;">2,542</td>
-<td style="text-align: right;">2,757</td>
-<td style="text-align: right;">2,647</td>
-<td style="text-align: right;">1,750</td>
-<td style="text-align: right;">1,301</td>
-<td style="text-align: right;">2,857</td>
-<td style="text-align: right;">1,362</td>
+<td style="text-align: right;">2,923</td>
+<td style="text-align: right;">2,984</td>
+<td style="text-align: right;">2,936</td>
+<td style="text-align: right;">2,573</td>
+<td style="text-align: right;">2,456</td>
+<td style="text-align: right;">2,987</td>
+<td style="text-align: right;">2,980</td>
 </tr>
 <tr>
 <td>ormsgpack</td>
-<td style="text-align: right;">2,550</td>
-<td style="text-align: right;">2,792</td>
-<td style="text-align: right;">2,632</td>
-<td style="text-align: right;">1,742</td>
-<td style="text-align: right;">1,290</td>
-<td style="text-align: right;">2,884</td>
-<td style="text-align: right;">1,360</td>
+<td style="text-align: right;">2,921</td>
+<td style="text-align: right;">2,956</td>
+<td style="text-align: right;">2,897</td>
+<td style="text-align: right;">2,549</td>
+<td style="text-align: right;">2,368</td>
+<td style="text-align: right;">2,966</td>
+<td style="text-align: right;">2,957</td>
 </tr>
 </tbody>
 </table>
@@ -1585,69 +1591,69 @@ queryset-shaped payload.</p>
 <tbody>
 <tr>
 <td>none</td>
-<td style="text-align: right;">1,577</td>
+<td style="text-align: right;">2,372</td>
+<td style="text-align: right;">2,976</td>
 <td style="text-align: right;">2,711</td>
-<td style="text-align: right;">2,342</td>
-<td style="text-align: right;">291</td>
-<td style="text-align: right;">990</td>
-<td style="text-align: right;">2,785</td>
-<td style="text-align: right;">1,349</td>
-<td style="text-align: right;">1,268</td>
+<td style="text-align: right;">918</td>
+<td style="text-align: right;">1,480</td>
+<td style="text-align: right;">2,988</td>
+<td style="text-align: right;">2,982</td>
+<td style="text-align: right;">1,269</td>
 </tr>
 <tr>
 <td>zlib</td>
-<td style="text-align: right;">1,544</td>
-<td style="text-align: right;">2,770</td>
-<td style="text-align: right;">1,902</td>
-<td style="text-align: right;">286</td>
-<td style="text-align: right;">531</td>
-<td style="text-align: right;">2,841</td>
-<td style="text-align: right;">1,347</td>
-<td style="text-align: right;">166</td>
+<td style="text-align: right;">2,495</td>
+<td style="text-align: right;">2,983</td>
+<td style="text-align: right;">2,195</td>
+<td style="text-align: right;">1,105</td>
+<td style="text-align: right;">680</td>
+<td style="text-align: right;">2,971</td>
+<td style="text-align: right;">2,981</td>
+<td style="text-align: right;">169</td>
 </tr>
 <tr>
 <td>gzip</td>
-<td style="text-align: right;">1,479</td>
-<td style="text-align: right;">2,753</td>
-<td style="text-align: right;">1,825</td>
-<td style="text-align: right;">272</td>
-<td style="text-align: right;">486</td>
-<td style="text-align: right;">2,864</td>
-<td style="text-align: right;">1,354</td>
-<td style="text-align: right;">166</td>
+<td style="text-align: right;">2,471</td>
+<td style="text-align: right;">2,988</td>
+<td style="text-align: right;">2,099</td>
+<td style="text-align: right;">1,027</td>
+<td style="text-align: right;">608</td>
+<td style="text-align: right;">2,980</td>
+<td style="text-align: right;">2,978</td>
+<td style="text-align: right;">169</td>
 </tr>
 <tr>
 <td>lzma</td>
-<td style="text-align: right;">1,466</td>
-<td style="text-align: right;">2,765</td>
-<td style="text-align: right;">646</td>
-<td style="text-align: right;">265</td>
-<td style="text-align: right;">83</td>
-<td style="text-align: right;">2,878</td>
-<td style="text-align: right;">1,362</td>
-<td style="text-align: right;">163</td>
+<td style="text-align: right;">2,384</td>
+<td style="text-align: right;">2,985</td>
+<td style="text-align: right;">682</td>
+<td style="text-align: right;">920</td>
+<td style="text-align: right;">88</td>
+<td style="text-align: right;">2,988</td>
+<td style="text-align: right;">2,982</td>
+<td style="text-align: right;">167</td>
 </tr>
 <tr>
 <td>lz4</td>
-<td style="text-align: right;">1,571</td>
-<td style="text-align: right;">2,773</td>
-<td style="text-align: right;">2,338</td>
-<td style="text-align: right;">290</td>
-<td style="text-align: right;">958</td>
-<td style="text-align: right;">2,879</td>
-<td style="text-align: right;">1,380</td>
-<td style="text-align: right;">233</td>
+<td style="text-align: right;">2,551</td>
+<td style="text-align: right;">2,987</td>
+<td style="text-align: right;">2,677</td>
+<td style="text-align: right;">1,181</td>
+<td style="text-align: right;">1,420</td>
+<td style="text-align: right;">2,986</td>
+<td style="text-align: right;">2,978</td>
+<td style="text-align: right;">238</td>
 </tr>
 <tr>
 <td>zstd</td>
-<td style="text-align: right;">1,564</td>
-<td style="text-align: right;">2,782</td>
-<td style="text-align: right;">2,248</td>
-<td style="text-align: right;">285</td>
-<td style="text-align: right;">833</td>
-<td style="text-align: right;">2,889</td>
-<td style="text-align: right;">1,400</td>
-<td style="text-align: right;">166</td>
+<td style="text-align: right;">2,532</td>
+<td style="text-align: right;">2,984</td>
+<td style="text-align: right;">2,563</td>
+<td style="text-align: right;">1,153</td>
+<td style="text-align: right;">1,190</td>
+<td style="text-align: right;">2,987</td>
+<td style="text-align: right;">2,984</td>
+<td style="text-align: right;">169</td>
 </tr>
 </tbody>
 </table>
@@ -1667,39 +1673,39 @@ adapter and no network.</p>
 <tr>
 <td>zlib</td>
 <td style="text-align: right;">11.9%</td>
-<td style="text-align: right;">181.0</td>
-<td style="text-align: right;">1,217.2</td>
+<td style="text-align: right;">155.4</td>
+<td style="text-align: right;">1,074.4</td>
 </tr>
 <tr>
 <td>gzip</td>
 <td style="text-align: right;">11.8%</td>
-<td style="text-align: right;">147.8</td>
-<td style="text-align: right;">1,090.0</td>
+<td style="text-align: right;">128.4</td>
+<td style="text-align: right;">766.2</td>
 </tr>
 <tr>
 <td>lzma</td>
 <td style="text-align: right;">11.4%</td>
-<td style="text-align: right;">13.2</td>
-<td style="text-align: right;">484.2</td>
+<td style="text-align: right;">12.2</td>
+<td style="text-align: right;">419.3</td>
 </tr>
 <tr>
 <td>lz4</td>
 <td style="text-align: right;">16.6%</td>
-<td style="text-align: right;">2,945.5</td>
-<td style="text-align: right;">6,089.9</td>
+<td style="text-align: right;">2,511.6</td>
+<td style="text-align: right;">6,163.5</td>
 </tr>
 <tr>
 <td>zstd</td>
 <td style="text-align: right;">11.4%</td>
-<td style="text-align: right;">780.6</td>
-<td style="text-align: right;">2,077.5</td>
+<td style="text-align: right;">676.4</td>
+<td style="text-align: right;">1,695.5</td>
 </tr>
 </tbody>
 </table>
 <h2 id="django-request-cycle">Django request cycle<a class="headerlink" href="#django-request-cycle" title="Permanent link">&para;</a></h2>
 <p>The sync direct workload, with every cache call inside <code>Client().get(url)</code>
 (URL resolve → <code>CommonMiddleware</code> → view → <code>request_finished</code>). The gap to
-sync direct is Django's per-request overhead.</p>
+sync direct is Django's per-request overhead, about 115 µs here.</p>
 <table>
 <thead>
 <tr>
@@ -1716,63 +1722,63 @@ sync direct is Django's per-request overhead.</p>
 <tbody>
 <tr>
 <td>redis-py</td>
-<td style="text-align: right;">1,058</td>
-<td style="text-align: right;">1,123</td>
-<td style="text-align: right;">1,083</td>
-<td style="text-align: right;">795</td>
-<td style="text-align: right;">745</td>
-<td style="text-align: right;">1,099</td>
-<td style="text-align: right;">1,077</td>
+<td style="text-align: right;">2,105</td>
+<td style="text-align: right;">2,168</td>
+<td style="text-align: right;">2,090</td>
+<td style="text-align: right;">1,854</td>
+<td style="text-align: right;">1,738</td>
+<td style="text-align: right;">2,010</td>
+<td style="text-align: right;">2,081</td>
 </tr>
 <tr>
 <td>redis-py+hiredis</td>
-<td style="text-align: right;">1,007</td>
-<td style="text-align: right;">1,132</td>
-<td style="text-align: right;">1,083</td>
-<td style="text-align: right;">832</td>
-<td style="text-align: right;">778</td>
-<td style="text-align: right;">1,116</td>
-<td style="text-align: right;">1,122</td>
+<td style="text-align: right;">2,150</td>
+<td style="text-align: right;">2,215</td>
+<td style="text-align: right;">2,142</td>
+<td style="text-align: right;">1,900</td>
+<td style="text-align: right;">1,806</td>
+<td style="text-align: right;">2,058</td>
+<td style="text-align: right;">2,097</td>
 </tr>
 <tr>
 <td>valkey-py</td>
-<td style="text-align: right;">1,035</td>
-<td style="text-align: right;">1,230</td>
-<td style="text-align: right;">1,183</td>
-<td style="text-align: right;">844</td>
-<td style="text-align: right;">789</td>
-<td style="text-align: right;">1,206</td>
-<td style="text-align: right;">1,200</td>
+<td style="text-align: right;">2,184</td>
+<td style="text-align: right;">2,235</td>
+<td style="text-align: right;">2,191</td>
+<td style="text-align: right;">1,902</td>
+<td style="text-align: right;">1,803</td>
+<td style="text-align: right;">2,072</td>
+<td style="text-align: right;">2,246</td>
 </tr>
 <tr>
 <td>valkey-py+libvalkey</td>
-<td style="text-align: right;">1,003</td>
-<td style="text-align: right;">1,243</td>
-<td style="text-align: right;">1,180</td>
-<td style="text-align: right;">879</td>
-<td style="text-align: right;">825</td>
-<td style="text-align: right;">1,215</td>
-<td style="text-align: right;">1,238</td>
+<td style="text-align: right;">2,201</td>
+<td style="text-align: right;">2,257</td>
+<td style="text-align: right;">2,205</td>
+<td style="text-align: right;">1,963</td>
+<td style="text-align: right;">1,862</td>
+<td style="text-align: right;">2,084</td>
+<td style="text-align: right;">2,236</td>
 </tr>
 <tr>
 <td>valkey-glide</td>
-<td style="text-align: right;">1,150</td>
-<td style="text-align: right;">1,749</td>
-<td style="text-align: right;">1,668</td>
-<td style="text-align: right;">983</td>
-<td style="text-align: right;">940</td>
-<td style="text-align: right;">1,740</td>
-<td style="text-align: right;">1,745</td>
+<td style="text-align: right;">2,079</td>
+<td style="text-align: right;">2,126</td>
+<td style="text-align: right;">2,054</td>
+<td style="text-align: right;">1,823</td>
+<td style="text-align: right;">1,791</td>
+<td style="text-align: right;">1,974</td>
+<td style="text-align: right;">2,106</td>
 </tr>
 <tr>
 <td>django (builtin)</td>
-<td style="text-align: right;">799</td>
-<td style="text-align: right;">1,104</td>
-<td style="text-align: right;">1,062</td>
-<td style="text-align: right;">812</td>
-<td style="text-align: right;">765</td>
-<td style="text-align: right;">955</td>
-<td style="text-align: right;">1,106</td>
+<td style="text-align: right;">1,955</td>
+<td style="text-align: right;">1,987</td>
+<td style="text-align: right;">1,934</td>
+<td style="text-align: right;">1,778</td>
+<td style="text-align: right;">1,647</td>
+<td style="text-align: right;">1,126</td>
+<td style="text-align: right;">1,875</td>
 </tr>
 </tbody>
 </table>
@@ -1796,69 +1802,73 @@ async path, so it also pays for <code>sync_to_async</code>.</p>
 <tbody>
 <tr>
 <td>redis-py</td>
-<td style="text-align: right;">1,785</td>
-<td style="text-align: right;">1,863</td>
-<td style="text-align: right;">1,677</td>
-<td style="text-align: right;">1,170</td>
-<td style="text-align: right;">830</td>
-<td style="text-align: right;">1,857</td>
-<td style="text-align: right;">891</td>
+<td style="text-align: right;">2,709</td>
+<td style="text-align: right;">2,805</td>
+<td style="text-align: right;">2,666</td>
+<td style="text-align: right;">2,316</td>
+<td style="text-align: right;">1,924</td>
+<td style="text-align: right;">2,793</td>
+<td style="text-align: right;">2,787</td>
 </tr>
 <tr>
 <td>redis-py+hiredis</td>
-<td style="text-align: right;">1,776</td>
-<td style="text-align: right;">1,850</td>
-<td style="text-align: right;">1,686</td>
-<td style="text-align: right;">1,163</td>
-<td style="text-align: right;">840</td>
-<td style="text-align: right;">1,842</td>
-<td style="text-align: right;">894</td>
+<td style="text-align: right;">2,684</td>
+<td style="text-align: right;">2,774</td>
+<td style="text-align: right;">2,662</td>
+<td style="text-align: right;">2,335</td>
+<td style="text-align: right;">1,889</td>
+<td style="text-align: right;">2,776</td>
+<td style="text-align: right;">2,790</td>
 </tr>
 <tr>
 <td>valkey-py</td>
-<td style="text-align: right;">2,012</td>
-<td style="text-align: right;">2,107</td>
-<td style="text-align: right;">1,976</td>
-<td style="text-align: right;">1,288</td>
-<td style="text-align: right;">836</td>
-<td style="text-align: right;">2,138</td>
-<td style="text-align: right;">1,020</td>
+<td style="text-align: right;">2,678</td>
+<td style="text-align: right;">2,768</td>
+<td style="text-align: right;">2,675</td>
+<td style="text-align: right;">2,318</td>
+<td style="text-align: right;">1,997</td>
+<td style="text-align: right;">2,756</td>
+<td style="text-align: right;">2,746</td>
 </tr>
 <tr>
 <td>valkey-py+libvalkey</td>
-<td style="text-align: right;">2,031</td>
-<td style="text-align: right;">2,138</td>
-<td style="text-align: right;">1,976</td>
-<td style="text-align: right;">1,294</td>
-<td style="text-align: right;">836</td>
-<td style="text-align: right;">2,135</td>
-<td style="text-align: right;">1,026</td>
+<td style="text-align: right;">2,670</td>
+<td style="text-align: right;">2,762</td>
+<td style="text-align: right;">2,671</td>
+<td style="text-align: right;">2,318</td>
+<td style="text-align: right;">2,006</td>
+<td style="text-align: right;">2,766</td>
+<td style="text-align: right;">2,759</td>
 </tr>
 <tr>
 <td>valkey-glide</td>
-<td style="text-align: right;">3,251</td>
-<td style="text-align: right;">3,634</td>
-<td style="text-align: right;">3,291</td>
-<td style="text-align: right;">1,640</td>
-<td style="text-align: right;">1,634</td>
-<td style="text-align: right;">3,680</td>
-<td style="text-align: right;">1,735</td>
+<td style="text-align: right;">2,615</td>
+<td style="text-align: right;">2,699</td>
+<td style="text-align: right;">2,619</td>
+<td style="text-align: right;">2,247</td>
+<td style="text-align: right;">2,202</td>
+<td style="text-align: right;">2,695</td>
+<td style="text-align: right;">2,680</td>
 </tr>
 <tr>
 <td>django (builtin)</td>
-<td style="text-align: right;">1,903</td>
-<td style="text-align: right;">2,016</td>
-<td style="text-align: right;">1,879</td>
-<td style="text-align: right;">193</td>
-<td style="text-align: right;">189</td>
-<td style="text-align: right;">971</td>
-<td style="text-align: right;">970</td>
+<td style="text-align: right;">2,005</td>
+<td style="text-align: right;">2,031</td>
+<td style="text-align: right;">1,999</td>
+<td style="text-align: right;">1,826</td>
+<td style="text-align: right;">1,689</td>
+<td style="text-align: right;">1,205</td>
+<td style="text-align: right;">2,021</td>
 </tr>
 </tbody>
 </table>
 <h2 id="async-concurrent-50-in-flight">Async concurrent (50 in flight)<a class="headerlink" href="#async-concurrent-50-in-flight" title="Permanent link">&para;</a></h2>
-<p><code>asyncio.gather</code> of 50 calls at a time. Connection counts stay flat between
-phases on every adapter (<code>Δ = 0</code>).</p>
+<p><code>asyncio.gather</code> of 50 calls at a time. redis-py and valkey-py open a
+connection per call in flight, and valkey-glide sends them all over one.
+Django's built-in <code>RedisCache</code> runs every call through <code>sync_to_async</code> on one
+thread, so it serves 50 in flight about as fast as one at a time. Connection
+counts, which include the harness's own, stay flat between phases on every
+adapter (<code>Δ = 0</code>).</p>
 <table>
 <thead>
 <tr>
@@ -1876,77 +1886,82 @@ phases on every adapter (<code>Δ = 0</code>).</p>
 <tbody>
 <tr>
 <td>redis-py</td>
-<td style="text-align: right;">2,076</td>
-<td style="text-align: right;">2,199</td>
-<td style="text-align: right;">2,007</td>
-<td style="text-align: right;">1,323</td>
-<td style="text-align: right;">910</td>
-<td style="text-align: right;">2,114</td>
-<td style="text-align: right;">967</td>
-<td style="text-align: right;">56</td>
+<td style="text-align: right;">16,411</td>
+<td style="text-align: right;">18,362</td>
+<td style="text-align: right;">15,447</td>
+<td style="text-align: right;">8,937</td>
+<td style="text-align: right;">5,466</td>
+<td style="text-align: right;">18,488</td>
+<td style="text-align: right;">18,481</td>
+<td style="text-align: right;">51</td>
 </tr>
 <tr>
 <td>redis-py+hiredis</td>
-<td style="text-align: right;">2,074</td>
-<td style="text-align: right;">2,198</td>
-<td style="text-align: right;">1,998</td>
-<td style="text-align: right;">1,318</td>
-<td style="text-align: right;">897</td>
-<td style="text-align: right;">2,110</td>
-<td style="text-align: right;">961</td>
-<td style="text-align: right;">106</td>
+<td style="text-align: right;">16,885</td>
+<td style="text-align: right;">18,484</td>
+<td style="text-align: right;">15,476</td>
+<td style="text-align: right;">8,678</td>
+<td style="text-align: right;">5,383</td>
+<td style="text-align: right;">18,569</td>
+<td style="text-align: right;">18,543</td>
+<td style="text-align: right;">51</td>
 </tr>
 <tr>
 <td>valkey-py</td>
-<td style="text-align: right;">2,434</td>
-<td style="text-align: right;">2,530</td>
-<td style="text-align: right;">2,290</td>
-<td style="text-align: right;">1,186</td>
-<td style="text-align: right;">898</td>
-<td style="text-align: right;">2,515</td>
-<td style="text-align: right;">1,114</td>
-<td style="text-align: right;">58</td>
+<td style="text-align: right;">20,514</td>
+<td style="text-align: right;">22,735</td>
+<td style="text-align: right;">20,088</td>
+<td style="text-align: right;">10,133</td>
+<td style="text-align: right;">6,427</td>
+<td style="text-align: right;">22,510</td>
+<td style="text-align: right;">22,838</td>
+<td style="text-align: right;">51</td>
 </tr>
 <tr>
 <td>valkey-py+libvalkey</td>
-<td style="text-align: right;">2,421</td>
-<td style="text-align: right;">2,540</td>
-<td style="text-align: right;">2,292</td>
-<td style="text-align: right;">1,199</td>
-<td style="text-align: right;">918</td>
-<td style="text-align: right;">2,522</td>
-<td style="text-align: right;">1,108</td>
-<td style="text-align: right;">108</td>
+<td style="text-align: right;">20,541</td>
+<td style="text-align: right;">22,882</td>
+<td style="text-align: right;">20,318</td>
+<td style="text-align: right;">10,108</td>
+<td style="text-align: right;">6,430</td>
+<td style="text-align: right;">22,563</td>
+<td style="text-align: right;">23,058</td>
+<td style="text-align: right;">51</td>
 </tr>
 <tr>
 <td>valkey-glide</td>
-<td style="text-align: right;">9,903</td>
-<td style="text-align: right;">12,208</td>
-<td style="text-align: right;">9,770</td>
-<td style="text-align: right;">1,949</td>
-<td style="text-align: right;">2,541</td>
-<td style="text-align: right;">11,950</td>
-<td style="text-align: right;">2,588</td>
-<td style="text-align: right;">109</td>
+<td style="text-align: right;">43,804</td>
+<td style="text-align: right;">47,758</td>
+<td style="text-align: right;">33,133</td>
+<td style="text-align: right;">13,296</td>
+<td style="text-align: right;">10,043</td>
+<td style="text-align: right;">50,684</td>
+<td style="text-align: right;">49,981</td>
+<td style="text-align: right;">2</td>
 </tr>
 <tr>
 <td>django (builtin)</td>
-<td style="text-align: right;">2,007</td>
-<td style="text-align: right;">2,170</td>
-<td style="text-align: right;">2,058</td>
-<td style="text-align: right;">208</td>
-<td style="text-align: right;">206</td>
-<td style="text-align: right;">1,058</td>
-<td style="text-align: right;">991</td>
-<td style="text-align: right;">107</td>
+<td style="text-align: right;">2,244</td>
+<td style="text-align: right;">2,281</td>
+<td style="text-align: right;">2,220</td>
+<td style="text-align: right;">2,000</td>
+<td style="text-align: right;">1,863</td>
+<td style="text-align: right;">1,292</td>
+<td style="text-align: right;">2,188</td>
+<td style="text-align: right;">2</td>
 </tr>
 </tbody>
 </table>
 <h2 id="asgi-full-stack">ASGI full-stack<a class="headerlink" href="#asgi-full-stack" title="Permanent link">&para;</a></h2>
 <p><code>granian</code> (4 workers) and <code>httpx</code> (100 concurrent clients, 20 s) against a
 view that makes six async cache calls per request. The harness samples server
-RSS and <code>connected_clients</code> every 5 s. The req/s column is noisy, so read it
-in rough buckets (~600, ~400, ~200).</p>
+RSS and <code>connected_clients</code> every 5 s, and the connection counts include about
+5 of its own. The req/s column is noisy, so read it in rough buckets: 500 to
+600 for the django-cachex adapters, 350 for Django's built-in <code>RedisCache</code>.</p>
+<p>Under ASGI, Django gives every request its own instance of a cache backend.
+The built-in <code>RedisCache</code> builds a connection pool for each instance, and its
+<code>close()</code> leaves the pool open, so its connections climb until the garbage
+collector frees the pools.</p>
 <table>
 <thead>
 <tr>
@@ -1962,57 +1977,57 @@ in rough buckets (~600, ~400, ~200).</p>
 <tbody>
 <tr>
 <td>redis-py</td>
-<td style="text-align: right;">413</td>
-<td style="text-align: right;">240.6</td>
-<td style="text-align: right;">1,507.2</td>
-<td style="text-align: right;">435</td>
-<td style="text-align: right;">209</td>
-<td style="text-align: right;">209</td>
+<td style="text-align: right;">487</td>
+<td style="text-align: right;">204.4</td>
+<td style="text-align: right;">1,522.8</td>
+<td style="text-align: right;">364</td>
+<td style="text-align: right;">105</td>
+<td style="text-align: right;">105</td>
 </tr>
 <tr>
 <td>redis-py+hiredis</td>
-<td style="text-align: right;">586</td>
-<td style="text-align: right;">170.1</td>
-<td style="text-align: right;">2,421.7</td>
-<td style="text-align: right;">427</td>
-<td style="text-align: right;">209</td>
-<td style="text-align: right;">209</td>
+<td style="text-align: right;">597</td>
+<td style="text-align: right;">167.1</td>
+<td style="text-align: right;">1,270.4</td>
+<td style="text-align: right;">368</td>
+<td style="text-align: right;">105</td>
+<td style="text-align: right;">105</td>
 </tr>
 <tr>
 <td>valkey-py</td>
-<td style="text-align: right;">380</td>
-<td style="text-align: right;">261.8</td>
-<td style="text-align: right;">1,467.0</td>
-<td style="text-align: right;">434</td>
-<td style="text-align: right;">220</td>
-<td style="text-align: right;">220</td>
+<td style="text-align: right;">613</td>
+<td style="text-align: right;">162.6</td>
+<td style="text-align: right;">1,317.0</td>
+<td style="text-align: right;">369</td>
+<td style="text-align: right;">104</td>
+<td style="text-align: right;">104</td>
 </tr>
 <tr>
 <td>valkey-py+libvalkey</td>
-<td style="text-align: right;">626</td>
-<td style="text-align: right;">159.2</td>
-<td style="text-align: right;">1,180.8</td>
-<td style="text-align: right;">434</td>
-<td style="text-align: right;">216</td>
-<td style="text-align: right;">216</td>
+<td style="text-align: right;">563</td>
+<td style="text-align: right;">177.0</td>
+<td style="text-align: right;">1,383.5</td>
+<td style="text-align: right;">368</td>
+<td style="text-align: right;">104</td>
+<td style="text-align: right;">104</td>
 </tr>
 <tr>
 <td>valkey-glide</td>
-<td style="text-align: right;">324</td>
-<td style="text-align: right;">306.0</td>
-<td style="text-align: right;">1,681.9</td>
-<td style="text-align: right;">438</td>
-<td style="text-align: right;">115</td>
-<td style="text-align: right;">115</td>
+<td style="text-align: right;">500</td>
+<td style="text-align: right;">199.2</td>
+<td style="text-align: right;">1,451.1</td>
+<td style="text-align: right;">425</td>
+<td style="text-align: right;">8</td>
+<td style="text-align: right;">8</td>
 </tr>
 <tr>
 <td>django (builtin)</td>
-<td style="text-align: right;">200</td>
-<td style="text-align: right;">494.0</td>
-<td style="text-align: right;">2,421.7</td>
-<td style="text-align: right;">523</td>
-<td style="text-align: right;">316</td>
-<td style="text-align: right;">316</td>
+<td style="text-align: right;">355</td>
+<td style="text-align: right;">279.6</td>
+<td style="text-align: right;">1,769.4</td>
+<td style="text-align: right;">459</td>
+<td style="text-align: right;">1,371</td>
+<td style="text-align: right;">180</td>
 </tr>
 </tbody>
 </table>
@@ -2023,12 +2038,11 @@ The contenders are the database alone (<code>none</code>), <code>cachalot</code>
 <a href="../../user-guide/composite-backends/"><code>TrackingCache</code></a> (<code>+tracking</code>), which
 keeps local copies of what each process read.</p>
 <ul>
-<li>The machine above on Linux 7.0, CPython 3.14.2 (free-threaded build, with
-  the GIL that libvalkey turns back on), Django 6.1.1, psycopg 3.3.6</li>
+<li>The machine above, with CPython 3.14.2 (free-threaded build, with the GIL
+  that libvalkey turns back on), Django 6.1.1, psycopg 3.3.6</li>
 <li>PostgreSQL 18 with <code>fsync=off</code> and Valkey 9 in local Docker, both libraries
   on the <code>valkey-py+libvalkey</code> backend</li>
-<li>Every round trip 250 µs longer than on the local Docker network, as within
-  a cloud availability zone, except in the clock skew runs</li>
+<li>The same 250 µs added to every round trip, except in the clock skew runs</li>
 </ul>
 <h3 id="correctness">Correctness<a class="headerlink" href="#correctness" title="Permanent link">&para;</a></h3>
 <p>Twelve cases where a cached result can differ from the database, each checked
@@ -2300,15 +2314,16 @@ longer with delay.</p>
 <h2 id="reproducing">Reproducing<a class="headerlink" href="#reproducing" title="Permanent link">&para;</a></h2>
 <p>The harness starts its own Redis, Valkey and PostgreSQL containers, so a
 Docker daemon is the only host requirement:</p>
-<div class="language-console highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="go">uv run pytest benchmarks/ -c benchmarks/pytest.ini</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="gp"># </span>A<span class="w"> </span>single<span class="w"> </span>slice
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="go">uv run pytest benchmarks/test_throughput.py::test_adapters_sync \</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="go">  -c benchmarks/pytest.ini</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="gp"># </span>The<span class="w"> </span>ORM<span class="w"> </span>cache<span class="w"> </span>comparison,<span class="w"> </span>with<span class="w"> </span><span class="m">250</span><span class="w"> </span>µs<span class="w"> </span>added<span class="w"> </span>to<span class="w"> </span>every<span class="w"> </span>round<span class="w"> </span>trip
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="go">BENCH_NET_DELAY_US=250 uv run pytest benchmarks/test_orm.py \</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="go">  -c benchmarks/pytest.ini</span>
+<div class="language-console highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="gp"># </span>Everything,<span class="w"> </span>with<span class="w"> </span><span class="m">250</span><span class="w"> </span>µs<span class="w"> </span>added<span class="w"> </span>to<span class="w"> </span>every<span class="w"> </span>round<span class="w"> </span>trip
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="go">BENCH_NET_DELAY_US=250 uv run pytest benchmarks/ -c benchmarks/pytest.ini</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="gp"># </span>A<span class="w"> </span>single<span class="w"> </span>slice
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="go">uv run pytest benchmarks/test_throughput.py::test_adapters_sync \</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="go">  -c benchmarks/pytest.ini</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="gp"># </span>The<span class="w"> </span>ORM<span class="w"> </span>cache<span class="w"> </span>comparison<span class="w"> </span>alone
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="go">BENCH_NET_DELAY_US=250 uv run pytest benchmarks/test_orm.py \</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="go">  -c benchmarks/pytest.ini</span>
 </span></code></pre></div>
 <p><code>benchmarks/README.md</code> lists the slices, the knobs (<code>N_OPS</code>, <code>K_RUNS</code>,
 <code>WARMUP_KEYS</code>, <code>MGET_BATCH</code>) and the full methodology. <code>BENCH_NET_DELAY_US</code>
