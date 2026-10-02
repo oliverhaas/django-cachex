@@ -325,13 +325,18 @@ MAX_SCAN_COUNT = 1000
 
 
 def _scan_pattern(search_query: str) -> str:
-    """Turn a search box entry into a SCAN MATCH pattern."""
+    """Turn a search box entry into a SCAN MATCH pattern.
+
+    ``*`` is the one wildcard the key list help documents, so the other glob
+    characters (``?``, ``[``, ``]`` and ``\\``) are escaped to match themselves.
+    """
     if not search_query:
         return "*"
-    if "*" in search_query or "?" in search_query:
-        return search_query
+    pattern = "".join(f"\\{char}" if char in "?[]\\" else char for char in search_query)
+    if "*" in search_query:
+        return pattern
     # Django-style contains search.
-    return f"*{search_query}*"
+    return f"*{pattern}*"
 
 
 def _clear_scope(cache: Any) -> tuple[str, str]:

@@ -425,6 +425,30 @@ def test_key_list_contains_pattern(
     assert "unrelated:key" not in content
 
 
+@pytest.mark.parametrize(
+    ("search", "match", "decoy"),
+    [
+        ("what?", "what?", "whats"),
+        ("[ab]", "x[ab]y", "xay"),
+        ("back\\slash", "back\\slash", "backslash"),
+        ("why?*", "why?not", "whyznot"),
+    ],
+)
+def test_key_list_search_matches_glob_characters_other_than_star_literally(
+    admin_client: Client,
+    test_cache: RespCache,
+    search: str,
+    match: str,
+    decoy: str,
+):
+    test_cache.set(match, "value")
+    test_cache.set(decoy, "value")
+
+    response = admin_client.get(_key_list_url("default") + "&" + urlencode({"q": search}))
+    assert response.status_code == 200
+    assert _result_column(response.content, "key_name") == [match]
+
+
 def test_key_list_pagination(
     admin_client: Client,
     test_cache: RespCache,
