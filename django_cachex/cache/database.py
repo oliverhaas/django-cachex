@@ -7,15 +7,20 @@ admin info) implemented natively against the underlying cache table.
 Notable design points:
 
 - Compound ops run inside a single ``transaction.atomic()`` block with a
-  ``SELECT ... FOR UPDATE`` row lock (PostgreSQL, MySQL/InnoDB; no-op on
-  SQLite). Two concurrent ``lpush``/``sadd``/``hincrby`` calls against the
-  same key are serialized at the database, eliminating the GET-then-SET
-  race the naive emulation path is exposed to. On MySQL, run the connection
-  at ``READ COMMITTED`` (Django's own recommendation). Under the InnoDB
-  default of ``REPEATABLE READ``, the ``FOR UPDATE`` on a row that does not
-  exist yet takes a gap lock, so two clients creating the same key at the
-  same time deadlock and one gets an ``OperationalError`` instead of the
-  insert retry.
+  ``SELECT ... FOR UPDATE`` row lock (PostgreSQL, MySQL/InnoDB). Two
+  concurrent ``lpush``/``sadd``/``hincrby`` calls against the same key are
+  serialized at the database, eliminating the GET-then-SET race the naive
+  emulation path is exposed to. SQLite has no row locks. Under Django's
+  default deferred transactions, concurrent writers can fail with
+  ``OperationalError`` ("database is locked"), some without waiting,
+  though none loses an update. With ``"transaction_mode": "IMMEDIATE"``
+  in the database's ``OPTIONS``, each takes the write lock when it begins
+  and waits for it, up to the ``timeout`` option. On MySQL, run the
+  connection at ``READ COMMITTED`` (Django's own recommendation). Under the
+  InnoDB default of ``REPEATABLE READ``, the ``FOR UPDATE`` on a row that
+  does not exist yet takes a gap lock, so two clients creating the same key
+  at the same time deadlock and one gets an ``OperationalError`` instead of
+  the insert retry.
 - One pickle round-trip per op, the same shape Django's stock backend
   uses (``pickle.dumps``, then base64, into a ``TEXT`` column). No double
   encoding through the public ``set``/``get`` surface.
@@ -183,6 +188,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
     unchanged. Cachex extensions read and write the cache table directly
     inside ``transaction.atomic()`` blocks with row-level locking, so
     compound ops are serialized correctly even under concurrent writers.
+    SQLite has no row locks; the module docstring covers what happens there.
 
     Data structures (lists, sets, hashes, sorted sets) are stored as
     pickled-then-base64 Python objects in the existing ``value`` column;

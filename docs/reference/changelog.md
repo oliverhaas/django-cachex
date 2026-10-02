@@ -33,6 +33,7 @@
 - The quickstart and the configuration reference say that the redis-py backends reject `valkey://` and `valkeys://` URLs, with a `ValueError` on the first cache call.
 - The API reference, the async guide and the `TrackingCache` docs no longer claim async twins for `info()`, `slowlog_get()` and `slowlog_len()`, which have none.
 - The `TrackingCache` guide says which calls open the listener connection. Reads and `info()` do, writes do not.
+- The configuration reference says that concurrent `DatabaseCache` writes on SQLite can fail with `database is locked` under Django's default deferred transactions, and that `"transaction_mode": "IMMEDIATE"` in the database's `OPTIONS` makes them wait for the lock.
 
 ## 0.12.1 (October 2026)
 

@@ -136,6 +136,13 @@ their row with `SELECT ... FOR UPDATE`. Under the InnoDB default of
 `REPEATABLE READ`, two clients that create the same key at the same time
 deadlock. One of them gets an `OperationalError` (MySQL error 1213).
 
+On SQLite, which has no row locks, concurrent writes contend for the
+database's write lock. Under Django's default deferred transactions, a write
+can fail with `OperationalError: database is locked`, sometimes without
+waiting for the lock. Add `"transaction_mode": "IMMEDIATE"` to the database's
+`OPTIONS` in `DATABASES` so that each write waits for it instead, up to the
+`timeout` option (5 seconds by default).
+
 Inside `transaction.atomic()`, `ATOMIC_REQUESTS` included, the row lock of a
 compound operation or `incr()` lasts until the outer transaction ends. Keep
 these calls out of long-running transactions.
