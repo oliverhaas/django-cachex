@@ -1639,8 +1639,9 @@ waiting for the lock. Add <code>"transaction_mode": "IMMEDIATE"</code> to the da
 <code>OPTIONS</code> in <code>DATABASES</code> so that each write waits for it instead, up to the
 <code>timeout</code> option (5 seconds by default).</p>
 <p>Inside <code>transaction.atomic()</code>, <code>ATOMIC_REQUESTS</code> included, the row lock of a
-compound operation or <code>incr()</code> lasts until the outer transaction ends. Keep
-these calls out of long-running transactions.</p>
+compound operation or <code>incr()</code>, on SQLite the database's write lock, lasts
+until the outer transaction ends. Keep these calls out of long-running
+transactions.</p>
 <h3 id="composite-backend">Composite backend<a class="headerlink" href="#composite-backend" title="Permanent link">&para;</a></h3>
 <p><code>TrackingCache</code> is a read-through local cache over a Redis/Valkey alias,
 invalidated by the server's <code>CLIENT TRACKING</code>. See
@@ -1706,7 +1707,11 @@ scheme, username and password, and on <code>ValkeyGlideCache</code> also on the 
 </tr>
 </tbody>
 </table>
-<p>valkey-glide silently ignores every other key, such as <code>socket_timeout</code>.</p>
+<p><code>MAX_ENTRIES</code> and <code>CULL_FREQUENCY</code> stay with Django and do nothing on these
+backends. Every Valkey/Redis backend rejects a true
+<code>OPTIONS["decode_responses"]</code>, and <code>decode_responses</code> in the <code>LOCATION</code> query,
+with <code>ImproperlyConfigured</code>, because the cache decodes the raw bytes itself.
+valkey-glide silently ignores every other key, such as <code>socket_timeout</code>.</p>
 <h3 id="serialization">Serialization<a class="headerlink" href="#serialization" title="Permanent link">&para;</a></h3>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="s2">"OPTIONS"</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="c1"># Single serializer (string path, class, or instance)</span>
@@ -1806,7 +1811,7 @@ scheme, username and password, and on <code>ValkeyGlideCache</code> also on the 
 </span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="c1"># libvalkey (Valkey) or hiredis (Redis) is installed</span>
 </span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="s2">"parser_class"</span><span class="p">:</span> <span class="s2">"valkey.connection.DefaultParser"</span><span class="p">,</span>  <span class="c1"># or "redis.connection.DefaultParser"</span>
 </span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>
-</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>    <span class="c1"># Every other key goes to the driver's from_url()</span>
+</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>    <span class="c1"># The driver's own options go to its from_url()</span>
 </span><span id="__span-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>    <span class="s2">"retry_on_timeout"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
 </span><span id="__span-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>    <span class="s2">"socket_connect_timeout"</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span>
 </span><span id="__span-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>    <span class="s2">"socket_timeout"</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span>
