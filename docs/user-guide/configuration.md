@@ -310,12 +310,15 @@ setting off a thundering herd of recomputes:
 }
 ```
 
-The option takes `True` for the defaults, `False` or `None` for off, a dict, or
-a `django_cachex.StampedeConfig`. Any other value, such as the string `"False"`
-from an environment variable, raises `ImproperlyConfigured`. `buffer` is a
-non-negative `int` in seconds. `beta` and `delta` are finite non-negative
-numbers, and 0 for either turns off early recompute, so keys expire logically
-at their timeout.
+The option takes `True` for the defaults, `False`, `None` or `{}` for off, a
+dict, or a `django_cachex.StampedeConfig`. Any other value, such as the string
+`"False"` from an environment variable, raises `ImproperlyConfigured`. A dict
+key other than `buffer`, `beta` and `delta` is dropped with a logged warning,
+so a dict that holds only misspelled keys turns prevention on with the
+defaults. `buffer` is a non-negative `int` in seconds. `beta` and `delta` are
+finite non-negative numbers, and 0 for either turns off early recompute, so
+keys expire logically at their timeout. A field of the wrong type raises
+`TypeError`, and one out of range `ValueError`.
 
 The `stampede_prevention=` keyword overrides the option for one call. It takes
 `True`, `False`, a `StampedeConfig`, or `None`, the default, which keeps the
