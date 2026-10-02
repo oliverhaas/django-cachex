@@ -246,13 +246,17 @@ async def test_asmismember(cache: RespCache):
 @pytest.mark.asyncio
 async def test_aspop_default_count(cache: RespCache):
     cache.sadd("afoo", "bar1", "bar2")
-    assert await cache.aspop("afoo") in {"bar1", "bar2"}
+    popped = await cache.aspop("afoo")
+    assert popped in {"bar1", "bar2"}
+    assert cache.smembers("afoo") == {"bar1", "bar2"} - {popped}
 
 
 @pytest.mark.asyncio
 async def test_aspop_with_count(cache: RespCache):
     cache.sadd("afoo", "bar1", "bar2")
-    assert await cache.aspop("afoo", 1) in [{"bar1"}, {"bar2"}]
+    popped = await cache.aspop("afoo", 1)
+    assert popped in [{"bar1"}, {"bar2"}]
+    assert cache.smembers("afoo") == {"bar1", "bar2"} - popped
 
 
 @pytest.mark.asyncio
