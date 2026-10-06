@@ -17,7 +17,7 @@ from django.core.cache import caches
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.cache.backends.locmem import LocMemCache
 
-from django_cachex.cache.resp import RespCache
+from django_cachex.cache.resp import RespCache, RespClusterCache
 from django_cachex.cache.tracking import TrackingCache
 from django_cachex.script import keys_only_pre
 
@@ -115,14 +115,14 @@ local function fresh_generation()
   local t = redis.call('TIME')
   return t[1] .. string.format('%06d', tonumber(t[2])) .. '000'
 end
-local function leased(key, now)
-  return redis.call('ZCOUNT', key, '(' .. now, '+inf') > 0
-end
-local function any_leased(first, n, now)
+-- Drops expired leases first: a lease key, even an expired one, sends every lookup on its table to the script.
+local function any_leased(first, n)
+  if redis.call('EXISTS', unpack(KEYS, first, first + n - 1)) == 0 then return false end
+  local now = now_ms()
   for i = first, first + n - 1 do
-    if leased(KEYS[i], now) then return true end
+    redis.call('ZREMRANGEBYSCORE', KEYS[i], '-inf', now)
   end
-  return false
+  return redis.call('EXISTS', unpack(KEYS, first, first + n - 1)) > 0
 end
 local function current_generations(first, n)
   local generations = {}
@@ -149,7 +149,7 @@ _LOOKUP = (
     _LUA_PRELUDE
     + """
 local n = tonumber(ARGV[1])
-if any_leased(n + 2, n, now_ms()) then return {0} end
+if any_leased(n + 2, n) then return {0} end
 local generations = table.concat(current_generations(2, n), ':')
 if redis.call('HGET', KEYS[1], 'g') ~= generations then return {2, generations} end
 if ARGV[2] == generations then return {3} end
@@ -163,7 +163,7 @@ _STORE = (
     _LUA_PRELUDE
     + """
 local n = tonumber(ARGV[1])
-if any_leased(n + 2, n, now_ms()) then return 0 end
+if any_leased(n + 2, n) then return 0 end
 local generations = redis.call('MGET', unpack(KEYS, 2, n + 1))
 for i = 1, n do
   if not generations[i] then return 0 end
@@ -221,7 +221,7 @@ _GENERATIONS = (
     _LUA_PRELUDE
     + """
 local n = tonumber(ARGV[1])
-if any_leased(n + 1, n, now_ms()) then return false end
+if any_leased(n + 1, n) then return false end
 return current_generations(1, n)
 """
 )
@@ -266,7 +266,7 @@ if hasattr(os, "register_at_fork"):
 
 
 class RespStore:
-    """Results, generations and leases in Redis or Valkey, each operation one Lua script.
+    """Results, generations and leases in Redis or Valkey, changed only by Lua scripts.
 
     With ``local``, results are also kept in process and served from there while the server holds them under
     the same generations: a hit costs a round trip but no transfer, and still expires with the server's copy.
@@ -286,16 +286,38 @@ class RespStore:
     def _table_keys(db_alias: str, table_keys: Sequence[str]) -> list[str]:
         return [_generation_key(db_alias, k) for k in table_keys] + [_lease_key(db_alias, k) for k in table_keys]
 
+    def _read(self, keys: list[str], n: int, local: tuple[bytes, Any] | None) -> list[Any] | None:
+        """The reply ``_LOOKUP`` would give, or None for a lease key, a missing generation or an outdated local copy."""
+        made = [self.cache.make_and_validate_key(key) for key in keys]
+        entry_key, generation_keys, lease_keys = made[0], made[1 : n + 1], made[n + 1 :]
+        pipe = self.cache.adapter.pipeline(transaction=True)
+        pipe.exists(*lease_keys)
+        pipe.execute_command("MGET", *generation_keys)
+        if local is None:
+            pipe.hmget(entry_key, "g", "v")
+        else:
+            pipe.hget(entry_key, "g")
+        leases, generations, stored = pipe.execute()
+        if leases or None in generations:
+            return None
+        current = b":".join(generations)
+        if local is None:
+            stored_generations, payload = stored
+            return [1, payload, current] if stored_generations == current else [2, current]
+        if stored != current:
+            return [2, current]
+        return [3] if local[0] == current else None
+
     def lookup(self, db_alias: str, query_key: str, table_keys: Sequence[str]) -> Lookup:
         entry_key = _entry_key(db_alias, query_key)
         # As the server keys it, so a KEY_FUNCTION telling tenants apart keeps their local copies apart.
         local_key = self.cache.make_key(entry_key)
         local = self.local.get(local_key) if self.local is not None else None
-        reply = self._eval(
-            _LOOKUP,
-            [entry_key, *self._table_keys(db_alias, table_keys)],
-            [str(len(table_keys)), local[0] if local is not None else b""],
-        )
+        keys = [entry_key, *self._table_keys(db_alias, table_keys)]
+        # The cluster adapters run pipelines without MULTI/EXEC, and the reads must be one snapshot.
+        reply = None if isinstance(self.cache, RespClusterCache) else self._read(keys, len(table_keys), local)
+        if reply is None:
+            reply = self._eval(_LOOKUP, keys, [str(len(table_keys)), local[0] if local is not None else b""])
         status = int(reply[0])
         if status == 0:
             return BYPASS

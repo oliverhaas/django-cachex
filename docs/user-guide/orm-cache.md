@@ -80,7 +80,7 @@ Every table has a generation in the cache, and every committed write to the tabl
 
 A write holds a lease on its tables around the statement under autocommit, or around the `COMMIT` inside a transaction. While a table is leased, queries on it are neither served from the cache nor stored in it. A query running during a write therefore cannot cache a result the write makes stale.
 
-A cached read costs one round trip to the cache and a miss two. A write under autocommit, or the commit of a transaction that wrote, also costs two.
+A cached read costs one round trip to the cache and a miss two. A write under autocommit, or the commit of a transaction that wrote, also costs two. Outside a cluster, a read is a `MULTI`/`EXEC` instead of a Lua script, which saves the server CPU. It needs a second round trip while a write holds a lease on one of its tables, or under `TrackingCache` when the process's local copy of the result is outdated.
 
 ### Cache keys
 

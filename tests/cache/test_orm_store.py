@@ -1,9 +1,10 @@
-"""The ORM cache's Lua scripts on every RESP adapter and topology.
+"""The ORM cache's store on every RESP adapter and topology.
 
 tests/orm runs the ORM cache on redis-py only. Here its store runs on each driver, standalone, Sentinel and
-Cluster, whose script replies come back in the driver's own types.
+Cluster, whose replies come back in the driver's own types.
 """
 
+import time
 from typing import TYPE_CHECKING
 
 import pytest
@@ -81,6 +82,14 @@ def test_lease(store: RespStore):
     assert store.lookup(DB, "query", TABLES).value == "fresh"
 
 
+def test_lookup_drops_an_expired_lease(cache: RespCache, store: RespStore):
+    store.begin_write(DB, TABLES[:1], "writer", 0.001)
+    time.sleep(0.05)
+
+    assert store.lookup(DB, "query", TABLES).token is not None
+    assert cache.ttl(LEASE) == -2
+
+
 def test_leases_of_two_writers(store: RespStore):
     store.begin_write(DB, TABLES, "first", 60)
     store.begin_write(DB, TABLES[1:], "second", 60)
@@ -134,6 +143,26 @@ def test_local_copy(cache: RespCache, store: RespStore):
     remote = store.lookup(DB, "query", TABLES)
     assert not remote.hit
     assert remote.token == miss.token
+
+
+def test_outdated_local_copy_gives_way_to_the_server_copy(cache: RespCache):
+    first = RespStore(caches[DEFAULT_CACHE_ALIAS], _LocalResults(max_entries=10))
+    second = RespStore(caches[DEFAULT_CACHE_ALIAS], _LocalResults(max_entries=10))
+    assert first.store(DB, "query", TABLES, first.lookup(DB, "query", TABLES).token, "old", 60)
+    first.bump(DB, TABLES)
+    assert second.store(DB, "query", TABLES, second.lookup(DB, "query", TABLES).token, "new", 60)
+
+    assert first.lookup(DB, "query", TABLES).value == "new"
+
+
+@pytest.mark.parametrize("local", [False, True], ids=["server_copy", "local_copy"])
+def test_hit_runs_no_script_outside_a_cluster(cache: RespCache, topology: str, local: bool, mocker):
+    store = RespStore(caches[DEFAULT_CACHE_ALIAS], _LocalResults(max_entries=10) if local else None)
+    assert store.store(DB, "query", TABLES, store.lookup(DB, "query", TABLES).token, "value", 60)
+    scripts = mocker.spy(store.cache.adapter, "eval")
+
+    assert store.lookup(DB, "query", TABLES).value == "value"
+    assert scripts.call_count == (1 if topology == "cluster" else 0)
 
 
 def test_local_copies_keyed_like_the_server(cache: RespCache, mocker):

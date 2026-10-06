@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Improvements
+
+- Outside a cluster, the ORM cache reads a cached result with one `MULTI`/`EXEC` instead of a Lua script. In a local benchmark, a read took Redis 8.4 and Valkey 9.1 20 to 22 µs of CPU instead of 31 to 38 µs. The read needs a second round trip, for the script, while a write holds a lease on one of the query's tables, or under `TrackingCache` when the process's local copy of the result is outdated. On a cluster, reads still run the script, which now checks the leases of all tables with one `EXISTS` and took 28 to 31 µs instead of 29 to 36 µs. The scripts also drop expired leases, which before stayed on the server until the next write to their table.
+
 ### Fixes
 
 - The admin's key page showed only "Could not load value for this key" for a hash, list, set or sorted set holding one value its serializer could not load. The ORM cache's scripts store such values, so the page failed on the ORM cache's lease keys and on the result key of any query over more than one table. It now shows such a value as its stored bytes, as in `b'1759412345678901000:1759412345678902000'`, read-only, and the key's other values as before.
