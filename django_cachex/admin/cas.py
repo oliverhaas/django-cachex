@@ -14,6 +14,7 @@ Each CAS function returns:
 
 from typing import TYPE_CHECKING, Any
 
+from django_cachex.exceptions import CompressorError, SerializerError
 from django_cachex.script import keys_only_pre
 
 if TYPE_CHECKING:
@@ -97,6 +98,10 @@ until cursor == '0' or #page == want or budget <= 0
 return {cursor, skip, page}
 """
 
+_GET_ZSET_RANGE = """\
+return redis.call('ZRANGE', KEYS[1], tonumber(ARGV[1]), tonumber(ARGV[2]), 'WITHSCORES')
+"""
+
 # =============================================================================
 # CAS write scripts (used at form submit to atomically check-then-update)
 # =============================================================================
@@ -176,6 +181,13 @@ def _text(value: bytes | str) -> str:
     return value.decode() if isinstance(value, bytes) else str(value)
 
 
+def _decode_or_raw(cache: RespCache, raw: bytes) -> Any:
+    try:
+        return cache.decode(raw)
+    except CompressorError, SerializerError:
+        return raw
+
+
 def get_string_with_sha1(cache: RespCache, key: str) -> tuple[Any, str] | None:
     """Read a string value and its SHA1 fingerprint in one atomic call.
 
@@ -203,7 +215,7 @@ def get_list_range_with_sha1s(cache: RespCache, key: str, start: int, stop: int)
     )
     if not result:
         return []
-    return [(cache.decode(result[i]), _text(result[i + 1])) for i in range(0, len(result), 2)]
+    return [(_decode_or_raw(cache, result[i]), _text(result[i + 1])) for i in range(0, len(result), 2)]
 
 
 # Entries a page walker visits per script call, so a deep page of a large key
@@ -235,7 +247,7 @@ def get_hash_page_with_sha1s(cache: RespCache, key: str, start: int, count: int)
     only the page's fields leave the server.
     """
     rows = _walk_to_page(cache, _GET_HASH_PAGE_WITH_SHA1S, key, start, count)
-    return [(_text(field), cache.decode(raw), _text(sha1)) for field, raw, sha1 in rows]
+    return [(_text(field), _decode_or_raw(cache, raw), _text(sha1)) for field, raw, sha1 in rows]
 
 
 def get_set_page(cache: RespCache, key: str, start: int, count: int) -> list[Any]:
@@ -243,7 +255,13 @@ def get_set_page(cache: RespCache, key: str, start: int, count: int) -> list[Any
 
     Only the page's members leave the server.
     """
-    return [cache.decode(member) for member in _walk_to_page(cache, _GET_SET_PAGE, key, start, count)]
+    return [_decode_or_raw(cache, member) for member in _walk_to_page(cache, _GET_SET_PAGE, key, start, count)]
+
+
+def get_zset_range(cache: RespCache, key: str, start: int, stop: int) -> list[tuple[Any, float]]:
+    """Read a range of sorted set members with their scores, same semantics as ZRANGE."""
+    result = cache.eval_script(_GET_ZSET_RANGE, keys=[key], args=[start, stop], pre_hook=keys_only_pre)
+    return [(_decode_or_raw(cache, result[i]), float(result[i + 1])) for i in range(0, len(result), 2)]
 
 
 # =============================================================================

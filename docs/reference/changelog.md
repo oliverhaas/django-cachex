@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- The admin's key page showed only "Could not load value for this key" for a hash, list, set or sorted set holding one value its serializer could not load. The ORM cache's scripts store such values, so the page failed on the ORM cache's lease keys and on the result key of any query over more than one table. It now shows such a value as its stored bytes, as in `b'1759412345678901000:1759412345678902000'`, read-only, and the key's other values as before.
+
 ## 0.13.0 (October 2026)
 
 ### Improvements

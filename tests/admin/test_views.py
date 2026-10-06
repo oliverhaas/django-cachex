@@ -29,6 +29,7 @@ from django_cachex.admin.helpers import get_size
 from django_cachex.admin.models import Cache, Key
 from django_cachex.admin.views.key_detail import _MAX_STRING_BYTES
 from django_cachex.exceptions import NotSupportedError
+from django_cachex.orm.store import RespStore
 from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
@@ -2992,6 +2993,56 @@ def test_key_list_renders_with_broken_value(admin_client, test_cache):
     assert response.status_code == 200
     # Broken key still appears in the list; operator needs to see it to delete it.
     assert BROKEN_KEY in response.content.decode()
+
+
+def _entry_values(content: bytes) -> dict[str, bool]:
+    soup = BeautifulSoup(content, "html.parser")
+    return {area.get_text(): area.has_attr("readonly") for area in soup.select("#result_list textarea")}
+
+
+@pytest.mark.parametrize("key_type", ["hash", "list", "set", "zset"])
+def test_key_detail_shows_an_entry_the_serializer_cannot_load_as_its_bytes(
+    admin_client: Client,
+    test_cache: RespCache,
+    key_type: str,
+):
+    raw = b"1759412345678901000:1759412345678902000"
+    decodable = test_cache.encode("decoded")
+    full_key = test_cache.make_key(f"raw:{key_type}")
+    client = test_cache.get_client(write=True)
+    match key_type:
+        case "hash":
+            client.hset(full_key, mapping={"g": raw, "v": decodable})
+        case "list":
+            client.rpush(full_key, raw, decodable)
+        case "set":
+            client.sadd(full_key, raw, decodable)
+        case "zset":
+            client.zadd(full_key, {raw: 1, decodable: 2})
+
+    response = admin_client.get(_key_detail_url("default", f"raw:{key_type}"))
+
+    assert response.status_code == 200
+    assert _entry_values(response.content) == {repr(raw): True, '"decoded"': False}
+
+
+def test_key_detail_opens_the_result_and_lease_keys_of_the_orm_cache(
+    admin_client: Client,
+    test_cache: RespCache,
+):
+    store = RespStore(test_cache)
+    tables = ["shop_customer", "shop_order"]
+    query_key = "shop_customer.shop_order:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b:multi"
+    token = store.lookup("default", query_key, tables).token
+    store.store("default", query_key, tables, token, [(1, "Ada")], None)
+    lease_token = "0123456789abcdef" * 2
+    store.begin_write("default", ["shop_order"], lease_token, 60)
+
+    result = admin_client.get(_key_detail_url("default", f"orm:{{default}}:q:{query_key}"))
+    lease = admin_client.get(_key_detail_url("default", "orm:{default}:l:shop_order"))
+
+    assert _entry_values(result.content) == {repr(token): True, "[(1, 'Ada')]": True}
+    assert _entry_values(lease.content) == {repr(lease_token.encode()): True}
 
 
 def test_key_list_shows_an_undecodable_name_apart_from_its_escaped_spelling(

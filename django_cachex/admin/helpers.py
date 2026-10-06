@@ -24,6 +24,7 @@ from django_cachex.admin.cas import (
     get_list_range_with_sha1s,
     get_set_page,
     get_string_with_sha1,
+    get_zset_range,
     supports_cas,
 )
 from django_cachex.cache.resp import RespCache
@@ -540,8 +541,6 @@ def _list_entries(cache: Any, key: str, start: int, stop: int) -> list[tuple[Any
     if supports_cas(cache):
         try:
             return get_list_range_with_sha1s(cache, key, start, stop)
-        except CompressorError, SerializerError:
-            raise
         except Exception:  # noqa: BLE001
             _log_cas_fallback(key, KeyType.LIST)
     return [(raw, "") for raw in cache.lrange(key, start, stop)]
@@ -555,8 +554,6 @@ def _hash_entries(cache: Any, key: str, start: int, stop: int) -> list[tuple[str
     if supports_cas(cache):
         try:
             return get_hash_page_with_sha1s(cache, key, start, stop - start)
-        except CompressorError, SerializerError:
-            raise
         except Exception:  # noqa: BLE001
             _log_cas_fallback(key, KeyType.HASH)
     fields = [str(f) for f in cache.hkeys(key)][start:stop]
@@ -574,8 +571,6 @@ def _set_page(cache: Any, key: str, start: int, stop: int) -> list[tuple[str, bo
     if supports_cas(cache):
         try:
             return [format_value_for_display(m) for m in get_set_page(cache, key, start, stop - start)]
-        except CompressorError, SerializerError:
-            raise
         except Exception:
             logger.warning("Set page script failed for key %r; paging with SSCAN instead", key, exc_info=True)
     try:
@@ -584,6 +579,16 @@ def _set_page(cache: Any, key: str, start: int, stop: int) -> list[tuple[str, bo
         return [format_value_for_display(m) for m in page_members]
     except NotSupportedError:
         return sorted(format_value_for_display(m) for m in cache.smembers(key))[start:stop]
+
+
+def _zset_entries(cache: Any, key: str, start: int, stop: int) -> list[tuple[Any, float]]:
+    """One page of sorted set members as ``(raw, score)`` pairs. See :func:`_list_entries`."""
+    if supports_cas(cache):
+        try:
+            return get_zset_range(cache, key, start, stop)
+        except Exception:
+            logger.warning("Sorted set page script failed for key %r; reading with ZRANGE instead", key, exc_info=True)
+    return cache.zrange(key, start, stop, withscores=True)
 
 
 def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> dict[str, Any]:  # noqa: PLR0911
@@ -625,7 +630,7 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
                 pagination = _paginate(length, page)
                 start = pagination["start_index"]
                 stop = pagination["end_index"] - 1  # ZRANGE stop is inclusive
-                zset_members = _zset_rows(cache.zrange(key, start, stop, withscores=True))
+                zset_members = _zset_rows(_zset_entries(cache, key, start, stop))
                 return {"members": zset_members, "length": length, "pagination": pagination}
             case KeyType.STREAM:
                 return _fetch_stream_data(cache, key, page=page)
