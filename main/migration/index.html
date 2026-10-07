@@ -1255,10 +1255,11 @@
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Or (Redis)</span>
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="s2">"BACKEND"</span><span class="p">:</span> <span class="s2">"django_cachex.cache.RedisCache"</span>
 </span></code></pre></div>
-<p>All Django cache options work unchanged. Two behaviors differ on the Valkey and Redis backends:</p>
+<p>All Django cache options work unchanged. Three behaviors differ on the Valkey and Redis backends:</p>
 <ul>
 <li><code>incr()</code> and <code>decr()</code> on a missing key start it from 0, like Redis <code>INCRBY</code>, where Django's <code>RedisCache</code> raises <code>ValueError</code>. Code that relies on the <code>ValueError</code> to detect an expired counter must check <code>has_key()</code> first. django-cachex's <code>LocMemCache</code> and <code>DatabaseCache</code> keep Django's behavior.</li>
 <li><code>clear()</code> deletes only this alias's keys, by pattern over <code>KEY_PREFIX</code> and <code>VERSION</code>, not the whole database. <code>flush_db()</code> runs <code>FLUSHDB</code>.</li>
+<li>A key can hold spaces and control characters and be up to 512 MB long. Django's <code>RedisCache</code> warns with <code>CacheKeyWarning</code> about such a key, or one longer than 250 characters, since memcached refuses them. django-cachex's <code>LocMemCache</code> takes the same keys as the Valkey and Redis backends, and its <code>DatabaseCache</code> warns like Django's.</li>
 </ul>
 <h2 id="from-django-valkey">From django-valkey<a class="headerlink" href="#from-django-valkey" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Before</span>
