@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- The Valkey and Redis backends and `TrackingCache` issued Django's `CacheKeyWarning` for a key that memcached refuses, one longer than 250 characters or holding a space or a control character, though Valkey and Redis take any key up to 512 MB. They now skip the check, which also saves about 1 µs per key. `LocMemCache` skips it too, so that tests on it accept the same keys. `DatabaseCache` keeps it, since its table holds keys of up to 255 characters. To get the warning back, override `validate_key()` in a subclass to call `BaseCache.validate_key()`.
+
 ## 0.13.1 (October 2026)
 
 ### Improvements

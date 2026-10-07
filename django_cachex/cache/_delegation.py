@@ -31,6 +31,9 @@ class DelegatingCacheMixin:
     def make_key(self, key: str, version: int | None = None) -> str:
         return self._delegate("make_key", key, version=version)
 
+    def validate_key(self, key: str) -> None:
+        self._delegate("validate_key", key)
+
     def reverse_key(self, key: str) -> str:
         return self._delegate("reverse_key", key)
 

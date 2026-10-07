@@ -126,6 +126,13 @@ def test_cull_frequency_zero_clears_collections_too():
     assert len(cache._cache) + len(cache._collections) == 1
 
 
+@pytest.mark.filterwarnings("error::django.core.cache.CacheKeyWarning")
+def test_key_memcached_would_refuse_round_trips_without_warning(locmem_cache: LocMemCache):
+    key = "a key " + "k" * 300
+    locmem_cache.set(key, "value")
+    assert locmem_cache.get(key) == "value"
+
+
 # LocMemCache set() nx/xx/get flag semantics (parity with RespCache).
 def test_nx_new_key_writes(locmem_cache: LocMemCache):
     assert locmem_cache.set("k", 1, nx=True) is True

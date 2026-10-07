@@ -666,6 +666,13 @@ def test_roundtrip(tracking_cache):
     assert tracking_cache.get("rt") == {"a": [1, 2]}
 
 
+@pytest.mark.filterwarnings("error::django.core.cache.CacheKeyWarning")
+def test_key_memcached_would_refuse_round_trips_without_warning(tracking_cache):
+    key = "a key " + "k" * 300
+    tracking_cache.set(key, "value")
+    assert tracking_cache.get(key) == "value"
+
+
 @BOTH_MODES
 def test_second_get_is_served_locally(tracking_cache, mocker):
     _settled(tracking_cache, lambda: tracking_cache.set("local", "v"))

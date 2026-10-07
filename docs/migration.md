@@ -13,10 +13,11 @@
 "BACKEND": "django_cachex.cache.RedisCache"
 ```
 
-All Django cache options work unchanged. Two behaviors differ on the Valkey and Redis backends:
+All Django cache options work unchanged. Three behaviors differ on the Valkey and Redis backends:
 
 - `incr()` and `decr()` on a missing key start it from 0, like Redis `INCRBY`, where Django's `RedisCache` raises `ValueError`. Code that relies on the `ValueError` to detect an expired counter must check `has_key()` first. django-cachex's `LocMemCache` and `DatabaseCache` keep Django's behavior.
 - `clear()` deletes only this alias's keys, by pattern over `KEY_PREFIX` and `VERSION`, not the whole database. `flush_db()` runs `FLUSHDB`.
+- A key can hold spaces and control characters and be up to 512 MB long. Django's `RedisCache` warns with `CacheKeyWarning` about such a key, or one longer than 250 characters, since memcached refuses them. django-cachex's `LocMemCache` takes the same keys as the Valkey and Redis backends, and its `DatabaseCache` warns like Django's.
 
 ## From django-valkey
 

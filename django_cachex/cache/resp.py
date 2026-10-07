@@ -533,6 +533,10 @@ class RespCache(BaseCachex):
     def make_and_validate_key(self, key: Any, version: int | None = None) -> Any:
         return _wire_key(super().make_and_validate_key(key, version=version))
 
+    @override
+    def validate_key(self, key: str) -> None:
+        """Accept every key: Valkey and Redis keys are binary-safe, so memcached's key limits do not apply."""
+
     # =========================================================================
     # Core Cache Operations (Django's BaseCache interface)
     # =========================================================================

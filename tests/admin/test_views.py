@@ -2331,8 +2331,6 @@ def test_make_pk_parse_pk_roundtrip_colon_in_cache_name():
     assert Key.parse_pk(Key.make_pk("tier:hot", "user:1")) == ("tier:hot", "user:1")
 
 
-# The space is on purpose, and Django warns that memcached would reject it.
-@pytest.mark.filterwarnings("ignore::django.core.cache.CacheKeyWarning")
 def test_key_detail_url_roundtrips_special_characters(
     admin_client: Client,
     test_cache: RespCache,

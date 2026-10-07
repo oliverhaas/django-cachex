@@ -23,6 +23,13 @@ def test_version(cache: RespCache):
     assert res == 2
 
 
+@pytest.mark.filterwarnings("error::django.core.cache.CacheKeyWarning")
+def test_key_memcached_would_refuse_round_trips_without_warning(cache: RespCache):
+    key = "a key " + "k" * 300
+    cache.set(key, "value")
+    assert cache.get(key) == "value"
+
+
 def test_incr_version(cache: RespCache):
     # Use hash tag so versioned keys stay in same cluster slot
     cache.set("{keytest}", 2)

@@ -350,6 +350,9 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 return False
             return self._delete(internal_key)
 
+    def validate_key(self, key: str) -> None:
+        """Accept every key, as the Valkey and Redis backends do: memcached's key limits do not apply."""
+
     def _internal_key(self, key: str, version: int | None = None) -> str:
         """Resolve a user key (with version) to the internal cache-dict key."""
         return self.make_and_validate_key(str(key), version=version)
