@@ -1,0 +1,3996 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Valkey and Redis cache backend for Django, with a Django admin UI for cache inspection.">
+      
+      
+      
+        <link rel="canonical" href="https://oliverhaas.github.io/django-cachex/0.13.1/reference/changelog/">
+      
+      
+        <link rel="prev" href="../benchmarks/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Changelog - Django CacheX</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="red" data-md-color-accent="red">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#changelog" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Django CacheX" class="md-header__button md-logo" aria-label="Django CacheX" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Django CacheX
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Changelog
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="red" data-md-color-accent="red"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="red" data-md-color-accent="red"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/oliverhaas/django-cachex" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    oliverhaas/django-cachex
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Django CacheX" class="md-nav__button md-logo" aria-label="Django CacheX" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Django CacheX
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/oliverhaas/django-cachex" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    oliverhaas/django-cachex
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/admin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cache Admin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/async/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Async Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/serializers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serializers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/compression/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compression
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/sentinel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sentinel
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/composite-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TrackingCache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/orm-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ORM Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#0131-october-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.13.1 (October 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.13.1 (October 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0130-october-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.13.0 (October 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.13.0 (October 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#improvements_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0121-october-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.12.1 (October 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.12.1 (October 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0120-october-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.12.0 (October 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.12.0 (October 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#improvements_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0111-september-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.11.1 (September 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.11.1 (September 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixes_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0110-september-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.11.0 (September 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.11.0 (September 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tooling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tooling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0100-september-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.10.0 (September 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.10.0 (September 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#090-september-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.0 (September 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.9.0 (September 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#080-september-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.8.0 (September 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.8.0 (September 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#071-september-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.7.1 (September 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.7.1 (September 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#070-september-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.7.0 (September 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.7.0 (September 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tooling_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tooling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#060-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.6.0 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.6.0 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#051-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.5.1 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.5.1 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#improvements_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#050-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.5.0 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.5.0 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#042-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.2 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.2 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#improvements_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#041-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.1 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.1 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixes_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#040-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.0 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.0 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#performance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#030-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.3.0 (February 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#020-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.2.0 (February 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#010-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0 (February 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0 (February 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-structure-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Structure Operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pre-release-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-release History
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pre-release History">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#010b6-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0b6 (February 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0b6 (February 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#010b5-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0b5 (February 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0b5 (February 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#010b4-january-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0b4 (January 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0b4 (January 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#010b3-january-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0b3 (January 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0b3 (January 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#0131-october-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.13.1 (October 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.13.1 (October 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0130-october-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.13.0 (October 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.13.0 (October 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#improvements_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0121-october-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.12.1 (October 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.12.1 (October 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0120-october-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.12.0 (October 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.12.0 (October 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#improvements_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0111-september-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.11.1 (September 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.11.1 (September 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixes_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0110-september-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.11.0 (September 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.11.0 (September 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tooling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tooling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0100-september-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.10.0 (September 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.10.0 (September 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#090-september-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.9.0 (September 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.9.0 (September 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#080-september-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.8.0 (September 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.8.0 (September 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#071-september-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.7.1 (September 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.7.1 (September 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#070-september-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.7.0 (September 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.7.0 (September 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tooling_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tooling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#060-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.6.0 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.6.0 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#051-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.5.1 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.5.1 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#improvements_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#050-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.5.0 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.5.0 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#042-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.2 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.2 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#improvements_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#041-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.1 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.1 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixes_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#040-august-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.0 (August 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.0 (August 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#performance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#030-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.3.0 (February 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#020-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.2.0 (February 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#010-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0 (February 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0 (February 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-structure-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Structure Operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Requirements
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pre-release-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-release History
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pre-release History">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#010b6-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0b6 (February 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0b6 (February 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#010b5-february-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0b5 (February 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0b5 (February 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#improvements_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#010b4-january-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0b4 (January 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0b4 (January 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#010b3-january-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0b3 (January 2026)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0b3 (January 2026)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-features_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
+<h2 id="0131-october-2026">0.13.1 (October 2026)<a class="headerlink" href="#0131-october-2026" title="Permanent link">&para;</a></h2>
+<h3 id="improvements">Improvements<a class="headerlink" href="#improvements" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Outside a cluster, the ORM cache reads a cached result with one <code>MULTI</code>/<code>EXEC</code> instead of a Lua script. In a local benchmark, a read took Redis 8.4 and Valkey 9.1 20 to 22 µs of CPU instead of 31 to 38 µs. The read needs a second round trip, for the script, while a write holds a lease on one of the query's tables, or under <code>TrackingCache</code> when the process's local copy of the result is outdated. On a cluster, reads still run the script, which now checks the leases of all tables with one <code>EXISTS</code> and took 28 to 31 µs instead of 29 to 36 µs. The scripts also drop expired leases, which before stayed on the server until the next write to their table.</li>
+</ul>
+<h3 id="fixes">Fixes<a class="headerlink" href="#fixes" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The admin's key page showed only "Could not load value for this key" for a hash, list, set or sorted set holding one value its serializer could not load. The ORM cache's scripts store such values, so the page failed on the ORM cache's lease keys and on the result key of any query over more than one table. It now shows such a value as its stored bytes, as in <code>b'1759412345678901000:1759412345678902000'</code>, read-only, and the key's other values as before.</li>
+</ul>
+<h2 id="0130-october-2026">0.13.0 (October 2026)<a class="headerlink" href="#0130-october-2026" title="Permanent link">&para;</a></h2>
+<h3 id="improvements_1">Improvements<a class="headerlink" href="#improvements_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The admin decides per cache who can use its keys. Each alias in <code>CACHES</code> gets a permission, <code>django_cachex.access_&lt;alias&gt;</code>, and listing, opening, adding, editing, deleting, clearing and flushing keys need it next to the existing permissions, on a <code>TrackingCache</code> alias together with that of its transport. Flush database, the slow log's arguments, and Clear and Flush on Django's own <code>RedisCache</code> and the memcached backends need it for every alias. Before, <code>view_key</code> opened every cache, the session cache included, whose key names hold session ids. After upgrading, run <code>migrate</code>: staff who are not superusers see no keys until they are granted the caches they need. See <a href="../../user-guide/admin/#permissions">Permissions</a>.</li>
+<li>ORM cache keys show their tables, as in <code>orm:{default}:q:shop_customer.shop_order:&lt;digest&gt;:multi</code> for a result and <code>orm:{default}:g:shop_order</code> for a generation. The new <code>QUERY_KEYGEN</code> and <code>TABLE_KEYGEN</code> settings take a callable, or its dotted path, that builds them instead (see <a href="../../user-guide/orm-cache/#cache-keys">Cache keys</a>). While processes of 0.12.1 or earlier and newer ones run against one cache, neither sees the other's writes, so results can be stale. Stop the old processes before the first new one starts, run <code>invalidate_orm_cache</code> after the last old one has stopped, or keep the old table keys with the <code>hashed_table_key</code> example from the docs.</li>
+<li>The ORM cache sorts the values of an <code>__in</code> filter before it keys a query, so a <code>prefetch_related()</code> under another order of its parent rows, or over a set of strings in another process, hits the cache. It compiles a query on an uncachable table once, not twice.</li>
+<li>The ORM cache finds the tables of a query with 10,000 <code>__in</code> values in 0.2 ms instead of 8 ms.</li>
+</ul>
+<h3 id="fixes_1">Fixes<a class="headerlink" href="#fixes_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The ORM cache's <code>invalidate()</code> and <code>invalidate_orm_cache</code> stopped at the first cache they could not reach, so the caches after it in <code>CACHES</code>, the ORM cache itself among them, kept serving stale results. They now invalidate every cache they can reach before raising <code>InvalidationError</code> for the ones that failed.</li>
+<li>A <code>CACHEX_ORM["LEASE_TIMEOUT"]</code> that is not a positive number of seconds went unreported: <code>0</code> gave writes leases that expire at once, and <code>None</code> made every write raise <code>InvalidationError</code>. The new <code>cachex_orm.E008</code> check reports it.</li>
+<li><code>DatabaseCache.scan()</code> skipped keys when others were deleted mid-iteration, so a loop that scans and deletes left about half of them. Its cursor is now a position in hash order, like <code>LocMemCache</code>'s. The 0.11.0 fix had missed it.</li>
+<li>On valkey-glide, <code>xreadgroup()</code> with id <code>0</code> raised <code>TypeError</code> when a pending entry had been removed by <code>XDEL</code> or <code>XTRIM</code>. That entry now comes back with an empty field dict, as on redis-py and valkey-py.</li>
+<li>On valkey-glide, each sync blocking call (<code>blpop()</code>, <code>brpop()</code>, <code>blmove()</code>, <code>xread()</code> and <code>xreadgroup()</code> with <code>block</code>, or a pipeline holding one) built a client and kept about 2 KB of it for the life of the process, because glide registers every client in a fork hook. Those calls now reuse idle clients.</li>
+<li>On Redis before 7.0, <code>set(nx=True, get=True)</code> and its pipeline form raised the driver's <code>syntax error</code>. They now raise <code>NotSupportedError</code>, as the <a href="../../getting-started/installation/#requirements">requirements</a> say.</li>
+<li>On valkey-glide, <code>flush_db()</code>, <code>aflush_db()</code> and the admin's Flush database button sent <code>FLUSHDB SYNC</code>, so a large flush blocked the server and raised <code>TimeoutError</code> after <code>request_timeout</code> (250 ms by default), though the flush went through. They now send a plain <code>FLUSHDB</code>, as redis-py and valkey-py do, and the server's <code>lazyfree-lazy-user-flush</code> decides whether to free the keys in the background.</li>
+<li>With stampede prevention on, <code>set(key, value, nx=True)</code> wrote nothing while the old value sat in its stampede buffer, where <code>get()</code> already returns <code>None</code>, so the refill after a miss failed and every request recomputed the value for up to <code>buffer</code> seconds. With <code>get=True</code>, <code>set()</code> returned that old value, and with <code>xx=True</code> it overwrote it. <code>set()</code> now counts that key as absent with every flag, as <code>add()</code> does: <code>nx=True</code> writes, <code>xx=True</code> writes nothing, and <code>get=True</code> returns <code>None</code>.</li>
+<li>With stampede prevention on, <code>get()</code> and <code>get_many()</code> returned a key's old value again in its last half second, once its <code>TTL</code> read 0, though they had returned <code>None</code> for the rest of its buffer and <code>add()</code> counted it as absent. They now return a miss there too, and so does <code>TrackingCache</code>.</li>
+<li>With stampede prevention on and a <code>buffer</code> of 0, <code>add()</code> and <code>set()</code> with <code>nx</code>, <code>xx</code> or <code>get</code> counted a key in its last half second as present: <code>add()</code> and <code>set(nx=True)</code> wrote nothing, <code>set(xx=True)</code> overwrote the value and <code>set(get=True)</code> returned it. They now count that key as absent, as <code>get()</code> does and as they do with a larger buffer, and so do <code>aadd()</code> and <code>aset()</code>.</li>
+<li>A tuple in <code>OPTIONS["serializer"]</code> or <code>OPTIONS["compressor"]</code> was taken as one codec instead of a fallback chain, so the first write or read raised <code>AttributeError</code>. A tuple now works like a list.</li>
+<li>A compressor <code>level</code> that its library rejects, such as <code>ZlibCompressor(level=10)</code> or a string, went unnoticed until the first write of a value over <code>min_length</code> raised <code>CompressorError</code>, possibly long after a deploy. A <code>PickleSerializer</code> <code>protocol</code> above <code>pickle.HIGHEST_PROTOCOL</code> went unnoticed until the first write raised <code>SerializerError</code>. Both now raise <code>ImproperlyConfigured</code> when the compressor or serializer is built, and the message names the accepted range. An lz4 level above <code>lz4.frame.COMPRESSIONLEVEL_MAX</code> (16), which lz4 treated as 16, raises too.</li>
+<li>The pipeline's <code>lpop()</code>, <code>rpop()</code>, <code>spop()</code>, <code>zpopmax()</code> and <code>zpopmin()</code> with a negative <code>count</code>, <code>linsert()</code> with a position other than <code>BEFORE</code> or <code>AFTER</code>, and <code>lpos()</code> with <code>rank=0</code> or a negative <code>count</code> or <code>maxlen</code> queued the command anyway, so <code>execute()</code> ran the commands queued before it and then raised the driver's error. They now raise <code>ValueError</code> when queued, like the cache methods.</li>
+<li><code>full_encode_pre</code> encoded an <code>Encoded(...)</code> arg as the wrapper, so <code>get()</code> returned <code>Encoded(value=...)</code> instead of the value, or the JSON serializer raised <code>SerializerError</code>. It now encodes the wrapped value.</li>
+<li>The admin showed Add key to users with <code>add_key</code> but not <code>change_key</code>, then gave them a key page with no way to add the first value. <code>add_key</code> now creates a key that does not exist yet; editing an existing key still takes <code>change_key</code>.</li>
+<li>The admin gave a user with <code>add_key</code> but not <code>view_key</code> the Add key form, and its Continue button answered with a 403. That user can now add the first value, which creates the key, and then lands on the admin index, as in Django's admin. Existing keys stay closed to them. The breadcrumbs and Back links of the Add key form and the key page led to the cache list and the key list, which answered that user with a 403 too. A list the user cannot open is now plain text in the breadcrumbs, and the Back link to it is left out. An error such as an unknown alias or an unreachable server also redirected to one of those lists, so the user got a 403 instead of the error message. It now redirects to the admin index when the user cannot open the list. The key list's breadcrumbs and its Cache Details button linked the cache list and the cache info page, which answered a user without <code>view_cache</code> or <code>change_cache</code> with a 403. For that user, those crumbs are now plain text, and the button is left out. The cache list and the cache info page showed List Keys to a user with the alias permission but without <code>view_key</code> or <code>change_key</code>, and the key list answered that user with a 403. List Keys now also needs one of the two.</li>
+<li>The admin's Clear tool said it removes only the current cache version, but on <code>LocMemCache</code> and <code>DatabaseCache</code> it removes every version, and on <code>DatabaseCache</code> the whole table, which other aliases may share. Its confirmation and message now say what goes.</li>
+<li>The admin's key page read and rendered a string value in full, so a 50 MB value blocked Redis and made a 50 MB page. A string over 1 MiB now shows only its size, also when it is stored compressed in less; its TTL and Delete still work. On the Valkey and Redis backends, the page does not read a value stored in over 1 MiB.</li>
+<li>With stampede prevention on, the admin's TTL form shows 0 for a key inside its stampede buffer, and 0 removes the expiry, so saving the form untouched made a key that was about to expire persistent. Saving the form without changing the TTL now leaves the expiry alone.</li>
+<li>The admin's key list showed the Key column header as a sort link, but the list stays in SCAN order, so clicking it changed nothing. The header is now plain text.</li>
+<li>The admin's key search read <code>?</code>, <code>[</code>, <code>]</code> and <code>\</code> as glob syntax, though the docs name only <code>*</code> as a wildcard. A search for <code>[ab]</code> listed every key holding an <code>a</code> or a <code>b</code>, and a search holding a <code>?</code> had to match the whole key name instead of a part of it. These characters now match themselves.</li>
+<li>The admin's Pop forms took any count, and the message after a pop listed every item it removed, so a large count made a page as large as the items. A pop now takes at most 100 items, as many as the key page shows at once, and its message names the first three and counts the rest.</li>
+<li>One key name that is not valid UTF-8 made <code>scan()</code>, <code>keys()</code>, <code>iter_keys()</code> and their async forms raise <code>UnicodeDecodeError</code>, so the admin's key list showed an error instead of any key. They now decode that name with the <code>surrogateescape</code> error handler, as <code>os.listdir()</code> does. On the Valkey and Redis backends and on <code>TrackingCache</code>, <code>get()</code>, <code>set()</code>, <code>delete()</code> and the other key commands take that name back and act on its key. The admin lists the name as bytes, as in <code>b'bad\xff'</code>, and opens, edits and deletes the key. On valkey-glide, <code>delete_pattern()</code> and <code>adelete_pattern()</code> raised <code>UnicodeDecodeError</code> when such a name matched, and now delete its key, as redis-py and valkey-py do. <code>xread()</code>, <code>xreadgroup()</code>, their async forms and their pipeline forms raised <code>UnicodeDecodeError</code> for a stream with such a name, and now return its entries under that name. <code>keys()</code>, <code>iter_keys()</code>, <code>scan()</code>, <code>delete_pattern()</code> and their async forms raised <code>UnicodeEncodeError</code> for a pattern that holds such a name, and now match its key.</li>
+<li><code>TrackingCache.delete_pattern()</code> and <code>adelete_pattern()</code> matched the glob against the characters of a key name, while the server matches its bytes, so <code>caf??</code> deleted <code>café</code> on the server but left its local copy. Under <code>coherence="ttl"</code>, <code>get()</code> returned that copy until <code>local_timeout</code> ran out. They now match the bytes, as the server does.</li>
+<li>The glob of <code>keys()</code>, <code>iter_keys()</code>, <code>scan()</code> and <code>delete_pattern()</code> on <code>LocMemCache</code> and <code>DatabaseCache</code>, and of <code>TrackingCache.delete_pattern()</code> for its local copies, ended a <code>[...]</code> class at its first <code>]</code> and read a <code>-</code> before it as a plain character, so <code>k[a-]1</code> matched <code>ka1</code>. Redis reads <code>a-]</code> as a range from <code>]</code> to <code>a</code> and runs a class that lost its closing <code>]</code> to the end of the pattern, so <code>k[a-]1</code> matches <code>k1</code> and <code>k_</code> but not <code>ka1</code>. They now read a class as Redis does.</li>
+<li><code>LocMemCache</code>'s <code>zadd()</code>, <code>zincrby()</code>, <code>zrem()</code>, <code>zrank()</code> and <code>zrevrank()</code> raised <code>ValueError</code> for a member equal to a stored one with another string form, such as <code>1</code> or <code>True</code> for a stored <code>1.0</code>, and a failed <code>zrem()</code> left the member in <code>zrange()</code> but not in <code>zcard()</code>. They now act on the stored member.</li>
+<li><code>LocMemCache.delete()</code> returned <code>True</code> for an expired key, which <code>get()</code> and <code>has_key()</code> already treated as missing. It now returns <code>False</code>, as Redis does, and still removes the key.</li>
+<li><code>LocMemCache</code>'s <code>aget()</code>, <code>aadd()</code>, <code>atouch()</code>, <code>adelete()</code>, <code>aget_or_set()</code>, <code>adelete_many()</code>, <code>aclear()</code> and <code>aclose()</code> went through <code>sync_to_async</code> and a worker thread, although the docs say its async methods call the sync method directly. They now do.</li>
+<li>After a fork, as under gunicorn <code>--preload</code> or Celery prefork, the child's first <code>TrackingCache</code> write, <code>clear()</code> or <code>shutdown()</code> could hang for good when a thread of the parent, such as its listener, held the local store's lock at the fork. Writes now switch the child to a fresh store first, as reads already did.</li>
+<li>After a fork, the child's first <code>TrackingCache</code> read or write, or a new thread's first use of the cache there, could hang for good when another thread of the parent was setting up its own <code>TrackingCache</code> at the fork and held the lock that setup takes. The child now starts with a fresh lock.</li>
+<li>After a fork, the child's first ORM query or write could hang for good when the ORM cache was a <code>TrackingCache</code> and another thread of the parent was starting one at the fork, holding the lock that each one takes first. The child now starts with a fresh lock.</li>
+<li>After a fork, on the redis-py and valkey-py backends, the child's <code>close()</code>, which Django sends after each request, its async calls, and the first call of a new cache instance there, as in a new thread, could hang for good when another thread of the parent held a lock around the shared connection pools at the fork. On <code>RedisClusterCache</code> and <code>ValkeyClusterCache</code>, the first call of a new cache instance could hang the same way on the lock around the shared cluster clients. The child now starts with fresh locks.</li>
+<li>After a fork, on valkey-glide, the child's <code>close()</code>, which Django sends after each request, its async calls, its blocking calls such as <code>blpop()</code>, <code>eval_script()</code>, releasing or extending a <code>lock()</code>, and its first call to a server the parent had not connected to, could hang for good when another thread of the parent held one of the adapter's locks at the fork, as a thread does while it connects. The child now starts with fresh locks.</li>
+<li>The redis-py and valkey-py backends, Sentinel and cluster included, opened another connection pool once an object in <code>OPTIONS</code> changed state, such as a credential provider caching a renewed token or a <code>Retry</code> that the asyncio cluster client adds errors to, and the old pool stayed open. Such an object now keys the same pool for as long as it lives.</li>
+<li>With <code>retry_on_timeout=True</code>, the redis-py and valkey-py backends, Sentinel included, let the driver add <code>TimeoutError</code> to the list in <code>OPTIONS["retry_on_error"]</code> (or in <code>sentinel_kwargs</code>) for each new connection, so the next cache instance, as in each new thread, opened another connection pool and the old ones stayed open. The drivers now get their own copies of the lists, dicts and sets in <code>OPTIONS</code>, which stay as given.</li>
+<li>On the redis-py and valkey-py backends, Sentinel included, an adapter subclass with its own <code>_client_class</code> or <code>_async_client_class</code> shared the connection pool of a cache with the same <code>LOCATION</code> and <code>OPTIONS</code>, and with it the client of whichever connected first, so one of the two got the other's client class. Each client class now gets its own pool.</li>
+<li>On the redis-py and valkey-py cluster backends, a thread connecting to a slow or unreachable cluster held a process-wide lock through node discovery, so every other cluster alias waited for it, and each command rebuilt the key of the shared cluster client. Discovery now runs outside the lock, and a cache instance looks its client up once.</li>
+<li>On valkey-glide, a thread or task connecting to a slow or unreachable server held a lock that all aliases share, process-wide for sync calls and per event loop for async ones, so every other alias that had not connected yet waited until it gave up. Each configuration now connects under a lock of its own.</li>
+<li>On redis-py 7, with <code>OPTIONS["socket_timeout"] = None</code> on valkey-py, and in valkey-py's sync Sentinel lookups, a connect had no timeout, so an unreachable host held each call for the kernel's TCP timeout of about two minutes. A connect now gives up after 5 seconds unless <code>socket_connect_timeout</code> or <code>socket_timeout</code> says otherwise in <code>OPTIONS</code>, the <code>LOCATION</code> query or <code>sentinel_kwargs</code>. In a <code>LOCATION</code> list of a primary and its replicas, the query of one URL counts for that URL only.</li>
+<li>On <code>ValkeyGlideClusterCache</code>, the <code>ImproperlyConfigured</code> error for seed URLs that disagree on TLS, username or password called the <code>LOCATION</code> list a primary and its replicas. It now says that valkey-glide applies one set of these settings to every URL in the list.</li>
+<li><code>KeyType</code>, which <code>type()</code> returns, was missing from the names that <code>django_cachex</code> exports, so <code>from django_cachex import KeyType</code> raised <code>ImportError</code>. It now works.</li>
+<li>On the Valkey and Redis backends, <code>semaphore()</code> and <code>asemaphore()</code> raised <code>TypeError</code> for a name that <code>scan()</code> returned for a key name that is not valid UTF-8. They now take that name, as <code>get()</code> and the other key commands do.</li>
+<li>On <code>LocMemCache</code> and <code>DatabaseCache</code>, <code>hincrbyfloat()</code> stored a whole result such as <code>5200.0</code> as a float, so a later <code>hincrby()</code> on the field raised <code>ValueError</code> and <code>hget()</code> returned <code>5200.0</code>. Redis stores it as <code>"5200"</code>, which <code>HINCRBY</code> takes and <code>hget()</code> returns as <code>5200</code>. Both backends now store a whole result as an integer.</li>
+<li>On <code>LocMemCache</code> and <code>DatabaseCache</code>, <code>scan()</code> with a <code>count</code> below 1 returned no keys and cursor 0, so a scan loop stopped as if no key matched. The server rejects <code>COUNT 0</code>. They now raise <code>ValueError</code>.</li>
+</ul>
+<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The ORM cache guide says that under django-tenants' per-tenant <code>search_path</code> or a row-level security policy, one tenant can be served another's cached rows, and shows a <code>QUERY_KEYGEN</code> that adds the tenant to the query key.</li>
+<li>The quickstart and the configuration reference say that the redis-py backends reject <code>valkey://</code> and <code>valkeys://</code> URLs, with a <code>ValueError</code> on the first cache call.</li>
+<li>The API reference, the async guide and the <code>TrackingCache</code> docs no longer claim async twins for <code>info()</code>, <code>slowlog_get()</code> and <code>slowlog_len()</code>, which have none.</li>
+<li>The <code>TrackingCache</code> guide says which calls open the listener connection. Reads and <code>info()</code> do, writes do not.</li>
+<li>The configuration reference says that concurrent <code>DatabaseCache</code> writes on SQLite can fail with <code>database is locked</code> under Django's default deferred transactions, and that <code>"transaction_mode": "IMMEDIATE"</code> in the database's <code>OPTIONS</code> makes them wait for the lock.</li>
+<li>The configuration reference lists exclusive score bounds such as <code>"(5"</code> among what <code>LocMemCache</code> and <code>DatabaseCache</code> raise <code>NotSupportedError</code> for.</li>
+<li>The configuration reference said every other <code>OPTIONS</code> key goes to the driver. It now says that the Valkey/Redis backends reject <code>decode_responses</code> and that <code>MAX_ENTRIES</code> and <code>CULL_FREQUENCY</code> do nothing there.</li>
+<li>The stampede prevention docs say that <code>{}</code> turns it off, that unknown dict keys are dropped with a warning, so a dict of misspelled keys means the defaults, and that bad field values raise <code>TypeError</code> or <code>ValueError</code>, not <code>ImproperlyConfigured</code>.</li>
+<li>The stampede prevention docs say that counters and data structures get the buffer too, and how to keep it off them.</li>
+<li>The admin guide's Backend Abilities table said that <code>LocMemCache</code> and <code>DatabaseCache</code> have no conflict detection on edit. It now says they detect type changes only.</li>
+<li>The admin's help for a string key said that its input must be valid JSON. It now says that input which is not JSON is stored as a string.</li>
+<li>The API reference said that a pipelined <code>zadd(..., incr=True)</code> sends <code>ZINCRBY</code>, which takes none of the <code>nx</code>, <code>xx</code>, <code>gt</code> and <code>lt</code> flags. It now says that the pipeline sends <code>ZADD ... INCR</code>.</li>
+<li>The configuration reference says that on the redis-py and valkey-py backends a database in the <code>LOCATION</code> URL overrides <code>OPTIONS["db"]</code>, whereas on valkey-glide backends <code>OPTIONS["db"]</code> overrides the URL.</li>
+<li>The configuration reference says that on <code>LocMemCache</code> and <code>DatabaseCache</code>, <code>1</code>, <code>True</code> and <code>1.0</code> are one set or sorted set member and one <code>lrem()</code> value, and that sorted set members with equal scores sort by <code>str(member)</code>.</li>
+</ul>
+<h2 id="0121-october-2026">0.12.1 (October 2026)<a class="headerlink" href="#0121-october-2026" title="Permanent link">&para;</a></h2>
+<h3 id="fixes_2">Fixes<a class="headerlink" href="#fixes_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The redis-py and valkey-py backends, Sentinel included, share sync connection pools across the process, as they do async ones. Django builds a cache instance per thread and per asyncio task, so each new thread opened new connections, and under ASGI so did each request that made sync cache calls. <code>OPTIONS["max_connections"]</code> now caps one pool that every thread shares, along with every alias with the same <code>LOCATION</code> and connection options. redis-py 8 defaults it to 100, so a process with more than 100 cache commands in flight at once gets <code>Too many connections</code> unless it raises the cap or uses <code>BlockingConnectionPool</code>.</li>
+</ul>
+<h2 id="0120-october-2026">0.12.0 (October 2026)<a class="headerlink" href="#0120-october-2026" title="Permanent link">&para;</a></h2>
+<h3 id="improvements_2">Improvements<a class="headerlink" href="#improvements_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The admin's Flush action, Clear tool and danger zone are off by default, for superusers too. Set <code>CACHEX_ADMIN = {"ALLOW_FLUSH": True}</code> to turn them back on; they still need the <code>change_cache</code> permission. See <a href="../../user-guide/admin/#flushing-caches">Flushing Caches</a>.</li>
+</ul>
+<h2 id="0111-september-2026">0.11.1 (September 2026)<a class="headerlink" href="#0111-september-2026" title="Permanent link">&para;</a></h2>
+<h3 id="fixes_3">Fixes<a class="headerlink" href="#fixes_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>flush_db()</code> and <code>aflush_db()</code> raise <code>NotSupportedError</code> on <code>LocMemCache</code>, <code>DatabaseCache</code> and <code>TrackingCache</code>, like <code>clear_all_versions()</code>, instead of <code>AttributeError</code>.</li>
+</ul>
+<h3 id="documentation_1">Documentation<a class="headerlink" href="#documentation_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The API reference lists <code>info()</code>, <code>slowlog_get()</code>, <code>slowlog_len()</code>, and the <code>version_src</code> and <code>version_dst</code> arguments of <code>rename()</code> and <code>renamenx()</code>.</li>
+<li>The semaphore docs say that <code>release()</code> after an expired lease logs a warning, and that the semaphore keys survive <code>clear()</code> and <code>clear_all_versions()</code>.</li>
+<li>The docs say that a pipelined <code>get()</code> skips the stampede check, that <code>scan()</code> raises <code>NotSupportedError</code> on the redis-py and valkey-py cluster backends, and which options a cluster <code>LOCATION</code> list takes from its first URL.</li>
+<li>The serializers guide warns that anyone who can write to the cache server can run code through pickle. The admin guide says that Flush on Django's own <code>RedisCache</code> runs <code>FLUSHDB</code>.</li>
+</ul>
+<h2 id="0110-september-2026">0.11.0 (September 2026)<a class="headerlink" href="#0110-september-2026" title="Permanent link">&para;</a></h2>
+<h3 id="breaking-changes">Breaking changes<a class="headerlink" href="#breaking-changes" title="Permanent link">&para;</a></h3>
+<ul>
+<li>redis-py 7.2 is the oldest supported release (<code>redis&gt;=7.2,&lt;9</code>), up from 6.0. Older releases mishandle async pipeline errors and async cluster scripts.</li>
+<li>On valkey-glide, <code>xread()</code>, <code>xreadgroup()</code> and their async and pipelined forms return <code>{}</code> instead of <code>None</code> for an empty read. Test with <code>if not result</code>.</li>
+<li><code>execute()</code> on <code>RespPipelineProtocol</code> and <code>RespAsyncPipelineProtocol</code> takes a keyword-only <code>raise_on_error=True</code>, which custom adapters must accept. With <code>False</code>, errors are returned as results.</li>
+</ul>
+<h3 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>django_cachex.orm</code> is an opt-in ORM query cache derived from django-cachalot 2.9.1. With the app in <code>INSTALLED_APPS</code>, it caches PostgreSQL and SQLite query results in a Redis, Valkey, <code>TrackingCache</code> or <code>LocMemCache</code> alias and invalidates the tables each write touches. A query running while a write commits cannot store a stale result, subqueries count with their tables, and queries using <code>Now()</code> are not cached. The API is <code>invalidate()</code>, <code>orm_cache_disabled()</code>, <code>table_generations()</code> and the <code>invalidate_orm_cache</code> command. See <a href="../../user-guide/orm-cache/">ORM Cache</a>, and <a href="../../migration/#from-django-cachalot">Migration</a> for moving from cachalot and for the cachalot settings it drops.</li>
+</ul>
+<h3 id="improvements_3">Improvements<a class="headerlink" href="#improvements_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Admin hash and set pages on the RESP backends transfer only the page shown; stream pages read at most about half the stream.</li>
+</ul>
+<h3 id="fixes_4">Fixes<a class="headerlink" href="#fixes_4" title="Permanent link">&para;</a></h3>
+<ul>
+<li>On valkey-glide, <code>blpop()</code>, <code>brpop()</code>, <code>blmove()</code>, and <code>xread()</code> and <code>xreadgroup()</code> with <code>block</code> get a short-lived client per call, direct, async or pipelined, instead of stalling every other command. The client waits for the block plus <code>request_timeout</code> (250 ms by default); a block of <code>0</code> is not cut short.</li>
+<li><code>zpopmin()</code> and <code>zpopmax()</code> without <code>count</code> raised <code>ValueError</code> under <code>OPTIONS["protocol"] = 3</code> on redis-py and valkey-py, directly and in a pipeline.</li>
+<li>For a missing key, <code>Pipeline.rename()</code> raises <code>KeyNotFoundError</code> from <code>execute()</code> and <code>Pipeline.renamenx()</code> returns <code>False</code>, instead of the driver's error.</li>
+<li>With stampede prevention active, <code>add()</code> and <code>aadd()</code> overwrite a key whose TTL entered the stampede buffer, which <code>get()</code> reports as missing.</li>
+<li><code>get_or_set()</code> and <code>aget_or_set()</code> with <code>stampede_prevention=False</code> still added the stampede buffer to the stored TTL.</li>
+<li><code>RedisClusterCache</code> and <code>ValkeyClusterCache</code> seed discovery from every <code>LOCATION</code> URL, so they connect while the first node is down. Credentials, TLS and other options still come from the first URL.</li>
+<li><code>decode_list_post</code> keeps a nil element as <code>None</code> instead of raising <code>TypeError</code>. Serializers and compressors given non-bytes raise <code>SerializerError</code> or <code>CompressorError</code> instead of <code>TypeError</code>.</li>
+<li>The default <code>scan()</code> of <code>LocMemCache</code> and <code>DatabaseCache</code> skipped keys when others were deleted mid-iteration. Keys now come in hash order, sorted per page.</li>
+<li><code>LocMemCache</code> and <code>DatabaseCache</code> follow Redis more closely: <code>persist()</code> without a TTL returns <code>False</code>, <code>hdel()</code> and <code>zrem()</code> count duplicates once, <code>zadd()</code> and <code>zincrby()</code> reject NaN scores with <code>ValueError</code>, a negative <code>start</code> in <code>zrangebyscore()</code> or <code>zrevrangebyscore()</code> returns <code>[]</code>, and <code>LocMemCache.sadd()</code> with an unhashable member raises before adding the others.</li>
+<li><code>DatabaseCache.sdiff()</code> and <code>sinter()</code> of a single key returned an internal set type that <code>set()</code> stored as a set-typed key.</li>
+<li><code>DatabaseCache</code> collection writes that trigger a <code>MAX_ENTRIES</code> cull no longer risk deadlocking with a concurrent cull.</li>
+<li>A <code>TrackingCache</code> listener that connects after <code>shutdown()</code> is closed instead of replacing its successor and clearing the local store. Under <code>coherence="ttl"</code>, a forked instance drops the parent's local store.</li>
+<li>An in-process <code>Semaphore.acquire()</code> interrupted while waiting (<code>KeyboardInterrupt</code>, Celery's soft time limit) leaves the queue instead of blocking every later <code>acquire()</code>.</li>
+<li><code>RespSemaphore.acquire()</code> and <code>aacquire()</code> reject a NaN <code>timeout</code> with <code>ValueError</code> instead of waiting forever, and a second interrupt or cancellation while abandoning one no longer makes the next <code>acquire()</code> raise <code>SemaphoreError</code>.</li>
+<li>The admin renders stream entries with an <code>items</code> field, and key-list paging links keep an <code>items</code> query parameter.</li>
+<li>The admin hash page keeps leading and trailing spaces in field names instead of stripping them.</li>
+<li>Renaming a sorted-set member in the admin onto an existing member is refused instead of overwriting that member's score and dropping the old one. On the RESP backends, the rename is also refused when the score changed since the page loaded.</li>
+<li>The admin's Flush database text wrongly said a cluster flush only reaches the connected primary, and a quote in a translation broke the confirmation button.</li>
+<li>The wheel and sdist ship <code>LICENSE.django-redis</code> (BSD-3-Clause) for the serializer, compressor and exception code derived from django-redis. The README and docs home page say which parts it covers.</li>
+</ul>
+<h3 id="documentation_2">Documentation<a class="headerlink" href="#documentation_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>clear()</code> was documented as safe on a shared database; it deletes every key under its <code>KEY_PREFIX</code> and <code>VERSION</code>, so apps need distinct prefixes. The docstring and API reference now say so.</li>
+<li>The README and docs promised automatic key prefixing and value encoding in <code>eval_script()</code>, which only applies them through a <code>pre_hook</code> such as <code>keys_only_pre</code>. The Lua guide's example now passes one.</li>
+<li>The docs list the multi-key commands redis-py and valkey-py cluster pipelines refuse: <code>rename</code>, <code>renamenx</code>, <code>smove</code>, <code>sdiff</code>, <code>sinter</code>, <code>sunion</code> and the <code>store</code> variants.</li>
+<li>The configuration guide lists <code>sscan()</code>, <code>sscan_iter()</code> and <code>clear_all_versions()</code> among the methods <code>LocMemCache</code> and <code>DatabaseCache</code> do not support.</li>
+<li>The LocMemCache vs fakeredis page is gone, the <code>TrackingCache</code> guide is half as long, and other pages drop filler.</li>
+</ul>
+<h3 id="tooling">Tooling<a class="headerlink" href="#tooling" title="Permanent link">&para;</a></h3>
+<ul>
+<li>CI builds the docs with <code>mkdocs build --strict</code> on pull requests.</li>
+<li>CI runs the cache tests over RESP3 and against the oldest supported client libraries (redis-py 7.2.0, valkey-py 6.1.0).</li>
+<li>The release workflow runs the ORM cache tests on SQLite with <code>LocMemCache</code> and on PostgreSQL with Redis before tagging.</li>
+</ul>
+<h2 id="0100-september-2026">0.10.0 (September 2026)<a class="headerlink" href="#0100-september-2026" title="Permanent link">&para;</a></h2>
+<h3 id="breaking-changes_1">Breaking changes<a class="headerlink" href="#breaking-changes_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>StreamCache</code> and the <code>django_cachex.cache.stream</code> module are removed; <code>TrackingCache</code> covers the same use case with a coherence guarantee.</li>
+<li>The redis-py and valkey-py cluster backends reject <code>OPTIONS["parser_class"]</code>, <code>["pool_class"]</code> and <code>["async_pool_class"]</code> with <code>ImproperlyConfigured</code> at <code>caches[alias]</code> instead of silently dropping them. Remove them; the C parser comes from installing <code>hiredis</code> or <code>libvalkey</code>.</li>
+<li><code>OPTIONS["decode_responses"] = True</code> raises <code>ImproperlyConfigured</code> on every RESP backend; it broke every read.</li>
+<li><code>TrackingCache</code> rejects <code>KEY_FUNCTION</code>, <code>VERSION</code>, <code>TIMEOUT</code> and an explicit <code>KEY_PREFIX: ""</code> on its own alias, directly or in <code>OPTIONS</code>; set them on the transport alias.</li>
+<li><code>lock()</code> and <code>alock()</code> on the redis-py and valkey-py backends return a wrapper that raises <code>django_cachex.lock.LockError</code> and <code>LockNotOwnedError</code>, subclasses of <code>ValueError</code>, with the driver error as <code>__cause__</code>; only <code>except redis.exceptions.LockError</code> needs changing. The wrapper forwards other attributes, including assignment, and supports <code>copy.copy()</code>.</li>
+<li>Pipeline parameter names match <code>RespCache</code>: <code>smove(src, dst, member)</code> (was <code>source</code>, <code>destination</code>), <code>sunionstore(dest, keys)</code> (was <code>destination</code>), <code>member</code> (was <code>value</code>) in <code>zscore()</code>, <code>zrank()</code>, <code>zrevrank()</code> and <code>zincrby()</code>, and <code>*members</code> (was <code>*values</code>) in <code>sadd()</code> and <code>zrem()</code>. <code>lmove()</code> no longer defaults <code>wherefrom</code> and <code>whereto</code> to <code>"LEFT"</code> and <code>"RIGHT"</code>.</li>
+<li><code>Pipeline.get(key, default=None, version=None)</code> gained <code>default</code>, so <code>pipe.get("k", 2)</code> now means default 2, not version 2; pass <code>version=</code> by keyword.</li>
+<li><code>add()</code> and <code>set()</code> with <code>nx</code>, <code>xx</code> or <code>get</code> and <code>timeout=0</code> now use <code>PXAT</code> on every RESP backend, closing a window where the key had no TTL. <code>PXAT</code> needs Redis 6.2, now the documented minimum.</li>
+<li>Sentinel backends reject a multi-entry <code>LOCATION</code> list with <code>ImproperlyConfigured</code>; Sentinel nodes go in <code>OPTIONS["sentinels"]</code>. <code>OPTIONS["async_pool_class"]</code> must be the driver's async <code>SentinelConnectionPool</code> or a subclass, and is now used.</li>
+<li><code>OPTIONS["stampede_prevention"]</code> accepts only <code>bool</code>, <code>dict</code>, <code>StampedeConfig</code> or <code>None</code>; other values, such as the string <code>"False"</code>, raise <code>ImproperlyConfigured</code> instead of enabling it. A <code>StampedeConfig</code> is used as is.</li>
+<li><code>TrackingCache</code> aliases sharing one <code>LOCATION</code> must agree on <code>transport</code>, <code>coherence</code>, <code>prefixes</code>, <code>local_timeout</code>, <code>MAX_ENTRIES</code>, <code>poll_timeout</code>, <code>health_check_interval</code> and <code>reconnect_delay</code>; a mismatch raises <code>ImproperlyConfigured</code>. The four timing options must be positive finite numbers.</li>
+<li>Cluster <code>incr_version()</code> and <code>decr_version()</code> reject a <code>KEY_FUNCTION</code> that puts the version inside the <code>{...}</code> hash tag with <code>NotSupportedError</code>, not <code>CROSSSLOT</code>; the message names both methods.</li>
+<li><code>xautoclaim(..., justid=True)</code> raises <code>NotSupportedError</code> in pipelines and on the redis-py / valkey-py cluster backends, where it returned <code>""</code> as the cursor; call it without <code>justid</code> there.</li>
+<li><code>django_cachex.admin.views</code> exports <code>cache_detail_view</code>, <code>key_add_view</code> and <code>key_detail_view</code>; the underscore-prefixed names are gone. <code>django_cachex.adapters.redis_py._REDIS_AVAILABLE</code> is no longer in that module's <code>__all__</code>.</li>
+<li>The valkey-glide pipeline raises <code>AttributeError</code> for unknown attributes instead of queuing them as commands; use <code>execute_command(*args)</code>.</li>
+<li>For custom adapters: <code>RespAdapterProtocol</code> gained <code>memory_usage()</code>, <code>amemory_usage()</code> and <code>get_async_client()</code>, <code>keys()</code> declares <code>pattern="*"</code>, <code>xadd()</code> returns <code>str | None</code>, and the pipeline protocol gained <code>memory_usage()</code>, <code>zadd(incr=)</code> and <code>zrange(desc=)</code>.</li>
+</ul>
+<h3 id="features_1">Features<a class="headerlink" href="#features_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>Encoded</code> and <code>encoded_pre</code> for <code>eval_script()</code>: wrap only the ARGV entries to encode, a middle ground between <code>keys_only_pre</code> and <code>full_encode_pre</code>. An <code>Encoded</code> reaching the adapter unwrapped, in <code>keys</code> or nested raises <code>TypeError</code>.</li>
+<li><code>memory_usage(key, version=None, *, samples=None)</code> and <code>amemory_usage()</code> return a key's <code>MEMORY USAGE</code> in bytes (<code>None</code> if missing), on the RESP backends, pipelines and <code>TrackingCache</code>. <code>LocMemCache</code>, <code>DatabaseCache</code> and the new <code>BaseCachex</code> defaults raise <code>NotSupportedError</code>.</li>
+<li><code>largest_keys(pattern="*", count=10, version=None, *, samples=None, itersize=None)</code> and <code>alargest_keys()</code> return the <code>count</code> largest keys matching <code>pattern</code> as <code>(key, bytes)</code> pairs, largest first. <code>count=0</code> returns <code>[]</code> and a negative count raises <code>ValueError</code>.</li>
+<li><code>Pipeline</code> gained <code>set(..., get=True)</code>, <code>zadd(..., incr=True)</code> and <code>zrange(..., desc=True)</code>, decoding as on the cache.</li>
+<li><code>django_cachex.script_sha()</code> is exported from the package root.</li>
+<li><code>LocMemCache</code> semaphores gained <code>extend()</code> and <code>aextend()</code>, returning whether the claim is still held.</li>
+<li><code>LocMemCache</code> and <code>DatabaseCache</code> implement <code>zrevrangebyscore()</code> and <code>azrevrangebyscore()</code> with Redis semantics: <code>max_score</code> then <code>min_score</code>, highest first, <code>LIMIT</code> applied to the descending order, <code>withscores</code> supported.</li>
+</ul>
+<h3 id="improvements_4">Improvements<a class="headerlink" href="#improvements_4" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>eval_script()</code> and <code>aeval_script()</code> send <code>EVALSHA</code>, loading the script on <code>NOSCRIPT</code>; valkey-glide does the same with <code>Script</code> objects, including its lock release and extend scripts. Pipelines still send <code>EVAL</code>.</li>
+<li>Configuration errors surface at <code>caches[alias]</code>, not on the first command: a blank or missing <code>LOCATION</code> raises <code>ImproperlyConfigured</code> with an example URL, and a missing driver, a bad <code>pool_class</code> or a rejected Sentinel <code>LOCATION</code> fail there too.</li>
+<li><code>TrackingCache</code> under <code>coherence="ttl"</code> rolls the stampede dice on the key's remaining server TTL, not the <code>local_timeout</code> cap. <code>has_key()</code> no longer rolls, and <code>get_or_set()</code> reads its own write back without rolling.</li>
+<li><code>TrackingCache.delete_pattern()</code> evicts local copies even under a custom <code>KEY_FUNCTION</code> without <code>REVERSE_KEY_FUNCTION</code>, and <code>delete_many()</code> no longer runs the key function under the store lock.</li>
+<li><code>TrackingCache</code> logs one traceback per listener outage, then a one-line warning per later attempt, instead of a traceback every second.</li>
+<li>Cluster <code>delete_many()</code>, <code>delete_pattern()</code> and <code>set_many(timeout=0)</code> send one <code>UNLINK</code> per batch.</li>
+<li>Sentinel async pool lookups compute their registry key once per server; the registry is only mutated under its lock.</li>
+<li>The <code>CLIENT TRACKING</code> listener no longer reconnects silently without tracking; <code>TrackingCache</code> rebuilds it instead.</li>
+<li><code>aclose()</code> on the redis-py and valkey-py adapters keeps the remaining pools registered when one fails to disconnect, and its docstring covers aliases sharing a pool.</li>
+<li>The admin key list fetches TTL, type and size per <code>SCAN</code> batch on redis-py and valkey-py, and hash and set pages fetch less (sets in server order). Values and edit fingerprints are read atomically, the TTL form only appears on backends with <code>expire()</code> and <code>persist()</code>, and quoted driver errors mask URL credentials.</li>
+<li>A transport's <code>NotSupportedError</code> passes through <code>TrackingCache</code> unchanged, with the server's reason.</li>
+<li>valkey-glide: a multi-URL <code>LOCATION</code> whose URLs differ only in a value <code>OPTIONS["db"]</code>, <code>["username"]</code> or <code>["password"]</code> overrides is accepted.</li>
+<li>CI runs <code>ruff check --no-fix</code>; plain <code>ruff check</code> fixed the checkout and passed.</li>
+<li>CI tests the Django version each matrix cell names, runs free-threaded tests with <code>PYTHON_GIL=0</code>, fails when <code>glide</code> cannot be imported, and lints with the full pre-commit hook set.</li>
+<li><code>LocMemCache.zremrangebyscore()</code> runs in O(log N + k) instead of scanning every member.</li>
+<li><code>clear_all_versions()</code> and <code>aclear_all_versions()</code> default to <code>NotSupportedError</code> on <code>BaseCachex</code>, so <code>LocMemCache</code>, <code>DatabaseCache</code> and <code>TrackingCache</code> raise it instead of <code>AttributeError</code>.</li>
+<li>CI tests the installed wheel, not the checkout, and runs the cache tests on Redis 6.2 and Valkey 7.2.</li>
+<li><code>expiretime()</code> is documented as needing Redis 7.0+ (every Valkey release has it), and the <code>NotSupportedError</code> an older server raises names that release.</li>
+</ul>
+<h3 id="fixes_5">Fixes<a class="headerlink" href="#fixes_5" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The PyPI <code>Changelog</code> link pointed at the nonexistent <code>reference/changelog/</code>; it now points at <code>latest/reference/changelog/</code>.</li>
+<li>Nil stream entries no longer crash <code>pipe.execute()</code> for <code>xclaim()</code>, <code>xautoclaim()</code>, <code>xread()</code> and <code>xreadgroup()</code>; they decode to <code>(id, {})</code>.</li>
+<li><code>zadd()</code> with an empty mapping returns <code>0</code>, and <code>xadd()</code> with no fields raises <code>ValueError</code>, instead of the driver's <code>DataError</code>.</li>
+<li><code>KEY_PREFIX</code> glob escaping covers backslashes; a <code>\</code> made <code>keys()</code>, <code>iter_keys()</code>, <code>scan()</code>, <code>delete_pattern()</code>, <code>clear_all_versions()</code> and <code>make_pattern()</code> match a different prefix or nothing.</li>
+<li><code>NotSupportedError</code> and <code>KeyNotFoundError</code> survive <code>pickle</code>, <code>copy.copy()</code> and <code>copy.deepcopy()</code> with their message and <code>operation</code>, <code>backend</code>, <code>detail</code> and <code>key</code> intact.</li>
+<li>The admin key pages no longer return HTTP 500 for an unreachable backend or overwrite a key whose type changed since the page loaded. Key add rejects types outside the creatable set, and the Help link on an unmodelled type shows the generic text instead of nothing.</li>
+<li>valkey-glide: a <code>LOCATION</code> it cannot dial, such as a unix-socket URL, raises <code>ImproperlyConfigured</code> instead of connecting to <code>localhost:6379</code>. <code>xtrim()</code> without <code>maxlen</code> or <code>minid</code> raises <code>ValueError</code>, the pipelined <code>xread()</code> returns <code>None</code> for an empty read, <code>aget_many()</code> raises <code>CachexError</code> when its TTL batch fails instead of serving every key as fresh, and <code>aclose()</code> no longer leaves per-loop registry entries behind.</li>
+<li><code>DatabaseCache.incr()</code>, <code>decr()</code> and the async twins no longer lose concurrent increments or reset the key's timeout; a collection key raises <code>WrongTypeError</code>.</li>
+<li><code>incr_version(key, 0)</code> and <code>decr_version(key, 0)</code> on <code>LocMemCache</code> and <code>DatabaseCache</code> leave the key in place instead of deleting it.</li>
+<li><code>LocMemCache.ttl()</code> rounds like Redis <code>TTL</code>; a key just written with <code>timeout=300</code> read <code>299</code>.</li>
+<li><code>hset()</code> with an odd-length <code>items</code> list on <code>LocMemCache</code> and <code>DatabaseCache</code> no longer leaves a half-written hash.</li>
+<li><code>zadd()</code> on <code>LocMemCache</code> and <code>DatabaseCache</code> rejects conflicting <code>nx</code>/<code>xx</code>/<code>gt</code>/<code>lt</code> combinations with <code>ValueError</code> instead of silently accepting them.</li>
+<li><code>DatabaseCache.info()</code> with a missing cache table on PostgreSQL no longer poisons the caller's open transaction.</li>
+<li>The semaphore state hash no longer carries an unused <code>capacity</code> field.</li>
+<li><code>OPTIONS["username"]</code> and <code>OPTIONS["password"]</code> override <code>LOCATION</code> URL credentials, in userinfo or query string, on the redis-py and valkey-py standalone, Sentinel and cluster backends, as documented.</li>
+<li><code>Pipeline.zadd()</code> with an empty mapping and <code>Pipeline.hmget()</code> with no fields return <code>0</code> and <code>[]</code> instead of raising <code>DataError</code> or failing the batch.</li>
+<li>Sentinel <code>aclose()</code> removes the current loop's Sentinel manager under the async registry lock.</li>
+<li>valkey-glide: conflicting <code>zadd()</code> flags, <code>set()</code> with both <code>nx</code> and <code>xx</code>, and <code>zrangebyscore()</code> or <code>zrevrangebyscore()</code> with only one of <code>start</code> and <code>num</code> raise <code>ValueError</code>, in pipelines too, instead of being silently mishandled. Dynamically formatted Lua sources no longer leak memory.</li>
+<li>A multi-server <code>LOCATION</code> with a trailing separator or blank entries no longer produces an empty server URL.</li>
+<li>On the RESP backends, invalid <code>spop(count=...)</code>, <code>lpos(rank=..., count=..., maxlen=...)</code> and <code>linsert(where=...)</code> arguments raise <code>ValueError</code>, not <code>ResponseError</code>.</li>
+<li>A <code>KeyboardInterrupt</code> or <code>asyncio.CancelledError</code> landing while a semaphore <code>acquire()</code> reply is in flight no longer leaks the claim.</li>
+<li><code>Semaphore.extend()</code> and <code>aextend()</code> on the RESP backends return <code>False</code> after <code>release()</code> or when never acquired, instead of raising <code>SemaphoreError</code>.</li>
+<li>The admin masks <code>?password=</code> and <code>&amp;password=</code> query parameters in cache URLs, and the hash field-name input is read-only without the change permission.</li>
+<li>The <code>RespClusterCache.lock()</code> and <code>alock()</code> docs no longer blame <code>EVALSHA</code> for their <code>NotSupportedError</code>.</li>
+<li><code>LocMemCache</code> and <code>DatabaseCache</code> on Django 6.0: <code>aincr()</code>, <code>adecr()</code>, <code>ahas_key()</code>, <code>aget_many()</code>, <code>aincr_version()</code> and <code>adecr_version()</code> (and <code>adelete_many()</code> on <code>DatabaseCache</code>) use the sync implementation. <code>aincr()</code> no longer resets the TTL, and <code>ahas_key()</code>, <code>aget_many()</code> and <code>aincr_version()</code> no longer raise <code>WrongTypeError</code> on collection keys.</li>
+<li><code>TrackingCache.has_key()</code> and <code>ahas_key()</code> no longer count as hits in <code>info()["tracking"]["hits"]</code> or refresh the entry's LRU position.</li>
+<li>The admin cache changelist no longer returns HTTP 500 when an alias's backend constructor raises; the row shows the masked error, and that alias's other pages redirect to the changelist with a message.</li>
+<li>The admin hash detail page says "No fields on this page." instead of "Hash is empty." when a concurrent delete emptied only the page.</li>
+<li>The admin key add form only offers types the backend can write (no <code>Stream</code> on <code>LocMemCache</code> and <code>DatabaseCache</code>, only <code>String</code> on <code>TrackingCache</code>), and stock Django backends get no "Add key" link.</li>
+<li>Removing a collection's last member in the admin keeps the user on the key in create mode instead of showing a "does not exist" error.</li>
+<li>The admin key list on a <code>TrackingCache</code> alias no longer logs a traceback per container key; their size column stays empty.</li>
+<li>The list form of <code>LOCATION</code> is cleaned like the string form: entries are stripped, blanks dropped, non-string entries raise <code>ImproperlyConfigured</code>, and a list with no usable entry raises the same error as an empty string.</li>
+<li><code>decode_responses</code> with any value in a <code>LOCATION</code> query string is rejected like <code>OPTIONS["decode_responses"]</code>.</li>
+<li><code>lpop()</code>, <code>rpop()</code>, <code>zpopmin()</code>, <code>zpopmax()</code> and the async twins on the RESP backends raise <code>ValueError</code> for a negative <code>count</code>.</li>
+<li><code>zadd()</code> with conflicting flags and <code>zrangebyscore()</code> / <code>zrevrangebyscore()</code> with only one of <code>start</code> and <code>num</code> raise <code>ValueError</code>, not <code>DataError</code>, on redis-py, valkey-py and every pipeline at queue time.</li>
+<li><code>cache.lock()</code> and <code>alock()</code> reject a <code>lease</code> below one millisecond with <code>ValueError</code> instead of failing every acquire.</li>
+<li><code>RespSemaphore.acquire()</code> and <code>aacquire()</code>: a second cancellation, interrupt or error during an interrupted acquire's cleanup no longer leaks the claim or leaves the instance held.</li>
+<li><code>Semaphore.extend()</code>, <code>aextend()</code> and the RESP semaphore <code>lease</code> reject <code>NaN</code> and infinity with <code>ValueError</code> instead of an unrelated <code>ValueError</code> or <code>OverflowError</code>; the local <code>extend()</code> silently returned <code>True</code>.</li>
+<li><code>Pipeline.zadd(incr=True)</code> raises <code>ValueError</code> at queue time on every driver unless the mapping holds exactly one member; redis-py and valkey-py raised <code>DataError</code>, and valkey-glide failed mid-batch.</li>
+<li><code>Pipeline.xadd()</code> with empty <code>fields</code> raises <code>ValueError</code> at queue time, like <code>cache.xadd()</code>, instead of a driver-specific error.</li>
+<li><code>TrackingCache.aget_or_set()</code> awaits an <code>async def</code> default instead of serializing the coroutine object.</li>
+<li><code>TrackingCache</code> rejects Django's legacy lowercase <code>timeout</code> key on its own alias or <code>OPTIONS</code> with <code>ImproperlyConfigured</code> instead of silently ignoring it.</li>
+<li><code>LocMemCache</code> and <code>DatabaseCache</code> <code>zrangebyscore()</code> / <code>zrevrangebyscore()</code> with only one of <code>start</code> and <code>num</code> raise <code>ValueError</code> instead of ignoring the window.</li>
+<li><code>LocMemCache</code> and <code>DatabaseCache</code> <code>hset(items=...)</code> raise the RESP backends' <code>ValueError</code> for an odd-length list.</li>
+<li><code>DatabaseCache.zpopmin()</code> and <code>zpopmax()</code> with <code>count=0</code> return <code>[]</code> without rewriting the row.</li>
+<li>The wheel CI job failed with <code>No module named 'tests'</code>.</li>
+<li><code>DatabaseCache.keys()</code> and <code>delete_pattern()</code> no longer assume Django's <code>prefix:version:key</code> layout; under a custom <code>KEY_FUNCTION</code>, <code>keys()</code> returned mangled keys and <code>delete_pattern()</code> deleted nothing.</li>
+<li>A <code>TrackingCache</code> instance created before a fork (gunicorn <code>--preload</code>, Celery prefork, warmed at import time) drops the inherited store in the child and starts its own listener without logging <code>listener thread died, restarting</code> in every worker.</li>
+</ul>
+<h2 id="090-september-2026">0.9.0 (September 2026)<a class="headerlink" href="#090-september-2026" title="Permanent link">&para;</a></h2>
+<h3 id="breaking-changes_2">Breaking changes<a class="headerlink" href="#breaking-changes_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>InvalidationListenerProtocol.client_ids</code>, the <code>(subscriber, tracker)</code> pair, is now <code>client_id</code>, a single <code>int</code>. The listener holds one connection.</li>
+</ul>
+<h3 id="improvements_5">Improvements<a class="headerlink" href="#improvements_5" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The <code>CLIENT TRACKING BCAST</code> listener behind <code>TrackingCache</code> runs over one RESP3 connection instead of two RESP2 ones.</li>
+</ul>
+<h2 id="080-september-2026">0.8.0 (September 2026)<a class="headerlink" href="#080-september-2026" title="Permanent link">&para;</a></h2>
+<h3 id="breaking-changes_3">Breaking changes<a class="headerlink" href="#breaking-changes_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>TieredCache</code> is removed; <code>TrackingCache</code> with <code>OPTIONS["coherence"] = "ttl"</code> replaces it. Point <code>transport</code> at the L2 alias, rename <code>l1_timeout</code> to <code>local_timeout</code>, move <code>MAX_ENTRIES</code> to the <code>TrackingCache</code> alias and drop the L1 alias. The transport must be a cachex Valkey/Redis backend; a stock Django L2 has no replacement.</li>
+<li><code>info()</code>, <code>slowlog_get()</code> and <code>slowlog_len()</code> raise <code>NotSupportedError</code> on backends that lack them instead of an empty result. <code>LocMemCache</code>, <code>DatabaseCache</code>, <code>StreamCache</code> and <code>TrackingCache</code> implement <code>info()</code>; only the Valkey/Redis backends have a slow log, and <code>TrackingCache</code> delegates it to its transport.</li>
+<li><code>Pipeline.zcount()</code>, <code>zrangebyscore()</code>, <code>zrevrangebyscore()</code> and <code>zremrangebyscore()</code> take <code>min_score</code> and <code>max_score</code> instead of <code>min</code> and <code>max</code>, and <code>start</code> and <code>num</code> are keyword-only on <code>zrangebyscore()</code> and <code>zrevrangebyscore()</code>, matching <code>RespCache</code>. Callers passing the bounds positionally are unaffected.</li>
+<li>The valkey-glide adapter's keywords match <code>RespAdapterProtocol</code>: <code>zcount(key, min_score=..., max_score=...)</code> (was <code>mn</code>/<code>mx</code>), <code>sdiffstore(dest=...)</code> (was <code>dst</code>), <code>xack(*entry_ids)</code> (was <code>*ids</code>). <code>zadd()</code> takes keyword-only <code>nx</code>, <code>xx</code>, <code>ch</code>, <code>gt</code> and <code>lt</code> instead of silently ignoring unknown <code>**kwargs</code>, and the sorted-set range methods take keyword-only <code>withscores</code>, <code>desc</code>, <code>start</code> and <code>num</code>.</li>
+<li>The valkey-glide pipeline's stream keywords match the protocol: <code>xclaim(message_ids=...)</code>, <code>xgroup_create(id=...)</code>, <code>xgroup_setid(id=...)</code>, <code>xdel(*entry_ids)</code>, <code>pexpire(milliseconds=...)</code>, and <code>xpending_range()</code> takes keyword-only <code>min</code>, <code>max</code>, <code>count</code>, <code>consumername</code> and <code>idle</code>.</li>
+<li><code>ValkeyGlidePipelineAdapter</code> no longer has the undocumented <code>mget()</code> and <code>mset()</code>.</li>
+<li>A <code>LOCATION</code> list whose URLs disagree on TLS scheme, username, password or database raises <code>ImproperlyConfigured</code> on the valkey-glide backends instead of silently using the first URL's settings.</li>
+</ul>
+<h3 id="features_2">Features<a class="headerlink" href="#features_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>TrackingCache</code>: a local read cache over an existing redis-py or valkey-py alias, kept coherent by <code>CLIENT TRACKING</code> broadcasts. Nothing is cached while its listener is down; cluster and valkey-glide transports are rejected. With <code>OPTIONS["coherence"] = "ttl"</code> no listener runs, <code>local_timeout</code> alone bounds staleness, and any transport works. See <a href="../../user-guide/composite-backends/#trackingcache">Composite backends</a>.</li>
+<li>Adapters gained <code>invalidation_listener(prefixes)</code>, a <code>CLIENT TRACKING BCAST</code> subscription; the cluster and valkey-glide adapters raise <code>NotSupportedError</code>.</li>
+</ul>
+<h3 id="improvements_6">Improvements<a class="headerlink" href="#improvements_6" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Hash field expiration on the redis-py, valkey-py and valkey-glide adapters, with async twins and pipeline support: <code>hexpire()</code>, <code>hpexpire()</code>, <code>hexpireat()</code>, <code>hpexpireat()</code>, <code>httl()</code>, <code>hpttl()</code>, <code>hexpiretime()</code> and <code>hpersist()</code> set, read and remove per-field TTLs, and <code>hsetex()</code>/<code>hgetex()</code> write or read fields while setting their TTL. They need Redis 7.4+ or Valkey 9.0+ (<code>hsetex()</code>/<code>hgetex()</code>: Redis 8.0+ or Valkey 9.0+) and raise <code>NotSupportedError</code> on older servers.</li>
+<li>Key deletion sends <code>UNLINK</code> instead of <code>DEL</code> on every RESP adapter: <code>delete()</code>, <code>delete_many()</code>, <code>delete_pattern()</code>, <code>set(timeout=0)</code>, the pipeline <code>delete()</code> and the cluster per-slot paths.</li>
+<li><code>NotSupportedError</code> gains a <code>detail</code> attribute, and the RESP adapters, cluster included, raise it instead of a driver <code>ResponseError</code> for a command the server lacks, with <code>operation</code> set to the command name.</li>
+<li><code>TrackingCache</code> delegates <code>slowlog_get()</code> and <code>slowlog_len()</code> to its transport, alongside <code>info()</code>.</li>
+<li><code>DatabaseCache.incr_version()</code>, <code>decr_version()</code> and the async twins move the key like Redis <code>RENAME</code>: a collection key no longer raises <code>WrongTypeError</code>, and the key keeps its remaining TTL instead of the cache default.</li>
+<li><code>StampedeConfig</code> validates its arguments on construction (<code>buffer</code> a non-negative <code>int</code>, <code>beta</code> and <code>delta</code> finite non-negative numbers), so a bad <code>stampede_prevention</code> option fails at configuration instead of on every timed write.</li>
+</ul>
+<h3 id="fixes_6">Fixes<a class="headerlink" href="#fixes_6" title="Permanent link">&para;</a></h3>
+<ul>
+<li>A collection command with no members is a no-op on every backend, direct, async and pipelined, instead of a driver error: <code>sadd()</code>, <code>srem()</code>, <code>hdel()</code>, <code>hset()</code>, <code>lpush()</code>, <code>rpush()</code>, <code>zrem()</code>, <code>xdel()</code> and <code>xack()</code> return <code>0</code>, <code>smismember()</code> and <code>zmscore()</code> an empty list. On <code>LocMemCache</code> and <code>DatabaseCache</code>, <code>lpush()</code> and <code>rpush()</code> on an existing list used to return its length. On valkey-glide this replaces the 0.7.0 <code>ValueError</code> for <code>hset()</code> with an empty mapping.</li>
+<li><code>hset(key, items=[...])</code> rejects an odd-length <code>items</code> list with <code>ValueError</code> instead of sending mis-paired arguments.</li>
+<li>Sentinel backends keep Sentinel discovery and failover when <code>LOCATION</code> uses a TLS scheme (<code>rediss://</code> or <code>valkeys://</code>).</li>
+<li><code>xread()</code> and <code>xreadgroup()</code> decode correctly under <code>OPTIONS = {"protocol": 3}</code>, both directly and on a pipeline, where they raised <code>ValueError</code>.</li>
+<li>Stream reads decode a nil entry (from Redis 6 <code>XCLAIM</code>) to an empty field dict instead of raising.</li>
+<li><code>aclose()</code> disconnects only the calling alias's pools, and on cluster its own client, on the running event loop. It used to disconnect every alias's pools, dropping other aliases' in-flight connections.</li>
+<li>Sentinel <code>aclose()</code> no longer leaks discovery clients when a different adapter instance runs it, as under asgiref.</li>
+<li>Pipelined <code>sadd()</code> rejects an unhashable member like <code>sadd()</code> does, instead of storing it and making every later read of the key raise <code>TypeError</code>.</li>
+<li>Pipelined hash field commands (<code>hexpire()</code>, <code>hpexpire()</code>, <code>hexpireat()</code>, <code>hpexpireat()</code>, <code>httl()</code>, <code>hpttl()</code>, <code>hexpiretime()</code>, <code>hpersist()</code>, <code>hgetex()</code>) called with no fields return <code>[]</code> instead of failing the whole batch.</li>
+<li><code>keys()</code>, <code>scan()</code>, <code>iter_keys()</code> and <code>delete_pattern()</code> on <code>DatabaseCache</code> match case-sensitively on SQLite.</li>
+<li><code>DatabaseCache</code> no longer raises <code>OverflowError</code> storing a <code>timeout=None</code> key under <code>USE_TZ = True</code> with a database <code>TIME_ZONE</code> east of UTC.</li>
+<li><code>DatabaseCache</code> reports the right TTL and expiry when the database <code>TIME_ZONE</code> differs from UTC.</li>
+<li>An empty pattern matches only the empty key on <code>LocMemCache</code> and <code>DatabaseCache</code>. It used to match every key, so <code>delete_pattern("")</code> cleared the cache.</li>
+<li><code>LocMemCache</code> sorted-set values can be pickled, and <code>copy.deepcopy</code> no longer duplicates their internal ordering index.</li>
+<li><code>LocMemCache.info()["memory"]</code> counts the ordering index of sorted sets, so a cache holding large sorted sets reports roughly twice the size it did.</li>
+<li>A character-class range written backwards, such as <code>keys("[z-a]")</code>, matches the keys Redis matches instead of raising a regex error.</li>
+<li><code>lpos()</code> rejects a negative <code>count</code> or <code>maxlen</code> with Redis's <code>COUNT can't be negative</code> and <code>MAXLEN can't be negative</code> instead of searching from the wrong end.</li>
+<li><code>linsert()</code> on <code>LocMemCache</code> and <code>DatabaseCache</code> raises <code>ValueError("syntax error")</code> for a <code>where</code> other than <code>"BEFORE"</code> or <code>"AFTER"</code> instead of inserting before the pivot.</li>
+<li><code>spop()</code> with a negative <code>count</code> raises Redis's <code>value is out of range, must be positive</code> on the native backends instead of an internal <code>random.sample</code> message.</li>
+<li><code>TrackingCache</code> no longer rolls the stampede dice twice for a locally held value. A local hit that triggers recompute returns the default without refetching from the transport, so early recompute follows <code>beta</code> and <code>delta</code>.</li>
+<li><code>TrackingCache</code> pings its invalidation connection every <code>health_check_interval</code> seconds, not only while idle, so a dropped connection no longer goes unnoticed.</li>
+<li>The first <code>TrackingCache</code> listener connect from <code>aget()</code>, <code>aget_many()</code> or <code>ahas_key()</code> runs in a worker thread instead of stalling the event loop.</li>
+<li><code>TrackingCache.incr_version()</code>, <code>decr_version()</code> and the async twins delegate the rename to the transport and forget local entries for both versions, so a transport alias with <code>VERSION</code> is read at the right version.</li>
+<li><code>TrackingCache.delete_pattern()</code> evicts local entries by Redis glob rules (<code>[^0]</code> is a negation), matching what the transport deletes.</li>
+<li><code>TrackingCache</code> rejects a non-iterable <code>OPTIONS["prefixes"]</code> with <code>ImproperlyConfigured</code> instead of a bare <code>TypeError</code>.</li>
+<li>A <code>TrackingCache</code> listener whose shutdown was abandoned no longer clears the local store that its live replacement keeps coherent.</li>
+<li><code>StreamCache</code> keeps the local value when a broadcast is dropped for lack of publish budget or on a closed executor, and skips the superseded own entry instead of overwriting it. Other pods keep their last value until the key's next write or expiry.</li>
+<li><code>StreamCache</code> no longer leaks own-entry marks when an <code>XADD</code> fails or when the stream trims an own entry away.</li>
+<li><code>StreamCache</code> logs the consumer traceback once per transport outage and repeats only the one-line warning while the outage lasts.</li>
+<li><code>ValkeyGlideCache</code> and <code>ValkeyGlideClusterCache</code> honor every <code>LOCATION</code> URL, not only the first; standalone uses the extra URLs as replicas with <code>read_from=PREFER_REPLICA</code>. Repeated URLs collapse to one address.</li>
+<li>valkey-glide: <code>zadd()</code>, <code>azadd()</code> and the pipeline's <code>zadd()</code> without flags no longer store a serialized <code>bytes</code> member as its repr.</li>
+<li>valkey-glide: <code>xadd()</code> and <code>xtrim()</code> raise <code>ValueError</code> when <code>maxlen</code> and <code>minid</code> are given together instead of silently dropping <code>minid</code>.</li>
+<li>valkey-glide: an atomic batch the server discarded raises <code>CachexError</code> instead of returning an empty result list.</li>
+<li>The cache admin masks connection passwords in <code>LOCATION</code> and backend errors; users with only <code>view_cache</code> could read them.</li>
+<li>A type-specific admin write on a backend without <code>type()</code> (any stock Django backend) returned a 500; the admin now refuses it with a message and keeps Delete and Set TTL available.</li>
+<li>The admin reads values with stampede prevention bypassed; a key past its logical expiry showed <code>null</code>, and Update wrote <code>None</code> back.</li>
+<li>The admin key list's <code>type=unknown</code> filter matched nothing; it now lists the keys it names.</li>
+<li>The admin key list showed Clear and Add key to users without <code>change_cache</code> and <code>add_key</code>; each now needs its permission.</li>
+<li>Deleting an already-gone key in the admin reported success; the key page now warns "Key not found, nothing was deleted." and the bulk action counts misses separately.</li>
+<li>The admin cache detail page hides the Slow Log section on backends without a slow log instead of showing an error.</li>
+<li>An explicit <code>timeout=None</code> passed to a semaphore's <code>acquire()</code> or <code>aacquire()</code> blocks indefinitely instead of falling back to the semaphore's <code>timeout</code>.</li>
+<li><code>extend()</code> and <code>aextend()</code> raise <code>ValueError</code> when <code>additional_seconds</code> is zero or negative instead of returning <code>True</code>; <code>extend(-30)</code> silently shortened the claim.</li>
+</ul>
+<h2 id="071-september-2026">0.7.1 (September 2026)<a class="headerlink" href="#071-september-2026" title="Permanent link">&para;</a></h2>
+<h3 id="breaking-changes_4">Breaking changes<a class="headerlink" href="#breaking-changes_4" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>renamenx()</code> and <code>arenamenx()</code> return <code>False</code> for a missing source key instead of raising <code>ValueError</code>.</li>
+</ul>
+<h3 id="improvements_7">Improvements<a class="headerlink" href="#improvements_7" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>rename()</code> and <code>arename()</code> raise <code>KeyNotFoundError</code> for a missing source key, and both methods document it. The exception subclasses <code>CachexError</code> and <code>ValueError</code> and carries the key as <code>.key</code>.</li>
+</ul>
+<h2 id="070-september-2026">0.7.0 (September 2026)<a class="headerlink" href="#070-september-2026" title="Permanent link">&para;</a></h2>
+<h3 id="breaking-changes_5">Breaking changes<a class="headerlink" href="#breaking-changes_5" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>LocMemCache.ttl()</code>, <code>DatabaseCache.ttl()</code>, <code>StreamCache.ttl()</code> and their <code>pttl()</code> twins return <code>None</code> for a key with no expiry instead of <code>-1</code>. <code>-2</code> still means the key is gone.</li>
+<li><code>DatabaseCache.get()</code> raises <code>WrongTypeError</code> on a key holding a list, set, hash or sorted set instead of returning the raw tagged container, and <code>get_many()</code> omits it.</li>
+<li><code>Pipeline.zadd()</code> no longer takes <code>incr</code> and <code>Pipeline.zrange()</code> no longer takes <code>desc</code>, matching <code>RespCache</code>.</li>
+<li><code>RespCache.adecr()</code> is gone as an override. It duplicated <code>BaseCache.adecr()</code> line for line, which is what callers get now.</li>
+<li><code>RespAdapterProtocol</code> no longer declares <code>get_async_client()</code>; the redis-py and valkey-py adapters keep the method.</li>
+<li><code>Pipeline.set()</code> reports an <code>nx</code>/<code>xx</code> miss as <code>False</code> instead of the driver's <code>None</code>.</li>
+<li><code>Pipeline.type()</code> returns <code>None</code> for a missing key instead of <code>"none"</code>, and <code>KeyType.UNKNOWN</code> for an unmodeled server type instead of raising, matching <code>cache.type()</code>.</li>
+<li><code>aclose()</code> disconnects and drops the running loop's async pools, so the next await opens fresh ones; on cluster it closes the loop's cluster client, on Sentinel also its Sentinel manager and discovery clients. Call it when a loop is finished, not between requests. <code>close()</code> keeps sync pools connected but now sweeps the async registries.</li>
+<li><code>pool_class</code> on a Sentinel backend, previously ignored, selects the Sentinel-managed pool and must be <code>SentinelConnectionPool</code> or a subclass, or startup raises <code>ImproperlyConfigured</code>.</li>
+<li><code>TieredCache</code> raises <code>ImproperlyConfigured</code> when <code>OPTIONS["l1_timeout"]</code> is unset and the L1 tier has <code>TIMEOUT = None</code>. Set <code>l1_timeout</code> on the tiered alias or <code>TIMEOUT</code> on the L1 tier.</li>
+<li><code>StreamCache.set()</code> returns <code>None</code>, matching Django's <code>BaseCache</code> and the other backends. It previously returned <code>True</code>.</li>
+<li><code>ValkeyGlideAdapter</code> and <code>ValkeyGlideClusterAdapter</code> raise <code>ImproperlyConfigured</code> for an empty <code>LOCATION</code> instead of an <code>IndexError</code>.</li>
+<li><code>xpending()</code> on the valkey-glide backend returns the other backends' summary and range dicts, and rejects a filter without a count. Code that unpacked the raw list replies reads the dict keys instead.</li>
+<li><code>hset()</code> with an empty mapping raises <code>ValueError</code> on the valkey-glide backend, direct, async and pipelined. The pipeline used to queue nothing.</li>
+</ul>
+<h3 id="improvements_8">Improvements<a class="headerlink" href="#improvements_8" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>DatabaseCache.scan(key_type=...)</code> pushes the type filter into the query instead of checking keys one by one.</li>
+<li><code>DatabaseCache.sinter</code>, <code>sdiff</code> and <code>sunion</code> read every operand in one query instead of one query per key.</li>
+<li><code>LocMemCache</code> sorted-set range and count queries bisect instead of scanning, and <code>LocMemCache.get</code>/<code>has_key</code> no longer unpickle a value they only test for presence.</li>
+<li>The admin shows a key whose type it cannot render, including an unmodeled type, read-only: the type is named, the value and operations hidden, and hand-crafted edits refused, but delete and TTL changes go through. Such types are never offered when adding a key.</li>
+<li>The admin key detail page hides mutation controls from users without <code>change_key</code> or <code>delete_key</code> instead of showing forms that fail with a 403.</li>
+<li>The admin add-key page takes only a key name and a data type; the first operation on the key detail page creates the key.</li>
+</ul>
+<h3 id="fixes_7">Fixes<a class="headerlink" href="#fixes_7" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Sorted-set score edits in the admin no longer fail on backends without server-side scripting (<code>LocMemCache</code>, <code>DatabaseCache</code>); the conflict check is offered only where it can run.</li>
+<li>The admin key detail page no longer shows "Could not load value" for a stream with all entries deleted.</li>
+<li>Admin breadcrumbs render styled on Django 6.0, and the Help and List Keys links render there again.</li>
+<li>A cache whose <code>BACKEND</code> cannot be imported shows a message on every admin page instead of a 500 on the cache detail, key detail and add-key pages.</li>
+<li>The admin danger zone (clear all versions, FLUSHDB) appears only on backends that implement it; elsewhere it raised <code>AttributeError</code>.</li>
+<li>A failed first operation while creating a key in the admin keeps you on the create page instead of bouncing you to the key list with "key does not exist".</li>
+<li>The native backends read Redis's glob dialect, not <code>fnmatch</code>'s, in <code>keys</code>, <code>scan</code> and <code>delete_pattern</code>: negation is <code>[^a]</code>, not <code>[!a]</code>, <code>!</code> is a member, <code>\</code> escapes, and case no longer folds on Windows.</li>
+<li><code>LocMemCache.zpopmin</code>/<code>zpopmax</code> and <code>DatabaseCache.lpop</code>/<code>rpop</code>/<code>zpopmin</code>/<code>zpopmax</code> reject a negative count; <code>zpopmax(key, -2)</code> popped all but the last two members.</li>
+<li><code>LocMemCache.zrangebyscore</code> honors the Redis rule that a negative <code>num</code> means "to the end"; <code>LIMIT 0 -1</code> dropped the last member.</li>
+<li><code>LocMemCache.zadd</code> and <code>zincrby</code> coerce string scores to <code>float</code> like Redis; a stored <code>"1.5"</code> sorted as a string and made the next numeric write raise. <code>zadd</code> with an invalid score rejects the command instead of applying it halfway.</li>
+<li><code>lpos</code> rejects <code>rank=0</code> on both native backends with Redis's own message, and a negative rank applies <code>maxlen</code> from the tail instead of the head.</li>
+<li><code>srandmember</code> with a negative count returns exactly <code>|count|</code> members, repeats allowed. Both native backends reached <code>random.sample</code> and raised <code>ValueError</code>.</li>
+<li><code>LocMemCache.ascan()</code> works instead of raising <code>NotSupportedError</code>, so the admin's async key browser can page a LocMem cache.</li>
+<li><code>DatabaseCache</code> reports the key in its <code>WRONGTYPE</code> messages, matching <code>LocMemCache</code>.</li>
+<li>Exclusive score bounds (<code>(1</code>) raise <code>NotSupportedError</code> naming the backend on <code>LocMemCache</code> as well, rather than a bare <code>ValueError</code>.</li>
+<li><code>StreamCache</code> polls the stream instead of parking in <code>XREAD BLOCK</code> on a valkey-glide transport; with two pods in one process, publishes timed out and mutations went missing on the other pod.</li>
+<li><code>StreamCache</code> shares one consumer thread, publisher thread and pod identity per <code>LOCATION</code> within a process. Each ASGI request and WSGI thread used to start an uncollectable consumer and publisher with its own pod id, so sibling consumers treated the process's own writes as remote.</li>
+<li><code>StreamCache</code> pods writing the same key inside the propagation window converge on the last write in stream order instead of diverging permanently. A pod's own <code>clear</code> coming back spares keys it wrote after clearing.</li>
+<li>Restarting a <code>StreamCache</code> after <code>shutdown()</code> no longer leaves two consumers advancing the same stream cursor.</li>
+<li><code>StreamCache.delete_pattern()</code> publishes one broadcast for the whole match instead of one per key, so a large pattern no longer exhausts the publish budget.</li>
+<li>The RESP semaphore's <code>{name}:state</code> and <code>{name}:claims</code> hashes carry a guard TTL of twice the longest lease, refreshed by acquire, extend and release, so a dead holder no longer strands them.</li>
+<li>Async connection pools of closed event loops are released: every pool lookup and every <code>close()</code> drops them. <code>async_to_sync</code> callers leaked one pool and one TCP connection per call, and <code>close()</code> and <code>aclose()</code> were documented no-ops.</li>
+<li><code>type()</code> and <code>atype()</code> return <code>KeyType.UNKNOWN</code> for a Redis module key (<code>ReJSON-RL</code>, <code>TSDB-TYPE</code>) instead of raising <code>ValueError</code>, which broke any scan reaching one.</li>
+<li><code>IntEnum</code> and <code>IntegerChoices</code> members with values 48 to 57 round-trip through msgpack and ormsgpack as plain ints instead of reading back as 0 to 9; pickle still returns the enum member.</li>
+<li><code>sadd()</code> rejects a member the configured serializer turns unhashable, such as a tuple under json, orjson, msgpack or ormsgpack, instead of failing later in <code>smembers()</code>.</li>
+<li><code>expireat()</code> and <code>pexpireat()</code> with a past deadline delete the key on a stampede cache instead of keeping it for <code>buffer</code> seconds.</li>
+<li><code>Pipeline.set()</code> with <code>nx</code> or <code>xx</code> and an immediate expiry no longer deletes a key it could not write, and <code>nx</code> with <code>xx</code> is rejected.</li>
+<li>Pipelined <code>expire()</code>, <code>pexpire()</code>, <code>expireat()</code> and <code>pexpireat()</code> add the stampede buffer and pipelined <code>ttl()</code>, <code>pttl()</code> and <code>expiretime()</code> subtract it; all seven take keyword-only <code>stampede_prevention</code>.</li>
+<li>Pipelined <code>xpending()</code> accepts the client's arguments: <code>count</code> alone is allowed, and a range without <code>count</code> raises <code>ValueError</code> instead of returning the summary.</li>
+<li><code>SerializerError</code> and <code>CompressorError</code> carry a message naming the codec, the payload and the underlying cause. They were raised bare.</li>
+<li>valkey-glide: a username without a password (a nopass ACL user) no longer fails client construction; credentials are built only with a password.</li>
+<li>valkey-glide: <code>hmget()</code> with no fields returns an empty list instead of sending a malformed command to the server.</li>
+<li>valkey-glide: <code>lpop()</code> and <code>rpop()</code> with a count return <code>None</code> for a missing key.</li>
+<li>valkey-glide: pipelined <code>xpending()</code> and <code>xpending_range()</code> decode their replies like the direct calls instead of returning raw driver output.</li>
+<li>valkey-glide: <code>xinfo_stream(full=True)</code> decodes the group and consumer entries nested inside its list values.</li>
+<li>valkey-glide: async clients of closed event loops are closed; one <code>asyncio.run()</code> per request leaked a client and its connections each time.</li>
+<li>valkey-glide: <code>type()</code> returns <code>KeyType.UNKNOWN</code> for an unmodeled server type and <code>None</code> for a missing key instead of raising.</li>
+<li>valkey-glide: pipelined <code>set()</code> takes <code>px</code>, <code>exat</code>, <code>pxat</code>, <code>keepttl</code> and <code>get</code>, rejects conflicting expiry flags, and returns the old value for <code>get=True</code>.</li>
+<li>valkey-glide: stream, list and server methods use the adapter protocol's parameter names (<code>entry_id</code>, <code>start</code> and <code>end</code>, <code>slowlog_get(count)</code>), so keyword calls bind.</li>
+<li>valkey-glide: a blocking lock acquire no longer sleeps past its <code>blocking_timeout</code>.</li>
+<li>valkey-glide: cluster pipelines build a <code>ClusterBatch</code>, the batch type the cluster client is declared to execute.</li>
+</ul>
+<h3 id="documentation_3">Documentation<a class="headerlink" href="#documentation_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>set_with_flags(get=True)</code> documents what it returns: the driver's raw previous value, which the cache layer decodes.</li>
+<li>The documented server requirement said "Valkey 7.0+", but Valkey's first release was 7.2; the README, the docs home page and the installation page now say "Valkey 7.2+ or Redis 6.0+".</li>
+<li>The distributed-locking recipe passed <code>timeout</code> to <code>lock.acquire()</code>, which raised <code>TypeError</code> on the redis-py and valkey-py backends; it now sets <code>timeout</code> on <code>cache.lock()</code>.</li>
+<li>The example projects' READMEs had the wrong Valkey port for the full example, <code>cd example</code> for a directory named <code>simple</code>, <code>admin</code>/<code>admin</code> where <code>run.sh</code> creates <code>admin</code>/<code>password</code>, a <code>../.venv</code> path one level short, and a cache table without the <code>cluster</code>, <code>sentinel</code>, <code>sync</code> and <code>stream_transport</code> aliases. The full example's <code>run.sh</code> announced a nonexistent <code>SyncCache</code> backend instead of <code>StreamCache</code>.</li>
+</ul>
+<h3 id="tooling_1">Tooling<a class="headerlink" href="#tooling_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The release workflow runs <code>tests/admin/</code> as well as <code>tests/cache/</code> before tagging.</li>
+<li>Dropped the <code>scripts/**</code> ruff per-file-ignores entry; the directory it covered was removed in 4acfe2e.</li>
+<li>The cache test matrix is parametrized by topology (<code>default</code>, <code>cluster</code>, <code>sentinel</code>) instead of an independent client class and sentinel flag; <code>client_class</code> and <code>sentinel_mode</code> derive from the active topology.</li>
+<li>Container fixtures pass their addresses directly instead of through the environment, use <code>LogMessageWaitStrategy</code> instead of the deprecated <code>wait_for_logs</code>, and pick db numbers with <code>crc32</code>, not <code>hash()</code>.</li>
+<li>Tests that toggled the never-read <code>DJANGO_REDIS_SCAN_ITERSIZE</code> and <code>DJANGO_REDIS_CLOSE_CONNECTION</code> settings drive the real <code>itersize</code> argument and a real close; pytest-django's <code>settings</code> fixture replaces the vendored <code>SettingsWrapper</code>.</li>
+<li>The valkey-glide adapter no longer needs its module-wide <code>ignore_errors</code> mypy override or its file-wide <code>ruff: noqa: ERA001</code>.</li>
+</ul>
+<h2 id="060-august-2026">0.6.0 (August 2026)<a class="headerlink" href="#060-august-2026" title="Permanent link">&para;</a></h2>
+<h3 id="breaking-changes_6">Breaking changes<a class="headerlink" href="#breaking-changes_6" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>DatabaseCache</code> stores collections as tagged subclasses (<code>_List</code>, <code>_Set</code>, <code>_Hash</code>, <code>_ZSet</code>), like <code>LocMemCache</code>. Compound operations on untagged values, including rows older versions wrote, raise <code>WrongTypeError</code>. Clear the cache table or re-write those keys before upgrading.</li>
+<li><code>type()</code> returns <code>None</code> for a missing key; the <code>BaseCachex</code> default answered <code>STRING</code>.</li>
+<li><code>scan(key_type=...)</code> filters; the <code>BaseCachex</code> default, <code>StreamCache</code> and <code>DatabaseCache</code> ignored it, so the admin's Type filter returned unfiltered results.</li>
+<li><code>get_client()</code> and <code>get_async_client()</code> return one shared client per connection pool on the redis-py and valkey-py adapters; construction dropped from 55 µs to 0.06 µs per call. Mutating it, for example with <code>set_response_callback</code>, affects other calls.</li>
+<li><code>StreamCache</code> broadcasts <code>delete_many</code> as a list; a key containing <code>\x00</code> made remote pods delete the wrong keys. Old and new pods disagree on this message: drain or rotate <code>stream_key</code> during the rollout.</li>
+<li><code>Pipeline.set()</code> applies the backend's <code>TIMEOUT</code>, not <code>timeout=None</code> (no expiry), and normalizes negative and float timeouts like <code>cache.set()</code> instead of raising.</li>
+<li>With <code>stampede_prevention</code> on, <code>expire()</code>, <code>pexpire()</code>, <code>expireat()</code> and <code>pexpireat()</code> add the stampede buffer and <code>ttl()</code>, <code>pttl()</code> and <code>expiretime()</code> subtract it. Each takes a keyword-only <code>stampede_prevention</code> argument for the raw value.</li>
+<li><code>sadd()</code> rejects an unhashable member with <code>TypeError</code> and adds nothing; such members broke every later read.</li>
+<li><code>RespCache</code>, <code>RespClusterCache</code> and <code>RespSentinelCache</code> raise <code>ImproperlyConfigured</code> when used as a <code>BACKEND</code> directly; they bind no driver and exist to be subclassed.</li>
+<li><code>xpending()</code>, its pipeline form and the async twins raise <code>ValueError</code> for <code>start</code>, <code>end</code>, <code>consumer</code> or <code>idle</code> without <code>count</code>; they returned the unfiltered summary.</li>
+</ul>
+<h3 id="features_3">Features<a class="headerlink" href="#features_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Async admin surface on <code>TieredCache</code>: <code>akeys</code>, <code>aiter_keys</code>, <code>ascan</code>, <code>attl</code>, <code>apttl</code>, <code>atype</code>, <code>apersist</code>, <code>aexpire</code> and <code>adelete_pattern</code>.</li>
+<li><code>ascan()</code> on <code>DatabaseCache</code>, which had the sync <code>scan</code> but inherited the <code>NotSupportedError</code> default for the async twin.</li>
+<li><code>get_many()</code> and <code>incr_version()</code> on <code>LocMemCache</code>, both collection-aware and both reading under a single lock acquisition.</li>
+<li><code>expire()</code> and <code>pexpire()</code> accept a <code>timedelta</code> on the valkey-glide adapter.</li>
+</ul>
+<h3 id="fixes_8">Fixes<a class="headerlink" href="#fixes_8" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>hget</code>/<code>hgetall</code>/<code>hvals</code> read a field written by <code>HINCRBYFLOAT</code> instead of raising <code>SerializerError</code>. A float written by <code>hset</code> is still not incrementable, as documented on <code>encode()</code> and <code>hincrbyfloat</code>.</li>
+<li><code>aget_or_set()</code> awaits a default that returns an awaitable, not only a coroutine function.</li>
+<li><code>incr_version()</code> works on a cluster with a hash-tagged <code>KEY_PREFIX</code>; <code>KEY_PREFIX="{app}"</code> was rejected.</li>
+<li><code>CULL_FREQUENCY</code> and <code>MAX_ENTRIES</code> are no longer forwarded to the driver's connection pool.</li>
+<li><code>semaphore()</code> reports a missing <code>lease</code> as a <code>ValueError</code> naming the argument.</li>
+<li><code>LocMemCache.get()</code> and <code>incr()</code> no longer raise <code>KeyError</code> under concurrent writes.</li>
+<li>A <code>LocMemCache</code> collection rewrite at <code>MAX_ENTRIES</code> no longer strips the key's TTL or evicts a sibling; culling runs only on a first write.</li>
+<li><code>lpush</code>/<code>rpush</code> with no values return 0 instead of creating an empty, immortal key.</li>
+<li><code>lpop</code>/<code>rpop</code> reject a negative count; <code>rpop(key, -2)</code> popped from the head.</li>
+<li><code>TieredCache</code> mutates L2 before invalidating L1 in <code>delete</code>, <code>delete_many</code>, <code>incr</code>, <code>decr</code>, <code>expire</code>, <code>delete_pattern</code>, <code>clear</code> and the async twins; concurrent reads left L1 stale.</li>
+<li><code>TieredCache</code> async methods call L1's async twins; the sync ones raised <code>SynchronousOnlyOperation</code> on a guarded L1.</li>
+<li><code>TieredCache.delete_many()</code> and <code>clear()</code> no longer report failure against a non-RESP L2.</li>
+<li><code>TieredCache</code> no longer masks an <code>AttributeError</code> raised inside an L2 method as <code>NotSupportedError</code>; only a missing method reports it.</li>
+<li><code>TieredCache</code> rejects self-referencing and duplicate tier aliases at construction instead of raising <code>RecursionError</code> on the first <code>get()</code>.</li>
+<li>RESP semaphores no longer admit far past capacity after a release on an evicted state hash.</li>
+<li>The semaphore queue score comes from the server; a host with a slow clock starved other hosts' waiters.</li>
+<li>Growing a local semaphore's capacity wakes the parked waiters it now fits.</li>
+<li>Releasing a local semaphore no longer raises <code>RuntimeError</code> when a waiter's event loop has closed.</li>
+<li>The local semaphore registry drops names nothing references. It held every name forever, so <code>cache.semaphore(f"job:{id}")</code> grew it without bound.</li>
+<li>The RESP semaphore deletes its <code>{name}:state</code> hash on the last release instead of leaking it.</li>
+<li><code>release()</code> logs a warning when the claim was already reaped, meaning the work ran past its lease unprotected.</li>
+<li>The capacity-change warning points at the caller of a directly constructed <code>Semaphore(...)</code>.</li>
+<li>Pipelines on the redis-py and valkey-py adapters raise <code>WrongTypeError</code> for <code>WRONGTYPE</code>, not the driver's <code>ResponseError</code>.</li>
+<li>Count-form <code>lpop</code>/<code>rpop</code> report a missing key as <code>None</code>, like <code>LocMemCache</code>, instead of <code>[]</code>.</li>
+<li><code>hmget(key)</code> with no fields returns <code>[]</code> instead of sending an invalid command.</li>
+<li>RESP3 dict replies (<code>OPTIONS {"protocol": 3}</code>) no longer break stream result decoding with <code>ValueError</code>.</li>
+<li>Sentinel connections inherit the driver's socket timeouts; the old <code>sentinel_kwargs</code> default of <code>{}</code> let a blackholing sentinel block discovery.</li>
+<li>Connection pools are keyed stably; an option like a <code>Retry</code> instance opened a new pool per cache instance.</li>
+<li>An empty <code>LOCATION</code> server list raises <code>ImproperlyConfigured</code> naming the backend instead of failing on first use.</li>
+<li><code>INFO</code> parses on a valkey-glide cluster, pinned to a random node; the admin's memory and keyspace panels were blank.</li>
+<li><code>set_many()</code> on valkey-glide cannot leave a key without a TTL when a batch breaks partway.</li>
+<li>The valkey-glide lock's <code>__enter__</code> and <code>__aenter__</code> raise <code>LockError</code>, not <code>RuntimeError</code>; <code>extend()</code> refuses a lease-less lock instead of making it self-release.</li>
+<li><code>aclose()</code> on the valkey-glide adapter closes the per-loop client instead of leaking its connection.</li>
+<li>The valkey-glide pipeline raises on an empty <code>hset</code> mapping; skipping it shifted every later result.</li>
+<li><code>xclaim(justid=True)</code> returns <code>str</code> IDs from a pipeline, matching the non-pipeline path.</li>
+<li><code>ttl</code>, <code>pttl</code> and <code>expiretime</code> normalize -1 to <code>None</code> in pipelines, and <code>rename</code> returns a <code>bool</code> across drivers.</li>
+<li><code>DatabaseCache</code> deletes a collection row when <code>lrem</code>, <code>srem</code>, <code>hdel</code>, <code>zrem</code> or <code>ltrim</code> removes the last member.</li>
+<li><code>DatabaseCache</code> rejects <code>(</code> exclusive score bounds instead of raising a bare <code>ValueError</code>, and reads a negative <code>num</code> as "to the end".</li>
+<li>On <code>DatabaseCache</code>, a <code>KEY_PREFIX</code> with a glob character no longer matches sibling prefixes: <code>KEY_PREFIX="svc?1"</code> made <code>keys("*")</code> return <code>svcX1</code> rows.</li>
+<li><code>DatabaseCache.info()</code> reports a real <code>expires</code> count; compound operations use one write connection under a routing router; pattern deletes run in <code>itersize</code> chunks.</li>
+<li><code>StreamCache.get_or_set()</code> follows Django's semantics: a stored <code>None</code> is a hit, and a <code>None</code> default is stored.</li>
+<li><code>StreamCache.info()["last_read_age"]</code> stops growing on an idle stream.</li>
+<li><code>StreamCache</code> raises <code>NotSupportedError</code> rather than <code>AttributeError</code> for the cachex operations it does not implement, and <code>expire()</code> accepts a float.</li>
+<li><code>StreamCache</code> joins its consumer thread with a bound at interpreter exit; <code>close()</code> stays a no-op.</li>
+<li>Key patterns on <code>LocMemCache</code> and <code>StreamCache</code> match case-sensitively on Windows, like Redis globs.</li>
+<li><code>scan(count=0)</code> on the <code>BaseCachex</code> default, <code>DatabaseCache</code> and <code>StreamCache</code> no longer turns the count into 100. It returns no keys and cursor 0, which ends a scan loop.</li>
+<li><code>OrmsgpackSerializer</code> accepts non-string mapping keys, like <code>MsgpackSerializer</code> with its <code>strict_map_key=False</code>.</li>
+<li><code>LocMemCache.info()</code> sizes modules, classes and functions opaquely instead of walking the import graph under the cache's lock; a value holding <code>sys</code> cost 11 ms and 2.4 MB.</li>
+<li>A LocMem or Database <code>BACKEND</code> no longer imports redis-py or valkey-py; names resolve on first access.</li>
+<li>The key admin no longer localizes scores, TTLs, list indices or page numbers, so edits work under <code>de</code> or <code>USE_THOUSAND_SEPARATOR</code>.</li>
+<li>Creating a key in the admin requires <code>add_key</code>; the create form and actions on missing keys checked only <code>change_key</code>.</li>
+<li>An admin TTL of <code>"00"</code>, <code>"+0"</code> or <code>"-0"</code> makes the key persistent instead of deleting it.</li>
+<li>The admin's <code>lrem</code> removes one occurrence by default, not every occurrence.</li>
+<li>The admin warns when a <code>ZADD</code> changed nothing, counting score updates via <code>CH</code>.</li>
+<li>The admin key detail no longer raises on a value the serializer rejects.</li>
+<li>Admin sorted set members that deserialize to a list or dict are read-only; submitting them raised <code>TypeError</code>.</li>
+<li>The admin's <code>xtrim</code> is exact, and the Help link preserves the current page and type filter.</li>
+<li>The cache and key admins' per-object history and delete routes return 404.</li>
+</ul>
+<h3 id="documentation_4">Documentation<a class="headerlink" href="#documentation_4" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The <code>OPTIONS</code> reference says which backends honor each key, with a valkey-glide section covering <code>db</code>, <code>use_tls</code>, <code>username</code>, <code>password</code>, <code>request_timeout</code> and <code>client_name</code>; glide ignores <code>ssl_*</code>.</li>
+<li>The valkey-glide description names <code>glide_sync.GlideClient</code> for the sync surface and <code>glide.GlideClient</code> for the <code>a*</code> methods.</li>
+<li><code>cache.lock()</code>'s documented signature matches the code, including that the second positional argument is <code>version</code>, not the lease.</li>
+<li>The admin permission list matches the views: <code>change_cache</code> gates cache-wide actions, <code>change_key</code> every key detail mutation including TTL and persist.</li>
+<li>The README and <code>docs/index.md</code> say streams are RESP-only; <code>LocMemCache</code> and <code>DatabaseCache</code> carry only the hash, list, set and sorted set operations.</li>
+<li>README screenshots load on PyPI, which does not resolve repository-relative image paths.</li>
+<li><code>semaphore()</code> documents its keys outside the cache's namespace (<code>{name}:state</code>, <code>:claims</code>, <code>:queue</code>), which <code>clear()</code>, <code>keys()</code> and the admin skip.</li>
+<li><code>sscan()</code> and <code>sscan_iter()</code> document that <code>match</code> runs server-side against the serialized member unless it is a plain string.</li>
+<li><code>incr()</code> documents where it diverges from <code>BaseCache.incr</code> and from <code>LocMemCache</code>.</li>
+</ul>
+<h2 id="051-august-2026">0.5.1 (August 2026)<a class="headerlink" href="#051-august-2026" title="Permanent link">&para;</a></h2>
+<h3 id="improvements_9">Improvements<a class="headerlink" href="#improvements_9" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>TieredCache.get_many</code> batches its L2 TTL lookups into one pipeline where L2 supports it.</li>
+<li>The sdist no longer ships example and benchmark files.</li>
+<li>Free-threaded CPython is verified in CI again: the cache suite runs on 3.14t.</li>
+</ul>
+<h3 id="fixes_9">Fixes<a class="headerlink" href="#fixes_9" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>django_cachex.adapters._pipeline_parsers</code> removed; it was left over from the dropped Rust driver.</li>
+<li><code>version</code> and <code>PackageNotFoundError</code> no longer leak into <code>django_cachex</code>'s namespace.</li>
+<li>The admin key-size lookup logs its failures instead of silently showing a blank size.</li>
+<li>Admin breadcrumbs render with Django 6.1's markup instead of drawing unstyled.</li>
+<li>Admin object tools (Help, List Keys) sit next to the page title again instead of below it.</li>
+</ul>
+<h3 id="documentation_5">Documentation<a class="headerlink" href="#documentation_5" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The <code>username</code> connection option is documented: an <code>OPTIONS</code> key on every adapter that takes precedence over the URL.</li>
+</ul>
+<h2 id="050-august-2026">0.5.0 (August 2026)<a class="headerlink" href="#050-august-2026" title="Permanent link">&para;</a></h2>
+<h3 id="breaking-changes_7">Breaking changes<a class="headerlink" href="#breaking-changes_7" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The <code>redis-rs</code> backends are gone: <code>RedisRsCache</code>, <code>RedisRsSentinelCache</code>, <code>RedisRsClusterCache</code>, <code>django_cachex.adapters.redis_rs</code>, the <code>redis-rs</code> extra and the <code>django-cachex-redis-rs</code> package. The driver never reached PyPI; switch to <code>ValkeyCache</code>, <code>RedisCache</code> or <code>ValkeyGlideCache</code>. A standalone <a href="https://github.com/oliverhaas/redis-rs-py">redis-rs-py</a> binding is in progress.</li>
+<li><code>django_cachex.Lock</code> and <code>django_cachex.AsyncLock</code> removed; they wrapped the Rust driver's lock commands. <code>cache.lock()</code>, <code>LockError</code> and <code>LockNotOwnedError</code> are unchanged.</li>
+</ul>
+<h2 id="042-august-2026">0.4.2 (August 2026)<a class="headerlink" href="#042-august-2026" title="Permanent link">&para;</a></h2>
+<h3 id="improvements_10">Improvements<a class="headerlink" href="#improvements_10" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Every key admin value input is the same textarea, so push, add and set-field forms accept multi-line JSON.</li>
+<li>Set and sorted set members can be edited; an interrupted rename leaves a duplicate, not a lost member.</li>
+<li>Hash field names can be edited atomically; a rename is refused if the value changed since page load or the name exists.</li>
+</ul>
+<h3 id="fixes_10">Fixes<a class="headerlink" href="#fixes_10" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Container entries that are not JSON-serializable are read-only; submitting their <code>repr()</code> stored the repr string over the real value.</li>
+<li><code>xadd</code> parses its value like every other handler, so a stream entry can hold a number, list or dict.</li>
+<li>The string editor strips surrounding whitespace, so a stray newline no longer changes the stored value.</li>
+</ul>
+<h2 id="041-august-2026">0.4.1 (August 2026)<a class="headerlink" href="#041-august-2026" title="Permanent link">&para;</a></h2>
+<h3 id="fixes_11">Fixes<a class="headerlink" href="#fixes_11" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The admin's value textarea no longer overflows its container.</li>
+<li>Admin warnings and field errors are readable in dark mode.</li>
+<li>Semaphore <code>release()</code> and <code>extend()</code> no longer act on a token installed by a racing re-acquire on the same instance.</li>
+<li>RESP semaphores no longer wedge or admit past capacity when Redis evicts their bookkeeping.</li>
+</ul>
+<h2 id="040-august-2026">0.4.0 (August 2026)<a class="headerlink" href="#040-august-2026" title="Permanent link">&para;</a></h2>
+<div class="admonition note">
+<p class="admonition-title">Historical record</p>
+<p>Entries below describe 0.4.0 as released. Since 0.5.0 the package is pure
+Python again, without the Rust extension, the <code>redis-rs</code> backends or binary
+wheels, so the cibuildwheel and cp314t wheel entries are outdated.</p>
+</div>
+<h3 id="breaking-changes_8">Breaking changes<a class="headerlink" href="#breaking-changes_8" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Python 3.14+ required. Dropped support for 3.12 and 3.13. The package now ships on cp314 and cp314t (free-threaded) wheels.</li>
+<li>Django 6.0+ required. Dropped support for Django 5.2.</li>
+<li><code>LocMemCache</code> data structures use tagged subclasses (<code>_List</code>, <code>_Set</code>, <code>_Hash</code>, <code>_ZSet</code>), and cross-type access raises <code>WrongTypeError</code> instead of silently coercing.</li>
+<li><code>LocMemCache</code> bypasses pickle for tagged collections and drops copy-on-read and copy-on-write: <code>cache.get()</code> returns the live structure, not a detached snapshot.</li>
+<li><code>StreamCache</code> wire format changed to the transport's serializer and compressor instead of raw pickle; new pods cannot read older pods' entries, so drain or rotate <code>stream_key</code>.</li>
+<li><code>hmset</code> removed. Use <code>hset(key, mapping=...)</code> or <code>hset(key, items=...)</code> (flat key-value list, matching redis-py/valkey-py).</li>
+<li><code>django_cachex.unfold</code> removed: the django-unfold admin theme, the <code>[unfold]</code> extra and <code>examples/unfold/</code> are gone. Use <code>django_cachex.admin</code>.</li>
+<li>Lock parameters renamed, with no deprecation shim: <code>cache.lock(timeout=...)</code> is now <code>cache.lock(lease=...)</code> (TTL) and <code>lock.acquire(blocking_timeout=...)</code> is now <code>lock.acquire(timeout=...)</code> (max wait). <code>blocking_timeout</code> raises <code>TypeError</code>; the constructor's <code>timeout=</code> means max wait, not TTL.</li>
+<li><code>ZStdCompressor</code> renamed to <code>ZstdCompressor</code> (<code>django_cachex.compressors.zstd.ZstdCompressor</code>). Update <code>OPTIONS["compressor"]</code> strings.</li>
+<li><code>LzmaCompressor</code> constructor <code>preset=</code> renamed to <code>level=</code>, which every compressor now accepts.</li>
+<li><code>PickleSerializer</code> no longer raises <code>ImproperlyConfigured</code> for <code>protocol &gt; pickle.HIGHEST_PROTOCOL</code>; the first <code>dumps</code> raises <code>SerializerError</code> instead, with pickle's <code>ValueError</code> as <code>__cause__</code>.</li>
+<li><code>CachexCompat</code> removed, along with the admin's "wrapped" support tier. Use <code>django_cachex.cache.LocMemCache</code> / <code>DatabaseCache</code> (drop-in replacements) for full admin support; non-cachex backends show as "limited" (configuration only).</li>
+<li>Cluster <code>LOCATION</code> with a non-zero database number raises (<code>RedisClusterException</code> / <code>ValkeyClusterException</code>) on the redis-py and valkey-py cluster backends. Cluster never honored it; drop it from <code>LOCATION</code>. <code>ValkeyGlideClusterCache</code> and <code>RedisRsClusterCache</code> still ignore it.</li>
+</ul>
+<h3 id="features_4">Features<a class="headerlink" href="#features_4" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Rust I/O driver (experimental) in the separate <code>django-cachex-redis-rs</code> package, via the <code>redis-rs</code> extra: <code>RedisRsCache</code>, <code>RedisRsClusterCache</code> and <code>RedisRsSentinelCache</code>, which raise <code>ImportError</code> on first use without the extra.</li>
+<li><code>valkey-glide</code> adapter (experimental) via the <code>valkey-glide</code> extra: <code>ValkeyGlideCache</code> and <code>ValkeyGlideClusterCache</code>. No Sentinel.</li>
+<li><code>WrongTypeError</code> exception. LocMem, redis-py, valkey-py, valkey-glide and the Rust adapter raise <code>django_cachex.WrongTypeError</code> (a <code>TypeError</code> subclass) for <code>WRONGTYPE</code>.</li>
+<li>Async ext methods on LocMem and Database. The full async data-structure surface works instead of raising <code>NotSupportedError</code>.</li>
+<li><code>StreamCache</code> backend. Local in-memory reads, with writes broadcast over a Redis Stream to every pod. Read-heavy, write-light, eventually consistent.</li>
+<li><code>TieredCache</code> backend. Composes two <code>CACHES</code> entries as L1 (e.g. LocMem) and L2 (e.g. Redis), with TTL propagation and pull-through reads.</li>
+<li>Cache-stampede prevention. TTL-based XFetch via <code>OPTIONS["stampede_prevention"]</code> (or <code>stampede_prevention=</code> per call). Configurable buffer/beta/delta.</li>
+<li><code>LocMemCache</code> and <code>DatabaseCache</code> extensions: drop-in replacements for the Django builtins with data-structure ops, TTL helpers and admin support. <code>LocMemCache</code> compound ops are serialized (#62).</li>
+<li><code>orjson</code> and <code>ormsgpack</code> serializer extras.</li>
+<li>Free-threaded CPython (3.14t) support. A cp314t wheel is built, and the Rust driver runs with the GIL disabled.</li>
+<li>PyPI wheels via cibuildwheel. Wheels for Linux x86_64, Linux aarch64, macOS arm64, and Windows amd64, on cp314 and cp314t.</li>
+<li>Async pool sharing. Per-task <code>Cache</code> instances share one async connection pool (#83), avoiding the thundering-herd reconnect on cold start.</li>
+<li>Pipeline parity. Stream ops, CAS ops, missing key ops (<code>persist</code>, <code>pttl</code>, <code>expireat</code> and others), context manager, <code>zpopmin</code>/<code>zpopmax</code> default <code>count=1</code>.</li>
+<li>Compressors gain a uniform <code>level=</code> parameter (gzip, lz4 and zstd join zlib and lzma), defaulting to each library's own default.</li>
+<li>Serializer/compressor wrappers consolidated. Subclasses implement <code>_dumps</code>/<code>_loads</code> or <code>_compress</code>/<code>_decompress</code>; the base classes handle <code>SerializerError</code> / <code>CompressorError</code> translation and int passthrough.</li>
+<li>Weighted semaphores. <code>cache.semaphore(name, capacity, *, weight=1, lease=..., timeout=...)</code> and <code>cache.asemaphore(...)</code> on <code>LocMemCache</code> and the RESP backends, including cluster, with lease-based crash reclaim on RESP. Sync and async share state per cache instance.</li>
+</ul>
+<h3 id="performance">Performance<a class="headerlink" href="#performance" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>LocMemCache</code> sorted sets are O(log N), down from O(N log N) per write. Adds <code>sortedcontainers&gt;=2.4</code> as a runtime dependency.</li>
+<li><code>LocMemCache</code> skips pickle for tagged collections and mutates list/set/hash/zset/stream types in place.</li>
+</ul>
+<h3 id="fixes_12">Fixes<a class="headerlink" href="#fixes_12" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>LocMemCache.lpush</code>, <code>sadd</code>, <code>hset</code>, <code>hincrby</code>, <code>zadd</code> and similar methods no longer lose updates under concurrent threads (#62).</li>
+<li><code>delete_pattern</code> batches deletes to bound peak memory on broad patterns.</li>
+<li><code>clear()</code> is now prefix/version-scoped instead of <code>FLUSHDB</code>. The old behavior is available as <code>flush_db()</code>.</li>
+<li>Compressor <code>compress</code> and <code>decompress</code> methods catch all exceptions and re-raise as <code>CompressorError</code>.</li>
+<li>Cluster correctness: script loading on replicas, set_many <code>timeout=0</code>.</li>
+<li>Reading values small enough to have skipped compression (at or below the compressor's <code>min_length</code>) no longer crashes.</li>
+<li>Admin cache/key changelists are compatible with Django 6.1.</li>
+<li>Semaphore waiters abandoned by crashed or cancelled callers are reaped instead of blocking the queue.</li>
+<li>valkey-glide: TLS (<code>rediss</code>/<code>valkeys</code> or <code>use_tls</code>/<code>ssl</code>), credentials from the URL or <code>OPTIONS</code>, the database index (standalone only), <code>request_timeout</code> and <code>client_name</code> reach the client, not only host and port. <code>zadd</code> forwards <code>gt</code>/<code>lt</code>; pipelines support stream commands.</li>
+<li><code>TieredCache.set</code> forwards <code>nx</code>/<code>xx</code> to L2. A stock Django L2 no longer raises <code>TypeError</code>: <code>nx</code> falls back to <code>add()</code>, <code>xx</code>/<code>get</code> raise <code>NotSupportedError</code>, and a plain set drops the flags.</li>
+<li><code>set(..., timeout=0)</code> deletes the key across all backends, matching Django's cache contract.</li>
+<li><code>LocMemCache</code> aliases sharing a <code>LOCATION</code> share one store, including tagged collections and semaphore budgets.</li>
+<li>Admin: backend capability probes fail gracefully, and key URLs are quoted so keys with special characters open correctly.</li>
+<li>CI runs the test matrix against Django 6.1 in addition to 6.0.</li>
+<li>Dependabot automerge waits for every workflow run on the PR head to succeed before merging.</li>
+<li><code>reverse_key()</code> handles a <code>KEY_PREFIX</code> containing colons, so <code>keys()</code>, <code>iter_keys()</code>, <code>scan()</code> and the blocking list pops return user keys.</li>
+<li><code>DatabaseCache</code> compound ops (<code>rpush</code>, <code>sadd</code>, <code>zadd</code>, <code>hset</code>, ...) merge with a concurrent writer's row instead of overwriting it.</li>
+<li><code>LocMemCache</code> and <code>DatabaseCache</code> <code>hincrby</code>/<code>hincrbyfloat</code> reject non-numeric stored values with the same error as the server instead of truncating them.</li>
+<li><code>TieredCache</code> rejects <code>KEY_PREFIX</code> in the standard top-level slot as well as in <code>OPTIONS</code>; it was silently ignored before.</li>
+<li>Sentinel: async connection pools are keyed by sentinel fleet, so aliases sharing a service name no longer share a pool.</li>
+<li>Semaphores: concurrent <code>acquire()</code> on one <code>RespSemaphore</code> instance can no longer double-claim and leak a slot until the lease expires.</li>
+<li>Admin: editing a key keeps its TTL and persistence on every backend instead of resetting to the default timeout.</li>
+<li><code>StreamCache</code> broadcasts in write order, so consumers converge on the writer's final value, and <code>keys()</code> is scoped to the cache's prefix and version.</li>
+<li>A pipeline reused after <code>execute()</code> raises decodes the next batch correctly; <code>AsyncPipeline</code> rejects a sync <code>with</code> before the block runs.</li>
+<li>The redis-py and valkey-py cluster backends now honor the URL's TLS scheme, credentials and query parameters. Per-task async Sentinel adapters share one pool.</li>
+<li><code>encode()</code> passes through exact <code>int</code> values only, so <code>int</code> subclasses (<code>IntEnum</code>, <code>IntFlag</code>) keep their type.</li>
+<li><code>touch()</code>/<code>atouch()</code> apply the stampede buffer and accept a per-call <code>stampede_prevention=</code>; a touch pushed every reader into a recompute.</li>
+<li><code>DatabaseCache</code> key scans no longer match unrelated rows when a <code>KEY_PREFIX</code> or pattern contains <code>%</code>, <code>_</code> or a backslash.</li>
+<li><code>DatabaseCache.zadd</code>/<code>zincrby</code> reject a non-numeric score with <code>ValueError</code> instead of storing a value that breaks later range queries.</li>
+<li><code>MAX_ENTRIES</code> culling covers the whole store: <code>LocMemCache</code> counts and evicts tagged collections, and <code>DatabaseCache</code> compound ops cull on insert like <code>set()</code>.</li>
+<li><code>LocMemCache</code> collection edge cases: <code>keys()</code> scopes to the requested version and skips expired entries, <code>incr()</code> on a collection raises <code>WrongTypeError</code>, not <code>KeyError</code>, and <code>sadd</code>/<code>hset</code>/<code>zadd</code> adding nothing leave no empty key.</li>
+<li><code>rpop(count=0)</code> on <code>LocMemCache</code> and <code>DatabaseCache</code>, and <code>zpopmax(count=0)</code> on <code>LocMemCache</code>, return an empty list instead of draining the whole collection.</li>
+</ul>
+<hr />
+<h2 id="030-february-2026">0.3.0 (February 2026)<a class="headerlink" href="#030-february-2026" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>expiretime()</code> and <code>set(get=True)</code> support: New cache methods for retrieving absolute expiry timestamps and atomic get-and-set operations.</li>
+<li>Atomic CAS operations in admin: Key detail edits use compare-and-swap via Lua-computed SHA1 fingerprints to prevent concurrent edit conflicts.</li>
+<li>Key detail pagination: Collection types (list, hash, set, zset, stream) are paginated at 100 items per page with <code>?page=N</code> navigation.</li>
+<li>Keys in admin sidebar: The key list is now a sidebar entry with a cache filter for switching between configured caches.</li>
+<li>Simplified Lua script execution: <code>eval_script()</code> replaces the <code>register_script</code>/<code>LuaScript</code> registry with direct <code>EVAL</code> calls; redis-py handles script caching.</li>
+<li>Async data structure methods: All hash, list, set, and sorted set operations now have async counterparts on <code>RespCache</code> (e.g. <code>ahset</code>, <code>alpush</code>, <code>asadd</code>, <code>azadd</code>).</li>
+<li>Stream operations: Full sync and async support for Redis streams (<code>xadd</code>, <code>xread</code>, <code>xrange</code>, <code>xlen</code>, <code>xdel</code>, <code>xtrim</code>, <code>xinfo_stream</code>, <code>xgroup_create</code>, <code>xreadgroup</code>, <code>xack</code>, <code>xpending</code>, <code>xclaim</code>, <code>xautoclaim</code>, and more).</li>
+<li>Safe <code>clear()</code>: <code>clear()</code> now uses <code>delete_pattern("*")</code> to only remove keys for the current cache version and prefix, instead of <code>FLUSHDB</code>. Use <code>flush_db()</code> for the old behavior.</li>
+<li>Danger zone in admin: Cache detail view has a "Danger Zone" section with "Clear all versions" and "Flush database" actions. Key list view has a "Clear" button for safe prefix-scoped clearing.</li>
+<li><code>hset</code> items param: <code>hset()</code> now accepts an <code>items</code> parameter (flat key-value list), matching the redis-py/valkey-py signature. <code>hmset</code> is removed.</li>
+<li><code>delete_pattern</code> batched deletes: Deletes are now batched to prevent OOM on broad patterns.</li>
+<li>Multi-key params standardized: Set operations such as <code>sdiff</code>, <code>sinter</code> and <code>sunion</code> accept <code>KeyT | Sequence[KeyT]</code> consistently.</li>
+</ul>
+<hr />
+<h2 id="020-february-2026">0.2.0 (February 2026)<a class="headerlink" href="#020-february-2026" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Django permissions enforced: The admin now uses Django's built-in permission system for granular access control. Staff users need explicit permissions; superusers are unaffected.</li>
+</ul>
+<hr />
+<h2 id="010-february-2026">0.1.0 (February 2026)<a class="headerlink" href="#010-february-2026" title="Permanent link">&para;</a></h2>
+<p>Initial stable release of django-cachex.</p>
+<h3 id="features_5">Features<a class="headerlink" href="#features_5" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Valkey and Redis support in one package.</li>
+<li>Session backend support via Django's cache sessions.</li>
+<li>Pluggable clients: Default, Sentinel, Cluster.</li>
+<li>Pluggable serializers: Pickle, JSON, MsgPack.</li>
+<li>Pluggable compressors: Zlib, Gzip, LZMA, LZ4, Zstandard.</li>
+<li>Multi-serializer/compressor fallback for safe migrations.</li>
+<li>Connection pooling with configurable options.</li>
+<li>Primary/replica replication support.</li>
+<li>Valkey/Redis Sentinel support for high availability.</li>
+<li>Valkey/Redis Cluster support with automatic slot handling.</li>
+<li>Distributed locks compatible with <code>threading.Lock</code>.</li>
+<li>TTL operations: <code>ttl()</code>, <code>pttl()</code>, <code>expire()</code>, <code>persist()</code>.</li>
+<li>Pattern operations: <code>keys()</code>, <code>iter_keys()</code>, <code>delete_pattern()</code>.</li>
+<li>Pipelines for batched operations.</li>
+<li>Lua script interface with automatic key prefixing and value encoding/decoding.</li>
+<li>Django Cache Admin for cache inspection and management:</li>
+<li>Browse, search, edit, and delete cache keys.</li>
+<li>View server info, memory statistics, and slowlog.</li>
+<li>Key type filter sidebar.</li>
+<li>Support for Django builtin backends (LocMemCache, DatabaseCache, FileBasedCache) via wrappers.</li>
+<li>Django Unfold theme support (<code>django_cachex.unfold</code>).</li>
+<li>Async support for all extended methods.</li>
+</ul>
+<h3 id="data-structure-operations">Data Structure Operations<a class="headerlink" href="#data-structure-operations" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Hash operations: <code>hset</code>, <code>hdel</code>, <code>hexists</code>, <code>hget</code>, <code>hgetall</code>, <code>hincrby</code>, <code>hincrbyfloat</code>, <code>hkeys</code>, <code>hlen</code>, <code>hmget</code>, <code>hmset</code>, <code>hsetnx</code>, <code>hvals</code></li>
+<li>Sorted set operations: <code>zadd</code>, <code>zcard</code>, <code>zcount</code>, <code>zincrby</code>, <code>zrange</code>, <code>zrevrange</code>, <code>zrangebyscore</code>, <code>zrevrangebyscore</code>, <code>zrank</code>, <code>zrevrank</code>, <code>zrem</code>, <code>zremrangebyrank</code>, <code>zremrangebyscore</code>, <code>zscore</code>, <code>zmscore</code>, <code>zpopmin</code>, <code>zpopmax</code></li>
+<li>List operations: <code>llen</code>, <code>lpush</code>, <code>rpush</code>, <code>lpop</code>, <code>rpop</code>, <code>lindex</code>, <code>lrange</code>, <code>lset</code>, <code>ltrim</code>, <code>lrem</code>, <code>lpos</code>, <code>linsert</code>, <code>lmove</code>, <code>blpop</code>, <code>brpop</code>, <code>blmove</code></li>
+<li>Set operations: <code>sadd</code>, <code>srem</code>, <code>smembers</code>, <code>sismember</code>, <code>smismember</code>, <code>scard</code>, <code>spop</code>, <code>srandmember</code>, <code>smove</code>, <code>sdiff</code>, <code>sdiffstore</code>, <code>sinter</code>, <code>sinterstore</code>, <code>sunion</code>, <code>sunionstore</code>, <code>sscan</code>, <code>sscan_iter</code></li>
+</ul>
+<h3 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Python 3.12+</li>
+<li>Django 5.2+</li>
+<li>valkey-py 6.1+ or redis-py 6+</li>
+</ul>
+<hr />
+<h2 id="pre-release-history">Pre-release History<a class="headerlink" href="#pre-release-history" title="Permanent link">&para;</a></h2>
+<h3 id="010b6-february-2026">0.1.0b6 (February 2026)<a class="headerlink" href="#010b6-february-2026" title="Permanent link">&para;</a></h3>
+<h4 id="new-features">New Features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Key type filter: Filter keys by type (string, list, set, hash, zset, stream) in the admin key list sidebar</li>
+<li>LocMemCache data structure operations: List, set, and hash operations now work with LocMemCache wrappers</li>
+<li>LocMemCache type detection: Automatically detects stored Python types (list, set, dict) and maps them to Redis equivalents</li>
+<li><code>KeyType</code> StrEnum: Centralized enum for Redis key types, replacing scattered string literals</li>
+</ul>
+<h4 id="improvements_11">Improvements<a class="headerlink" href="#improvements_11" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Admin refactoring: replaced service layer with helpers module, simplified views, restructured templates</li>
+<li>Unified admin views between classic Django admin and Unfold theme</li>
+<li>Added <code>_cachex_support</code> ClassVar to <code>CacheProtocol</code> for standardized support level detection</li>
+<li>Mixin-based class patching for cache wrappers (replacing intermediate extension classes)</li>
+<li>Dead code cleanup across the codebase</li>
+</ul>
+<h4 id="bug-fixes">Bug Fixes<a class="headerlink" href="#bug-fixes" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Unfold templates match the classic admin</li>
+<li><code>key_type</code> variable usage in the unfold key detail template</li>
+<li>mypy and ty type-checking errors</li>
+<li><code>!r</code> format spec for <code>KeyT</code> in error messages</li>
+</ul>
+<h3 id="010b5-february-2026">0.1.0b5 (February 2026)<a class="headerlink" href="#010b5-february-2026" title="Permanent link">&para;</a></h3>
+<h4 id="new-features_1">New Features<a class="headerlink" href="#new-features_1" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Expanded cache backend support: The admin interface now supports Django's builtin cache backends through wrapper classes</li>
+<li><code>LocMemCache</code>: Full support including key listing, TTL inspection, and memory statistics</li>
+<li><code>DatabaseCache</code>: Key listing, TTL inspection, and database statistics</li>
+<li><code>FileBasedCache</code>: File listing (as MD5 hashes) and disk usage statistics</li>
+<li><code>Memcached</code>: Basic stats when available</li>
+<li>Django's <code>RedisCache</code>: Basic support (full features require django-cachex backends)</li>
+</ul>
+<h4 id="improvements_12">Improvements<a class="headerlink" href="#improvements_12" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Standardized <code>info()</code> output format across all wrapped cache backends</li>
+<li>Added TTL support (<code>ttl()</code>, <code>expire()</code>, <code>persist()</code>) for LocMemCache</li>
+<li>Cache admin UX: unsupported operations fail gracefully instead of hiding UI elements</li>
+</ul>
+<h4 id="bug-fixes_1">Bug Fixes<a class="headerlink" href="#bug-fixes_1" title="Permanent link">&para;</a></h4>
+<ul>
+<li>LocMemCache keys no longer show "not found" when clicked in admin</li>
+<li>The key search form preserves the cache query parameter</li>
+<li>Editing works for wrapped cache backends</li>
+</ul>
+<h3 id="010b4-january-2026">0.1.0b4 (January 2026)<a class="headerlink" href="#010b4-january-2026" title="Permanent link">&para;</a></h3>
+<h4 id="new-features_2">New Features<a class="headerlink" href="#new-features_2" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Django Cache Admin: Built-in admin interface for cache management</li>
+<li>Browse all configured caches</li>
+<li>Search keys with wildcard patterns</li>
+<li>View and edit cache values (strings, hashes, lists, sets, sorted sets)</li>
+<li>Inspect TTL and modify expiration</li>
+<li>View server info and memory statistics</li>
+<li>Flush individual caches</li>
+<li>
+<p>Bulk delete keys</p>
+</li>
+<li>
+<p>Django Unfold Theme Support: Alternative admin styling for django-unfold users</p>
+</li>
+<li>Use <code>django_cachex.unfold</code> instead of <code>django_cachex.admin</code></li>
+<li>
+<p>Consistent styling with Unfold's modern admin theme</p>
+</li>
+<li>
+<p>Example Projects: Added example projects demonstrating various configurations</p>
+</li>
+<li><code>examples/simple/</code> - Basic setup with ValkeyCache and LocMemCache</li>
+<li><code>examples/full/</code> - Multiple backends including Sentinel and Cluster</li>
+<li><code>examples/unfold/</code> - Django Unfold theme integration</li>
+</ul>
+<h3 id="010b3-january-2026">0.1.0b3 (January 2026)<a class="headerlink" href="#010b3-january-2026" title="Permanent link">&para;</a></h3>
+<h4 id="new-features_3">New Features<a class="headerlink" href="#new-features_3" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Lua Script Interface: High-level API for registering and executing Lua scripts with automatic key prefixing and value encoding/decoding</li>
+<li><code>cache.register_script()</code> to register scripts with pre/post processing hooks</li>
+<li><code>cache.eval_script()</code> and <code>cache.aeval_script()</code> for sync/async execution</li>
+<li><code>pipe.eval_script()</code> for pipeline support</li>
+<li>Pre-built helpers: <code>keys_only_pre</code>, <code>full_encode_pre</code>, <code>decode_single_post</code>, <code>decode_list_post</code></li>
+<li><code>ScriptHelpers</code> class exposes <code>make_key</code>, <code>encode</code>, <code>decode</code> for custom hooks</li>
+<li>Automatic SHA caching with NOSCRIPT fallback</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.sections", "navigation.expand", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
