@@ -1413,7 +1413,7 @@
 <p>The ORM cache works with these cache backends:</p>
 <ul>
 <li>The Redis and Valkey backends: standalone, Sentinel and Cluster on redis-py and valkey-py, standalone and Cluster on valkey-glide.</li>
-<li><code>TrackingCache</code> over one of them. Each process also keeps the results it read in a separate local LRU, bounded by the alias's <code>MAX_ENTRIES</code>. A local copy saves the transfer but not the round trip, and is never served after a write.</li>
+<li><code>TrackingCache</code> over one of them, which the ORM cache uses as if <code>CACHE</code> named its transport. It keeps no local copies of results.</li>
 <li><code>LocMemCache</code>, Django's or django-cachex's. It keeps everything in the process, so a write in one process does not invalidate the others. Use it for tests and single-process setups.</li>
 </ul>
 <p>Other backends, such as Memcached, <code>DatabaseCache</code> or Django's own <code>RedisCache</code>, cache nothing (<code>cachex_orm.W001</code>).</p>
@@ -1451,11 +1451,6 @@
 <td>Seconds a result is kept. <code>None</code> keeps it until the cache evicts it, even after a write (see <a href="#eviction">Eviction</a>).</td>
 </tr>
 <tr>
-<td><code>LEASE_TIMEOUT</code></td>
-<td><code>60</code></td>
-<td>Seconds a write's lease lasts if the write cannot release it (see <a href="#failures">Failures</a>).</td>
-</tr>
-<tr>
 <td><code>ONLY_CACHABLE_TABLES</code></td>
 <td><code>()</code></td>
 <td>If set, only queries whose tables are all listed are cached.</td>
@@ -1483,7 +1478,7 @@
 <tr>
 <td><code>TABLE_KEYGEN</code></td>
 <td><code>"django_cachex.orm.utils.readable_table_key"</code></td>
-<td>Callable, or its dotted path, that builds the key of a table's generation and leases (see <a href="#cache-keys">Cache keys</a>).</td>
+<td>Callable, or its dotted path, that builds the key of a table's generation (see <a href="#cache-keys">Cache keys</a>).</td>
 </tr>
 </tbody>
 </table>
@@ -1503,14 +1498,13 @@
 <p>The ORM cache does not search SQL you write for functions, so it caches a query with <code>RawSQL("now()")</code> or <code>Func(function="NOW")</code>. Run such queries inside <a href="#orm_cache_disabled"><code>orm_cache_disabled()</code></a>.</p>
 <h2 id="how-invalidation-works">How invalidation works<a class="headerlink" href="#how-invalidation-works" title="Permanent link">&para;</a></h2>
 <p>Every table has a generation in the cache, and every committed write to the table changes it. A result is stored with the generations of the tables it read and served only while all of them are unchanged.</p>
-<p>A write holds a lease on its tables around the statement under autocommit, or around the <code>COMMIT</code> inside a transaction. While a table is leased, queries on it are neither served from the cache nor stored in it. A query running during a write therefore cannot cache a result the write makes stale.</p>
-<p>A cached read costs one round trip to the cache and a miss two. A write under autocommit, or the commit of a transaction that wrote, also costs two. Outside a cluster, a read is a <code>MULTI</code>/<code>EXEC</code> instead of a Lua script, which saves the server CPU. It needs a second round trip while a write holds a lease on one of its tables, or under <code>TrackingCache</code> when the process's local copy of the result is outdated.</p>
+<p>A write changes the generations of its tables twice: right before the statement under autocommit, or before the <code>COMMIT</code> inside a transaction, and again right after it. The first change drops the results stored before the write, and a write whose first change fails does not run (see <a href="#failures">Failures</a>). The second change drops the results that queries read while the write ran. Between the commit and the second change, about one round trip to the cache, other processes can still be served those results, which show the tables as they were before the write. The write returns, and its <code>on_commit()</code> hooks run, only after the second change, so queries that run after the write returns, in the same process or in a task it starts, get the new rows.</p>
+<p>A cached read costs one round trip to the cache, an <code>MGET</code> of the generations and the result, and a miss two. A write under autocommit, or the commit of a transaction that wrote, also costs two. Reads go to the primary even when the cache alias lists replicas, since a replica can lag behind a write. On a redis-py or valkey-py cluster, <code>read_from_replicas</code> or a <code>load_balancing_strategy</code> in the alias's <code>OPTIONS</code> sends them to replicas, which can serve the old rows until they have caught up with a write.</p>
 <h3 id="cache-keys">Cache keys<a class="headerlink" href="#cache-keys" title="Permanent link">&para;</a></h3>
-<p>A result is stored under <code>orm:{&lt;database alias&gt;}:q:&lt;query key&gt;:&lt;result type&gt;</code>, the generation of a table under <code>orm:{&lt;database alias&gt;}:g:&lt;table key&gt;</code> and its leases under <code>orm:{&lt;database alias&gt;}:l:&lt;table key&gt;</code>, all under the cache alias's <code>KEY_PREFIX</code> and <code>VERSION</code>. The database alias is the hash tag, so on a cluster all keys of one database live on one shard. The keys name database aliases, not databases. Projects or environments sharing a cache server need distinct <code>KEY_PREFIX</code>es or database numbers, or each serves the results the other read.</p>
+<p>A result is stored under <code>orm:{&lt;database alias&gt;}:q:&lt;query key&gt;:&lt;result type&gt;</code> and the generation of a table under <code>orm:{&lt;database alias&gt;}:g:&lt;table key&gt;</code>, both under the cache alias's <code>KEY_PREFIX</code> and <code>VERSION</code>. The database alias is the hash tag, so on a cluster all keys of one database live on one shard. The keys name database aliases, not databases. Projects or environments sharing a cache server need distinct <code>KEY_PREFIX</code>es or database numbers, or each serves the results the other read.</p>
 <p>By default the query key is the sorted names of the tables the query reads, joined with <code>.</code>, then <code>:</code> and the SHA-1 digest of the database alias, SQL and parameters. Past 100 characters, the names that do not fit are left out and counted, as in <code>shop_customer.+3more</code>. The table key is the table name:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>orm:{default}:q:shop_customer.shop_order:3f2a9c...:multi
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>orm:{default}:g:shop_order
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>orm:{default}:l:shop_order
 </span></code></pre></div>
 <p><code>QUERY_KEYGEN</code> and <code>TABLE_KEYGEN</code> take a callable, or its dotted path, that builds these keys instead. Both are called with keyword arguments and return a <code>str</code>:</p>
 <ul>
@@ -1551,16 +1545,15 @@
 <p>A write does not delete the results it invalidates, so they stay in the cache until they expire or are evicted. What a full Redis or Valkey server evicts depends on its <code>maxmemory-policy</code>:</p>
 <ul>
 <li><code>volatile-*</code> policies evict only keys with an expiry, which only results with a <code>TIMEOUT</code> have. Set a <code>TIMEOUT</code> with them, or they act like <code>noeviction</code>.</li>
-<li><code>allkeys-*</code> policies also evict generations, which is safe, and leases. An evicted lease acts like one that expired early (see <a href="#failures">Failures</a>).</li>
+<li><code>allkeys-*</code> policies also evict generations, which is safe: an evicted generation comes back as a new value, which no stored result matches.</li>
 <li>Under <code>noeviction</code>, the default, a full server refuses writes, so every database write to a cached table fails with <code>InvalidationError</code> until memory is freed.</li>
 </ul>
 <h2 id="transactions">Transactions<a class="headerlink" href="#transactions" title="Permanent link">&para;</a></h2>
 <p><code>READ COMMITTED</code>, PostgreSQL's default, and SQLite's default rollback journal let a transaction use the shared cache. Under <code>REPEATABLE READ</code> and <code>SERIALIZABLE</code>, and on SQLite in WAL mode, a transaction reads a snapshot that can be older than the shared cache. It caches up to 16 MiB of pickled results for itself instead, and drops them when it ends.</p>
 <p>The ORM cache reads the isolation level per connection, from the <code>isolation_level</code> option or the server, and again after raw SQL changes the session default. Other SQL naming an isolation level, such as <code>SET TRANSACTION ISOLATION LEVEL</code>, makes the connection cache per transaction until it reconnects.</p>
 <h2 id="failures">Failures<a class="headerlink" href="#failures" title="Permanent link">&para;</a></h2>
-<p>A write that cannot take its lease, for example because the cache server is down, raises <code>django_cachex.orm.exceptions.InvalidationError</code> before the statement or <code>COMMIT</code> runs. The error is a <code>DatabaseError</code>, so <code>atomic()</code> rolls the transaction back. To keep writing through a cache outage, set <code>CACHEX_ORM["ENABLED"] = False</code>. A write that cannot reach the cache then logs a warning and goes ahead. Run <code>invalidate_orm_cache</code> before enabling it again.</p>
-<p>If a write cannot release its lease or its process dies, queries on its tables run against the database until the lease expires after <code>LEASE_TIMEOUT</code>. A failed release, lookup or store logs a warning to the <code>django_cachex.orm</code> logger and does not raise.</p>
-<p><code>LEASE_TIMEOUT</code> must outlast the longest write statement and <code>COMMIT</code>. Keep it above the database's <code>statement_timeout</code>. A lease that expires while its write still runs lets another process store what it read before the commit. That result is served until the write releases the lease, or until the result expires if the release fails.</p>
+<p>A write that cannot change the generations of its tables before it runs, for example because the cache server is down, raises <code>django_cachex.orm.exceptions.InvalidationError</code> before the statement or <code>COMMIT</code> runs. The error is a <code>DatabaseError</code>, so <code>atomic()</code> rolls the transaction back. To keep writing through a cache outage, set <code>CACHEX_ORM["ENABLED"] = False</code>. A write that cannot reach the cache then logs a warning and goes ahead. Run <code>invalidate_orm_cache</code> before enabling it again.</p>
+<p>If the change after the write fails, or the process dies between the commit and that change, results that other processes read while the write ran can be served until the next write to one of their tables or until they expire. A failed lookup or store, or a failed change after a write, logs a warning to the <code>django_cachex.orm</code> logger and does not raise.</p>
 <h2 id="api">API<a class="headerlink" href="#api" title="Permanent link">&para;</a></h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex.orm.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">invalidate</span><span class="p">,</span> <span class="n">orm_cache_disabled</span><span class="p">,</span> <span class="n">table_generations</span>
 </span></code></pre></div>
@@ -1591,7 +1584,6 @@
 </span></code></pre></div>
 <p>Read the generations before computing the value, and name every table the computation reads. <code>table_generations()</code> returns <code>None</code> when a value computed now must not be cached:</p>
 <ul>
-<li>While a write to one of the tables holds its lease.</li>
 <li>When the ORM cache is disabled or would not cache a query of these tables.</li>
 <li>Inside a transaction that has written one of the tables or reads a snapshot.</li>
 </ul>
@@ -1657,10 +1649,6 @@
 <td><code>cachex_orm.E007</code></td>
 <td>A table setting is not a list, tuple or set, like <code>("django_session")</code> without its comma. The value counts as empty.</td>
 </tr>
-<tr>
-<td><code>cachex_orm.E008</code></td>
-<td><code>LEASE_TIMEOUT</code> is not a positive number of seconds.</td>
-</tr>
 </tbody>
 </table>
 <h2 id="limits">Limits<a class="headerlink" href="#limits" title="Permanent link">&para;</a></h2>
@@ -1672,7 +1660,7 @@
 <li>Leave replicas out of <code>DATABASES</code>. Writes to the primary do not invalidate what was cached from a replica's alias.</li>
 <li>A failover of the cache server can lose the latest generation changes, which makes stale results current again. Run <code>invalidate_orm_cache</code> after a failover.</li>
 <li>Writes made while the app was uninstalled, a database was left out of <code>DATABASES</code> or <code>CACHE</code> named another alias did not invalidate the cache. Run <code>invalidate_orm_cache</code> before switching back.</li>
-<li><code>migrate</code> invalidates every model after applying a migration, and so does <code>flush</code>. Migrations take leases like any write, so they need the cache too, or <code>ENABLED</code> off followed by <code>invalidate_orm_cache</code>.</li>
+<li><code>migrate</code> invalidates every model after applying a migration, and so does <code>flush</code>. Migrations change generations like any write, so they need the cache too, or <code>ENABLED</code> off followed by <code>invalidate_orm_cache</code>.</li>
 </ul>
 
 

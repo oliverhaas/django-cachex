@@ -2085,26 +2085,26 @@ version older than one committed before the read began. Stale reads per
 <tbody>
 <tr>
 <td>Autocommit</td>
-<td style="text-align: right;">132</td>
-<td style="text-align: right;">504</td>
+<td style="text-align: right;">121</td>
+<td style="text-align: right;">482</td>
 <td style="text-align: right;">0</td>
 </tr>
 <tr>
 <td>Autocommit, commits 2 ms slower</td>
-<td style="text-align: right;">755</td>
-<td style="text-align: right;">602</td>
+<td style="text-align: right;">753</td>
+<td style="text-align: right;">597</td>
 <td style="text-align: right;">0</td>
 </tr>
 <tr>
 <td><code>atomic()</code></td>
-<td style="text-align: right;">8.0</td>
-<td style="text-align: right;">512</td>
+<td style="text-align: right;">7.2</td>
+<td style="text-align: right;">499</td>
 <td style="text-align: right;">0</td>
 </tr>
 <tr>
 <td><code>atomic()</code>, 1 ms of later <code>on_commit()</code> hooks</td>
-<td style="text-align: right;">117</td>
-<td style="text-align: right;">567</td>
+<td style="text-align: right;">116</td>
+<td style="text-align: right;">578</td>
 <td style="text-align: right;">0</td>
 </tr>
 </tbody>
@@ -2112,8 +2112,8 @@ version older than one committed before the read began. Stale reads per
 <ul>
 <li>Under autocommit, cachalot invalidates before the statement runs, so a read
   before the commit stores the old row as newer than the write. The cache
-  serves it until the next write: cachalot hid 146 in 1,000 writes that way,
-  and with slower commits all of them. Writes in quick succession, as in a
+  serves it until the next write: cachalot hid 134 in 1,000 writes that way,
+  and with slower commits 995. Writes in quick succession, as in a
   loop of updates, make it worse, since a raced read can store its old row
   after the next write's invalidation too.</li>
 <li>In <code>atomic()</code>, cachalot invalidates only after all <code>on_commit()</code> hooks have
@@ -2122,11 +2122,16 @@ version older than one committed before the read began. Stale reads per
   apart, and until the second it can serve a row read before the commit.</li>
 <li><code>cachalot+tracking</code> serves hits from the process's memory. The thread that
   evicts a copy after a write needs the GIL, and readers that never pause
-  make it wait up to 5 ms. At a read every 1 ms, it served 40 stale reads per
+  make it wait up to 5 ms. At a read every 1 ms, it served 46 stale reads per
   1,000.</li>
-<li>The ORM cache sends a table's queries to the database while a write to it
-  runs. That costs it 6 to 7 points of hit ratio against cachalot, and 20 to
-  22 with slower commits.</li>
+<li>The ORM cache changes a table's generation right before and right after
+  each write, and after each change, reads miss until one of them has stored
+  the result again. That costs it 5 to 7 points of hit ratio against
+  cachalot, with slower commits too. Between the commit and the second
+  change, about one round trip, it can still serve the old row. The writer
+  announces each version after that change, as code running after the write
+  or in an <code>on_commit()</code> hook would, so these runs count no read in that
+  window as stale.</li>
 </ul>
 <h3 id="clock-skew">Clock skew<a class="headerlink" href="#clock-skew" title="Permanent link">&para;</a></h3>
 <p>Cachalot stamps results and invalidations with the <code>time.time()</code> of the
@@ -2198,38 +2203,38 @@ the query alone.</p>
 <tbody>
 <tr>
 <td>none</td>
-<td style="text-align: right;">566</td>
-<td style="text-align: right;">612</td>
-<td style="text-align: right;">563</td>
-<td style="text-align: right;">1,244</td>
+<td style="text-align: right;">537</td>
+<td style="text-align: right;">590</td>
+<td style="text-align: right;">553</td>
+<td style="text-align: right;">1,218</td>
 </tr>
 <tr>
 <td>cachalot</td>
-<td style="text-align: right;">500</td>
-<td style="text-align: right;">1,453</td>
-<td style="text-align: right;">990</td>
-<td style="text-align: right;">2,072</td>
+<td style="text-align: right;">497</td>
+<td style="text-align: right;">1,425</td>
+<td style="text-align: right;">969</td>
+<td style="text-align: right;">2,012</td>
 </tr>
 <tr>
 <td>cachex</td>
-<td style="text-align: right;">541</td>
-<td style="text-align: right;">1,489</td>
-<td style="text-align: right;">1,354</td>
-<td style="text-align: right;">2,057</td>
+<td style="text-align: right;">513</td>
+<td style="text-align: right;">1,468</td>
+<td style="text-align: right;">1,302</td>
+<td style="text-align: right;">2,004</td>
 </tr>
 <tr>
 <td>cachalot+tracking</td>
-<td style="text-align: right;">136</td>
-<td style="text-align: right;">1,508</td>
-<td style="text-align: right;">1,010</td>
-<td style="text-align: right;">2,128</td>
+<td style="text-align: right;">131</td>
+<td style="text-align: right;">1,489</td>
+<td style="text-align: right;">1,003</td>
+<td style="text-align: right;">2,090</td>
 </tr>
 <tr>
 <td>cachex+tracking</td>
-<td style="text-align: right;">531</td>
-<td style="text-align: right;">1,516</td>
-<td style="text-align: right;">1,377</td>
-<td style="text-align: right;">2,082</td>
+<td style="text-align: right;">499</td>
+<td style="text-align: right;">1,426</td>
+<td style="text-align: right;">1,320</td>
+<td style="text-align: right;">2,004</td>
 </tr>
 </tbody>
 </table>
@@ -2237,13 +2242,12 @@ the query alone.</p>
 <li>A hit takes a round trip, as the query does, so it saves only the
   database's work. A hit on one row takes about 90% of the query's time, on
   100 rows about half, and on 1,000 rows about a quarter.</li>
-<li>The ORM cache's hits take about 40 µs longer than cachalot's, for the Lua
-  script that checks leases and generations. Its autocommit writes make two
-  round trips to Valkey, a lease before the statement and its release after,
-  where cachalot makes one.</li>
+<li>The ORM cache's hits take at most 16 µs longer than cachalot's. Its
+  autocommit writes make two round trips to Valkey, one before the statement
+  and one after, where cachalot makes one.</li>
 <li><code>cachalot+tracking</code> serves hits from memory in about a quarter of the time,
-  which is also what makes its reads stale. The ORM cache over a
-  <code>TrackingCache</code> still asks the server whether its copy is current.</li>
+  which is also what makes its reads stale. The ORM cache keeps no local
+  copies, so over a <code>TrackingCache</code> it reads from the server as well.</li>
 <li>In a mixed workload of 100-row reads by one of 20 queries, the caches serve
   about 1.5 times the database's throughput at 1% writes, and
   <code>cachalot+tracking</code> twice. At 10% writes they serve about a fifth less,
@@ -2272,25 +2276,25 @@ Cachalot's results, and the ORM cache's hit ratio in the last row:</p>
 <tr>
 <td>Throughput at 1% writes, × the database's</td>
 <td style="text-align: right;">1.9</td>
-<td style="text-align: right;">1.5</td>
+<td style="text-align: right;">1.6</td>
 <td style="text-align: right;">1.2</td>
 </tr>
 <tr>
 <td>Throughput at 10% writes, × the database's</td>
-<td style="text-align: right;">0.94</td>
+<td style="text-align: right;">0.95</td>
 <td style="text-align: right;">0.79</td>
-<td style="text-align: right;">0.62</td>
+<td style="text-align: right;">0.63</td>
 </tr>
 <tr>
 <td>Stale reads per 1,000, autocommit</td>
-<td style="text-align: right;">104</td>
-<td style="text-align: right;">132</td>
-<td style="text-align: right;">247</td>
+<td style="text-align: right;">94</td>
+<td style="text-align: right;">121</td>
+<td style="text-align: right;">240</td>
 </tr>
 <tr>
 <td>Stale reads per 1,000, <code>atomic()</code></td>
-<td style="text-align: right;">0.19</td>
-<td style="text-align: right;">8.0</td>
+<td style="text-align: right;">0.26</td>
+<td style="text-align: right;">7.2</td>
 <td style="text-align: right;">88</td>
 </tr>
 <tr>
@@ -2302,15 +2306,15 @@ Cachalot's results, and the ORM cache's hit ratio in the last row:</p>
 <tr>
 <td>Hit ratio at a read every 1 ms, ORM cache</td>
 <td style="text-align: right;">92%</td>
-<td style="text-align: right;">83%</td>
-<td style="text-align: right;">60%</td>
+<td style="text-align: right;">85%</td>
+<td style="text-align: right;">64%</td>
 </tr>
 </tbody>
 </table>
-<p>The ORM cache's throughput stayed within 4% of cachalot's, and it served no
-stale read at any delay. Its hit ratio falls faster, since its lease sends a
-table's reads to the database for as long as a write runs, and writes take
-longer with delay.</p>
+<p>The ORM cache's throughput stayed within 3% of cachalot's, and these runs
+counted no stale read at any delay. Its hit ratio falls faster: reads miss
+from a write's first change until one of them has stored the result after the
+second, a span of several round trips that grows with the delay.</p>
 <h2 id="reproducing">Reproducing<a class="headerlink" href="#reproducing" title="Permanent link">&para;</a></h2>
 <p>The harness starts its own Redis, Valkey and PostgreSQL containers, so a
 Docker daemon is the only host requirement:</p>

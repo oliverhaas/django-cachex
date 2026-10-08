@@ -1457,10 +1457,6 @@
 <td><code>CACHALOT_USE_UNSUPPORTED_DATABASE</code>, <code>CACHALOT_ADDITIONAL_SUPPORTED_DATABASES</code></td>
 <td>Removed. Only PostgreSQL and SQLite are cached.</td>
 </tr>
-<tr>
-<td></td>
-<td><code>LEASE_TIMEOUT</code> has no cachalot counterpart (see <a href="../user-guide/orm-cache/#failures">Failures</a>).</td>
-</tr>
 </tbody>
 </table>
 <p><code>CACHE</code> must name a django-cachex Redis or Valkey backend, or a <code>TrackingCache</code> over one. Its serializer must keep Python types, as the default pickle serializer does. Other backends cache nothing, apart from <code>LocMemCache</code> for tests and single processes (see <a href="../user-guide/orm-cache/#caches-and-databases">Caches and databases</a>).</p>
@@ -1521,8 +1517,8 @@
 </span></code></pre></div>
 <h3 id="behavior-differences">Behavior differences<a class="headerlink" href="#behavior-differences" title="Permanent link">&para;</a></h3>
 <ul>
-<li>Writes need the cache. A write that cannot take its lease raises <code>InvalidationError</code>, a <code>DatabaseError</code>, unless <code>ENABLED</code> is off (see <a href="../user-guide/orm-cache/#failures">Failures</a>).</li>
-<li>While a write commits, queries on its tables run against the database and leave no stale result behind (see <a href="../user-guide/orm-cache/#how-invalidation-works">How invalidation works</a>).</li>
+<li>Writes need the cache. A write that cannot invalidate its tables before it runs raises <code>InvalidationError</code>, a <code>DatabaseError</code>, unless <code>ENABLED</code> is off (see <a href="../user-guide/orm-cache/#failures">Failures</a>).</li>
+<li>A write invalidates its tables right before the statement or <code>COMMIT</code> and again right after it, before it returns or runs its <code>on_commit()</code> hooks. Results read while it ran can be served only until then, about one round trip after the commit (see <a href="../user-guide/orm-cache/#how-invalidation-works">How invalidation works</a>). Cachalot invalidates before the statement under autocommit, so a read racing the write can keep the old rows cached until the next write, and in <code>atomic()</code> only after the <code>on_commit()</code> hooks (see <a href="../reference/benchmarks/#races">Races</a>).</li>
 <li>Subqueries count with their tables wherever they sit, and <code>Now()</code> anywhere in a query keeps it from being cached.</li>
 <li>A MySQL alias in <code>DATABASES</code> is the error <code>cachex_orm.E006</code>, and <code>"supported_only"</code> leaves out replicas, the aliases with a <code>TEST["MIRROR"]</code>.</li>
 <li>With psycopg2 instead of psycopg 3, queries with JSON, binary or range parameters are not cached.</li>
