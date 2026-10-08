@@ -64,6 +64,8 @@ TEST_DEFAULT_TIMEOUT = 180
 # Adapters that accept ``pool_class`` / ``parser_class``; valkey-glide ignores both.
 POOL_OPTION_ADAPTERS = frozenset({"redis-py", "valkey-py"})
 
+GLIDE_OPTIONS = {"request_timeout": 2000}
+
 RESP_PROTOCOL_OPTIONS = {"protocol": 3} if environ.get("CACHEX_TEST_RESP_PROTOCOL") == "3" else {}
 
 # ``client_class`` and ``sentinel_mode`` derive from the topology so existing skips keep working.
@@ -162,7 +164,7 @@ def build_cache_config(
         options: dict = _get_client_library_options(client_library, native_parser)
     else:
         # valkey-glide ignores pool/parser options entirely.
-        options = {}
+        options = dict(GLIDE_OPTIONS)
 
     if compressor and compressor in COMPRESSORS:
         options["compressor"] = COMPRESSORS[compressor]
@@ -248,7 +250,7 @@ def build_cluster_cache_config(
     with ``build_cache_config`` and otherwise ignored.
     """
     del native_parser
-    options: dict = dict(RESP_PROTOCOL_OPTIONS) if resp_adapter in POOL_OPTION_ADAPTERS else {}
+    options: dict = dict(RESP_PROTOCOL_OPTIONS) if resp_adapter in POOL_OPTION_ADAPTERS else dict(GLIDE_OPTIONS)
     if compressor and compressor in COMPRESSORS:
         options["compressor"] = COMPRESSORS[compressor]
     if serializer and serializer in SERIALIZERS:
