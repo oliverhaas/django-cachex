@@ -3024,7 +3024,7 @@ def test_key_detail_shows_an_entry_the_serializer_cannot_load_as_its_bytes(
     assert _entry_values(response.content) == {repr(raw): True, '"decoded"': False}
 
 
-def test_key_detail_opens_the_result_and_lease_keys_of_the_orm_cache(
+def test_key_detail_opens_a_result_of_the_orm_cache(
     admin_client: Client,
     test_cache: RespCache,
 ):
@@ -3032,15 +3032,15 @@ def test_key_detail_opens_the_result_and_lease_keys_of_the_orm_cache(
     tables = ["shop_customer", "shop_order"]
     query_key = "shop_customer.shop_order:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b:multi"
     token = store.lookup("default", query_key, tables).token
-    store.store("default", query_key, tables, token, [(1, "Ada")], None)
-    lease_token = "0123456789abcdef" * 2
-    store.begin_write("default", ["shop_order"], lease_token, 60)
+    store.store("default", query_key, token, [(1, "Ada")], None)
 
-    result = admin_client.get(_key_detail_url("default", f"orm:{{default}}:q:{query_key}"))
-    lease = admin_client.get(_key_detail_url("default", "orm:{default}:l:shop_order"))
+    response = admin_client.get(_key_detail_url("default", f"orm:{{default}}:q:{query_key}"))
 
-    assert _entry_values(result.content) == {repr(token): True, "[(1, 'Ada')]": True}
-    assert _entry_values(lease.content) == {repr(lease_token.encode()): True}
+    assert response.status_code == 200
+    value = BeautifulSoup(response.content, "html.parser").select_one("#id_value")
+    assert value is not None
+    assert token in value.get_text()
+    assert "Ada" in value.get_text()
 
 
 def test_key_list_shows_an_undecodable_name_apart_from_its_escaped_spelling(

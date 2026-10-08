@@ -1,4 +1,4 @@
-"""The generation and lease protocol that keeps cached results in step with writes."""
+"""The generation protocol that keeps cached results in step with writes."""
 
 import logging
 import re
@@ -10,30 +10,22 @@ from types import SimpleNamespace
 import pytest
 from django.conf import settings
 from django.contrib.auth.models import Permission, User
-from django.core.cache import DEFAULT_CACHE_ALIAS
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.db import DEFAULT_DB_ALIAS, connection, connections, models, transaction
 from django.test.utils import isolate_apps, override_settings
 
 from django_cachex.exceptions import CachexError
-from django_cachex.orm import store as store_module
 from django_cachex.orm import transaction as orm_transaction
 from django_cachex.orm.api import _table_keys, invalidate
 from django_cachex.orm.exceptions import InvalidationError
 from django_cachex.orm.settings import orm_settings
-from django_cachex.orm.store import BYPASS, Lookup, RespStore, _entry_key, _LocalResults
+from django_cachex.orm.store import Lookup
 from django_cachex.orm.utils import deletion_dependents
-from django_cachex.script import keys_only_pre
-from tests.cache.support import run_forked_while_held
 from tests.orm.app.models import Test, TestChild, TestParent
 from tests.orm.utils import assert_num_queries, assert_query_cached, orm_store, override_orm_settings
 
-LOCMEM = settings.CACHES[DEFAULT_CACHE_ALIAS]["BACKEND"] == "django_cachex.cache.LocMemCache"
-TRACKING = settings.CACHES[DEFAULT_CACHE_ALIAS]["BACKEND"] == "django_cachex.cache.TrackingCache"
 # DB_CASCADE, DB_SET_NULL and DB_SET_DEFAULT arrived in Django 6.1.
 DATABASE_ON_DELETE = hasattr(models, "DB_CASCADE")
-
-redis_only = pytest.mark.skipif(LOCMEM, reason="only the Redis stores keep results in process")
 
 
 class Row(models.Model):
@@ -48,47 +40,24 @@ class Row(models.Model):
 
 
 class Protocol:
-    """A store, on tables and a query no other test uses."""
+    """The store of the configured cache, on tables and a query no other test uses."""
 
-    def __init__(self, store):
-        self.store = store
+    def __init__(self):
+        self.store = orm_store()
         suffix = uuid.uuid4().hex
         self.tables = [f"a_{suffix}", f"b_{suffix}"]
         self.query = f"query_{suffix}"
 
-    def lookup(self, store=None):
-        return (store or self.store).lookup(DEFAULT_DB_ALIAS, self.query, self.tables)
+    def lookup(self):
+        return self.store.lookup(DEFAULT_DB_ALIAS, self.query, self.tables)
 
-    def store_result(self, token, result="result", *, store=None, timeout=None):
-        return (store or self.store).store(DEFAULT_DB_ALIAS, self.query, self.tables, token, result, timeout)
-
-    def begin_write(self, token, tables=None, lease_timeout=60):
-        self.store.begin_write(DEFAULT_DB_ALIAS, tables or self.tables[:1], token, lease_timeout)
-
-    def end_write(self, token, tables=None):
-        self.store.end_write(DEFAULT_DB_ALIAS, tables or self.tables[:1], token)
-
-    def set_server_payload(self, payload):
-        self.store.cache.eval_script(
-            "return redis.call('HSET', KEYS[1], 'v', ARGV[1])",
-            keys=[_entry_key(DEFAULT_DB_ALIAS, self.query)],
-            args=[payload],
-            pre_hook=keys_only_pre,
-        )
+    def store_result(self, token, result="result", *, timeout=None):
+        return self.store.store(DEFAULT_DB_ALIAS, self.query, token, result, timeout)
 
 
 @pytest.fixture
-def local_results():
-    """A Redis store that keeps results in process too, as it does over a TrackingCache."""
-    return Protocol(RespStore(orm_store().cache, _LocalResults(10)))
-
-
-@pytest.fixture(params=["store", pytest.param("local_results", marks=redis_only)])
-def protocol(request):
-    """The store of the configured cache, then the one of ``local_results``."""
-    if request.param == "local_results":
-        return request.getfixturevalue("local_results")
-    return Protocol(orm_store())
+def protocol():
+    return Protocol()
 
 
 def test_hit_after_store(protocol):
@@ -108,52 +77,11 @@ def test_bump(protocol):
     assert protocol.lookup() == Lookup(hit=True, value="new")
 
 
-def test_result_read_before_a_bump_is_not_stored(protocol):
+def test_result_read_before_a_bump_is_not_served(protocol):
     token = protocol.lookup().token
     protocol.store.bump(DEFAULT_DB_ALIAS, protocol.tables[1:])
-    assert not protocol.store_result(token)
+    protocol.store_result(token)
     assert not protocol.lookup().hit
-
-
-def test_write(protocol):
-    assert protocol.store_result(protocol.lookup().token)
-    # A reader misses before the write, then tries to store during it and after it.
-    reader = protocol.store.lookup(DEFAULT_DB_ALIAS, f"{protocol.query}:reader", protocol.tables).token
-    protocol.begin_write("writer")
-    assert protocol.lookup() is BYPASS
-    assert protocol.store.generations(DEFAULT_DB_ALIAS, protocol.tables) is None
-    assert not protocol.store.store(DEFAULT_DB_ALIAS, f"{protocol.query}:reader", protocol.tables, reader, "old", None)
-    protocol.end_write("writer")
-    assert not protocol.store.store(DEFAULT_DB_ALIAS, f"{protocol.query}:reader", protocol.tables, reader, "old", None)
-    lookup = protocol.lookup()
-    assert not lookup.hit
-    assert lookup.token is not None
-    assert protocol.store_result(lookup.token, "new")
-    assert protocol.lookup() == Lookup(hit=True, value="new")
-
-
-def test_overlapping_writes(protocol):
-    protocol.begin_write("first", protocol.tables)
-    protocol.begin_write("second", protocol.tables[1:])
-    protocol.end_write("first", protocol.tables)
-    assert protocol.lookup() is BYPASS
-    protocol.end_write("second", protocol.tables[1:])
-    assert protocol.lookup().token is not None
-
-
-def test_write_to_other_tables(protocol):
-    assert protocol.store_result(protocol.lookup().token)
-    protocol.begin_write("writer", [f"c_{uuid.uuid4().hex}"])
-    assert protocol.lookup() == Lookup(hit=True, value="result")
-
-
-def test_expired_lease(protocol):
-    protocol.begin_write("writer", lease_timeout=0.001)
-    time.sleep(0.05)
-    lookup = protocol.lookup()
-    assert lookup.token is not None
-    assert protocol.store_result(lookup.token)
-    assert protocol.lookup().hit
 
 
 def test_generations(protocol):
@@ -182,50 +110,6 @@ def test_timeout(protocol):
     assert protocol.lookup().hit
     time.sleep(0.4)
     assert not protocol.lookup().hit
-
-
-@redis_only
-def test_hit_is_served_from_the_local_copy(local_results, caplog):
-    assert local_results.store_result(local_results.lookup().token)
-    local_results.set_server_payload(b"garbage")
-    assert local_results.lookup() == Lookup(hit=True, value="result")
-    server_only = RespStore(local_results.store.cache)
-    with caplog.at_level(logging.WARNING, logger="django_cachex.orm"):
-        assert not local_results.lookup(server_only).hit
-    assert {record.name for record in caplog.records} == {"django_cachex.orm.store"}
-
-
-@redis_only
-def test_local_copy_expires_with_the_server_copy(local_results):
-    assert local_results.store_result(local_results.lookup().token, timeout=60)
-    local_results.store.cache.delete(_entry_key(DEFAULT_DB_ALIAS, local_results.query))
-    assert not local_results.lookup().hit
-
-
-@redis_only
-def test_local_copy_of_a_result_stored_elsewhere(local_results):
-    other_process = RespStore(local_results.store.cache, _LocalResults(10))
-    assert local_results.store_result(local_results.lookup(other_process).token, store=other_process)
-    assert local_results.lookup() == Lookup(hit=True, value="result")
-    local_results.set_server_payload(b"garbage")
-    assert local_results.lookup() == Lookup(hit=True, value="result")
-
-
-def test_bounded():
-    local = _LocalResults(2)
-    local.put("a", b"1", b"a")
-    local.put("b", b"1", b"b")
-    local.get("a")
-    local.put("c", b"1", b"c")
-    assert local.get("b") is None
-    assert local.get("a") == (b"1", b"a")
-    assert local.get("c") == (b"1", b"c")
-
-
-@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded:DeprecationWarning")
-@pytest.mark.skipif(not TRACKING, reason="only the store over a TrackingCache keeps results per process")
-def test_a_forked_child_skips_a_lock_held_at_the_fork():
-    run_forked_while_held(store_module._LOCAL_RESULTS_LOCK, orm_store)
 
 
 # What a transaction wrote and cached, across its savepoints.
@@ -306,77 +190,81 @@ def test_cached_copy(conn):
     assert orm_transaction.cached(conn, "q") == (True, [1])
 
 
-# Leases and generation bumps around the writes of the ORM and raw SQL.
+# Generation bumps around the writes of the ORM and raw SQL.
 
 
-def leased():
-    """Whether a write holds a lease on the table of Test."""
-    return orm_store().generations(DEFAULT_DB_ALIAS, _table_keys(DEFAULT_DB_ALIAS, [Test._meta.db_table])) is None
+def generation():
+    """The generation of the table of Test."""
+    [current] = orm_store().generations(DEFAULT_DB_ALIAS, _table_keys(DEFAULT_DB_ALIAS, [Test._meta.db_table]))
+    return current
 
 
-def record_leases(mocker, method):
-    """Patch ``method`` of the connection to record whether Test is leased when it runs."""
+def record_generations(mocker, method):
+    """Patch ``method`` of the connection to record the generation of Test when it runs."""
     wrapper = connections[DEFAULT_DB_ALIAS]
     original = getattr(wrapper, method)
-    leases = []
+    generations = []
 
     def recording(*args, **kwargs):
-        leases.append(leased())
+        generations.append(generation())
         return original(*args, **kwargs)
 
     mocker.patch.object(wrapper, method, recording)
-    return leases
+    return generations
 
 
 @pytest.mark.django_db(transaction=True)
-def test_commit_holds_a_lease(mocker):
-    leases = record_leases(mocker, "_commit")
+def test_commit_is_bumped_before_and_after(mocker):
+    before = generation()
+    at_commit = record_generations(mocker, "_commit")
     with transaction.atomic():
         t = Test.objects.create(name="test")
         # Other connections use the cache until the transaction commits.
-        assert not leased()
-    assert leases == [True]
-    assert not leased()
+        assert generation() == before
+    [during] = at_commit
+    assert during != before
+    assert generation() != during
     assert_query_cached(Test.objects.all(), [t])
 
 
 @pytest.mark.django_db(transaction=True)
-def test_commit_without_writes_takes_no_lease(mocker):
-    leases = record_leases(mocker, "_commit")
+def test_commit_without_writes_bumps_nothing():
+    assert_query_cached(Test.objects.all())
     with transaction.atomic():
         list(Test.objects.all())
-    assert leases == [False]
+    assert_query_cached(Test.objects.all(), [], before=0)
 
 
 @pytest.mark.django_db(transaction=True)
-def test_rollback_takes_no_lease(mocker):
+def test_rollback_bumps_nothing():
     assert_query_cached(Test.objects.all())
-    leases = record_leases(mocker, "_rollback")
     with transaction.atomic():
         Test.objects.create(name="test")
         transaction.set_rollback(True)
-    assert leases == [False]
     # Nothing was committed, so the cached result stays valid.
     assert_query_cached(Test.objects.all(), [], before=0)
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.skipif(connection.vendor != "sqlite", reason="SQLite commits when autocommit is turned back on")
-def test_set_autocommit_holds_a_lease(mocker):
+def test_set_autocommit_is_bumped_before_and_after(mocker):
     assert_query_cached(Test.objects.all())
+    before = generation()
     transaction.set_autocommit(False)
     try:
         t = Test.objects.create(name="test")
     finally:
-        leases = record_leases(mocker, "_set_autocommit")
+        at_commit = record_generations(mocker, "_set_autocommit")
         transaction.set_autocommit(True)
-    assert leases == [True]
+    [during] = at_commit
+    assert during != before
+    assert generation() != during
     assert_query_cached(Test.objects.all(), [t])
 
 
 @pytest.mark.django_db(transaction=True)
-def test_failed_lease_aborts_the_write(mocker):
-    mocker.patch.object(type(orm_store()), "begin_write", side_effect=ConnectionError("cache down"))
+def test_failed_bump_aborts_the_write(mocker):
+    mocker.patch.object(type(orm_store()), "bump", side_effect=ConnectionError("cache down"))
     message = re.escape("Could not invalidate the ORM cache of ormtest_test in database 'default'")
     with pytest.raises(InvalidationError, match=message) as raised:
         Test.objects.create(name="autocommit")
@@ -388,9 +276,9 @@ def test_failed_lease_aborts_the_write(mocker):
 
 
 @pytest.mark.django_db(transaction=True)
-def test_failed_lease_while_disabled(mocker, caplog):
+def test_failed_bump_while_disabled(mocker, caplog):
     # Nothing is served from a disabled cache, so the write goes ahead.
-    mocker.patch.object(type(orm_store()), "begin_write", side_effect=ConnectionError("cache down"))
+    mocker.patch.object(type(orm_store()), "bump", side_effect=ConnectionError("cache down"))
     with override_orm_settings(ENABLED=False), caplog.at_level(logging.WARNING, logger="django_cachex.orm"):
         t = Test.objects.create(name="test")
     assert {record.name for record in caplog.records} == {"django_cachex.orm.api"}
@@ -398,17 +286,23 @@ def test_failed_lease_while_disabled(mocker, caplog):
 
 
 @pytest.mark.django_db(transaction=True)
-def test_failed_release(mocker, caplog):
-    # The unreleased lease blocks serving and storing until it expires.
-    mocker.patch.object(type(orm_store()), "end_write", side_effect=ConnectionError("cache down"))
-    with override_orm_settings(LEASE_TIMEOUT=0.5), caplog.at_level(logging.WARNING, logger="django_cachex.orm"):
+def test_failed_bump_after_the_write(mocker, caplog):
+    assert_query_cached(Test.objects.all(), [])
+    bump = type(orm_store()).bump
+    bumps = []
+
+    def first_bump_only(store, db_alias, table_keys):
+        bumps.append(table_keys)
+        if len(bumps) > 1:
+            raise ConnectionError("cache down")
+        bump(store, db_alias, table_keys)
+
+    mocker.patch.object(type(orm_store()), "bump", first_bump_only)
+    with caplog.at_level(logging.WARNING, logger="django_cachex.orm"):
         t = Test.objects.create(name="test")
-    released_at = time.monotonic() + 0.5
+    assert len(bumps) == 2
     assert {record.name for record in caplog.records} == {"django_cachex.orm.monkey_patch"}
-    assert leased()
-    assert_query_cached(Test.objects.all(), [t], after=1)
-    time.sleep(max(0.0, released_at - time.monotonic()) + 0.1)
-    assert not leased()
+    # The bump before the write already dropped the result cached before it.
     assert_query_cached(Test.objects.all(), [t])
 
 

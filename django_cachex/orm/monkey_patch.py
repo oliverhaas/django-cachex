@@ -6,7 +6,6 @@
 import logging
 import re
 import types
-import uuid
 from collections.abc import Callable, Iterable
 from functools import wraps
 from typing import Any
@@ -52,7 +51,7 @@ _SESSION_ISOLATION_RE = re.compile(r"default_transaction_isolation|session\s+cha
 # compiler's SQL alone.
 _COMPILING = "_cachex_orm_compiling"
 # Tables the write running on a connection covers, so a nested write to the
-# same tables does not take a second lease.
+# same tables does not bump them again.
 _WRITING = "_cachex_orm_writing"
 
 _NOTHING: frozenset[str] = frozenset()
@@ -101,7 +100,7 @@ def _read_shared(store: Store, db_alias: str, query_key: str, tables: set[str], 
     result, cachable = _execute(execute)
     if cachable and lookup.token is not None:
         try:
-            store.store(db_alias, query_key, table_keys, lookup.token, result, orm_settings.TIMEOUT)
+            store.store(db_alias, query_key, lookup.token, result, orm_settings.TIMEOUT)
         except Exception:
             logger.warning("Could not store a query result in the ORM cache.", exc_info=True)
     return result
@@ -152,17 +151,20 @@ def _patch_read(original: Callable[..., Any]) -> Callable[..., Any]:
     return execute_sql
 
 
-def _leased(connection: Any, tables: set[str], run: Callable[[], Any]) -> Any:
-    """Run ``run``, which writes to ``tables`` and commits, under a lease on them."""
+def _bumped(connection: Any, tables: set[str], run: Callable[[], Any]) -> Any:
+    """Run ``run``, which writes to ``tables`` and commits, between two bumps of their generations.
+
+    The bump after the commit drops the results read while the write ran. The one before keeps the write from
+    committing while the cache cannot be invalidated, and limits a lost second bump to those results.
+    """
     store = get_store(orm_settings.CACHE)
     if store is None:
         return run()
     db_alias = connection.alias
-    token = uuid.uuid4().hex
     try:
         # Inside the try, since atomic() rolls back a failed COMMIT on a DatabaseError like InvalidationError only.
         table_keys = _table_keys(db_alias, tables)
-        store.begin_write(db_alias, table_keys, token, orm_settings.LEASE_TIMEOUT)
+        store.bump(db_alias, table_keys)
     except Exception as e:  # noqa: BLE001
         message = f"Could not invalidate the ORM cache of {', '.join(sorted(tables))} in database {db_alias!r}"
         _invalidation_failed(e, message)
@@ -171,11 +173,11 @@ def _leased(connection: Any, tables: set[str], run: Callable[[], Any]) -> Any:
         return run()
     finally:
         try:
-            store.end_write(db_alias, table_keys, token)
+            store.bump(db_alias, table_keys)
         except Exception:
             logger.warning(
-                "Could not release the ORM cache lease on %s of database %r; their queries run against the "
-                "database until it expires.",
+                "Could not invalidate the ORM cache of %s in database %r after the write; results read while it "
+                "ran can be served until they expire.",
                 ", ".join(sorted(tables)),
                 db_alias,
                 exc_info=True,
@@ -200,7 +202,7 @@ def _write(connection: Any, tables: set[str], run: Callable[[], Any]) -> Any:
             finally:
                 transaction.mark_written(connection, tables)
         # Under autocommit the statement commits itself.
-        return _leased(connection, tables, run)
+        return _bumped(connection, tables, run)
     finally:
         setattr(connection, _WRITING, active)
 
@@ -251,7 +253,7 @@ def _patch_commit(original: Callable[..., Any]) -> Callable[..., Any]:
     def commit(connection: Any) -> None:
         tables = transaction.written(connection)
         if tables:
-            _leased(connection, tables, lambda: original(connection))
+            _bumped(connection, tables, lambda: original(connection))
         else:
             original(connection)
         transaction.reset(connection)
@@ -272,7 +274,7 @@ def _patch_set_autocommit(original: Callable[..., Any]) -> Callable[..., Any]:
         tables = transaction.written(connection)
         if tables:
             # SQLite commits a pending transaction when autocommit is turned on.
-            _leased(connection, tables, lambda: original(connection, autocommit, *args, **kwargs))
+            _bumped(connection, tables, lambda: original(connection, autocommit, *args, **kwargs))
         else:
             original(connection, autocommit, *args, **kwargs)
         transaction.reset(connection)

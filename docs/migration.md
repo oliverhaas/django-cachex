@@ -118,7 +118,6 @@ CACHEX_ORM = {
 | `CACHALOT_CACHE_RANDOM`, `CACHALOT_CACHE_ITERATORS`, `CACHALOT_INVALIDATE_RAW` | Removed. Random queries and the results of `iterator()` are never cached, and raw SQL writes always invalidate. |
 | `CACHALOT_QUERY_KEYGEN`, `CACHALOT_TABLE_KEYGEN` | `QUERY_KEYGEN`, `TABLE_KEYGEN`. They take keyword arguments, so a cachalot keygen needs adapting (see [Cache keys](user-guide/orm-cache.md#cache-keys)). The default query keys already start with their table names, and `__in` values are sorted before any keygen runs. Keys also go through the cache alias's `KEY_FUNCTION`. If it tells tenants apart, a write to a table they share invalidates only the writing tenant's results, so list shared tables in `UNCACHABLE_TABLES`. |
 | `CACHALOT_USE_UNSUPPORTED_DATABASE`, `CACHALOT_ADDITIONAL_SUPPORTED_DATABASES` | Removed. Only PostgreSQL and SQLite are cached. |
-| | `LEASE_TIMEOUT` has no cachalot counterpart (see [Failures](user-guide/orm-cache.md#failures)). |
 
 `CACHE` must name a django-cachex Redis or Valkey backend, or a `TrackingCache` over one. Its serializer must keep Python types, as the default pickle serializer does. Other backends cache nothing, apart from `LocMemCache` for tests and single processes (see [Caches and databases](user-guide/orm-cache.md#caches-and-databases)).
 
@@ -156,8 +155,8 @@ def order_totals():
 
 ### Behavior differences
 
-- Writes need the cache. A write that cannot take its lease raises `InvalidationError`, a `DatabaseError`, unless `ENABLED` is off (see [Failures](user-guide/orm-cache.md#failures)).
-- While a write commits, queries on its tables run against the database and leave no stale result behind (see [How invalidation works](user-guide/orm-cache.md#how-invalidation-works)).
+- Writes need the cache. A write that cannot invalidate its tables before it runs raises `InvalidationError`, a `DatabaseError`, unless `ENABLED` is off (see [Failures](user-guide/orm-cache.md#failures)).
+- A write invalidates its tables right before the statement or `COMMIT` and again right after it, before it returns or runs its `on_commit()` hooks. Results read while it ran can be served only until then, about one round trip after the commit (see [How invalidation works](user-guide/orm-cache.md#how-invalidation-works)). Cachalot invalidates before the statement under autocommit, so a read racing the write can keep the old rows cached until the next write, and in `atomic()` only after the `on_commit()` hooks (see [Races](reference/benchmarks.md#races)).
 - Subqueries count with their tables wherever they sit, and `Now()` anywhere in a query keeps it from being cached.
 - A MySQL alias in `DATABASES` is the error `cachex_orm.E006`, and `"supported_only"` leaves out replicas, the aliases with a `TEST["MIRROR"]`.
 - With psycopg2 instead of psycopg 3, queries with JSON, binary or range parameters are not cached.

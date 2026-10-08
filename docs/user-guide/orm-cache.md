@@ -30,7 +30,7 @@ Every process that writes to the database must run with the app installed.
 The ORM cache works with these cache backends:
 
 - The Redis and Valkey backends: standalone, Sentinel and Cluster on redis-py and valkey-py, standalone and Cluster on valkey-glide.
-- `TrackingCache` over one of them. Each process also keeps the results it read in a separate local LRU, bounded by the alias's `MAX_ENTRIES`. A local copy saves the transfer but not the round trip, and is never served after a write.
+- `TrackingCache` over one of them, which the ORM cache uses as if `CACHE` named its transport. It keeps no local copies of results.
 - `LocMemCache`, Django's or django-cachex's. It keeps everything in the process, so a write in one process does not invalidate the others. Use it for tests and single-process setups.
 
 Other backends, such as Memcached, `DatabaseCache` or Django's own `RedisCache`, cache nothing (`cachex_orm.W001`).
@@ -49,13 +49,12 @@ All settings live in the `CACHEX_ORM` dict, with upper-case keys. An unknown key
 | `CACHE` | `"default"` | Cache alias of the ORM cache. |
 | `DATABASES` | `"supported_only"` | Aliases whose queries are cached: `"supported_only"` for every PostgreSQL and SQLite alias except replicas (aliases with a `TEST["MIRROR"]`), or a list, tuple or set of aliases. |
 | `TIMEOUT` | the cache's default timeout | Seconds a result is kept. `None` keeps it until the cache evicts it, even after a write (see [Eviction](#eviction)). |
-| `LEASE_TIMEOUT` | `60` | Seconds a write's lease lasts if the write cannot release it (see [Failures](#failures)). |
 | `ONLY_CACHABLE_TABLES` | `()` | If set, only queries whose tables are all listed are cached. |
 | `UNCACHABLE_TABLES` | `()` | Queries reading one of these tables are not cached, and writes to them invalidate nothing. `django_migrations` is never cached. |
 | `ADDITIONAL_TABLES` | `()` | Tables no model covers, to look for in raw SQL. |
 | `FINAL_SQL_CHECK` | `False` | Also search the final SQL of every query for table names in double quotes, such as those in a `Func` template. |
 | `QUERY_KEYGEN` | `"django_cachex.orm.utils.readable_query_key"` | Callable, or its dotted path, that builds the key of a query's result (see [Cache keys](#cache-keys)). |
-| `TABLE_KEYGEN` | `"django_cachex.orm.utils.readable_table_key"` | Callable, or its dotted path, that builds the key of a table's generation and leases (see [Cache keys](#cache-keys)). |
+| `TABLE_KEYGEN` | `"django_cachex.orm.utils.readable_table_key"` | Callable, or its dotted path, that builds the key of a table's generation (see [Cache keys](#cache-keys)). |
 
 ## What is cached
 
@@ -78,20 +77,19 @@ The ORM cache does not search SQL you write for functions, so it caches a query 
 
 Every table has a generation in the cache, and every committed write to the table changes it. A result is stored with the generations of the tables it read and served only while all of them are unchanged.
 
-A write holds a lease on its tables around the statement under autocommit, or around the `COMMIT` inside a transaction. While a table is leased, queries on it are neither served from the cache nor stored in it. A query running during a write therefore cannot cache a result the write makes stale.
+A write changes the generations of its tables twice: right before the statement under autocommit, or before the `COMMIT` inside a transaction, and again right after it. The first change drops the results stored before the write, and a write whose first change fails does not run (see [Failures](#failures)). The second change drops the results that queries read while the write ran. Between the commit and the second change, about one round trip to the cache, other processes can still be served those results, which show the tables as they were before the write. The write returns, and its `on_commit()` hooks run, only after the second change, so queries that run after the write returns, in the same process or in a task it starts, get the new rows.
 
-A cached read costs one round trip to the cache and a miss two. A write under autocommit, or the commit of a transaction that wrote, also costs two. Outside a cluster, a read is a `MULTI`/`EXEC` instead of a Lua script, which saves the server CPU. It needs a second round trip while a write holds a lease on one of its tables, or under `TrackingCache` when the process's local copy of the result is outdated.
+A cached read costs one round trip to the cache, an `MGET` of the generations and the result, and a miss two. A write under autocommit, or the commit of a transaction that wrote, also costs two. Reads go to the primary even when the cache alias lists replicas, since a replica can lag behind a write. On a redis-py or valkey-py cluster, `read_from_replicas` or a `load_balancing_strategy` in the alias's `OPTIONS` sends them to replicas, which can serve the old rows until they have caught up with a write.
 
 ### Cache keys
 
-A result is stored under `orm:{<database alias>}:q:<query key>:<result type>`, the generation of a table under `orm:{<database alias>}:g:<table key>` and its leases under `orm:{<database alias>}:l:<table key>`, all under the cache alias's `KEY_PREFIX` and `VERSION`. The database alias is the hash tag, so on a cluster all keys of one database live on one shard. The keys name database aliases, not databases. Projects or environments sharing a cache server need distinct `KEY_PREFIX`es or database numbers, or each serves the results the other read.
+A result is stored under `orm:{<database alias>}:q:<query key>:<result type>` and the generation of a table under `orm:{<database alias>}:g:<table key>`, both under the cache alias's `KEY_PREFIX` and `VERSION`. The database alias is the hash tag, so on a cluster all keys of one database live on one shard. The keys name database aliases, not databases. Projects or environments sharing a cache server need distinct `KEY_PREFIX`es or database numbers, or each serves the results the other read.
 
 By default the query key is the sorted names of the tables the query reads, joined with `.`, then `:` and the SHA-1 digest of the database alias, SQL and parameters. Past 100 characters, the names that do not fit are left out and counted, as in `shop_customer.+3more`. The table key is the table name:
 
 ```text
 orm:{default}:q:shop_customer.shop_order:3f2a9c...:multi
 orm:{default}:g:shop_order
-orm:{default}:l:shop_order
 ```
 
 `QUERY_KEYGEN` and `TABLE_KEYGEN` take a callable, or its dotted path, that builds these keys instead. Both are called with keyword arguments and return a `str`:
@@ -145,7 +143,7 @@ The table keys stay the same in every schema, so a write to a table in one schem
 A write does not delete the results it invalidates, so they stay in the cache until they expire or are evicted. What a full Redis or Valkey server evicts depends on its `maxmemory-policy`:
 
 - `volatile-*` policies evict only keys with an expiry, which only results with a `TIMEOUT` have. Set a `TIMEOUT` with them, or they act like `noeviction`.
-- `allkeys-*` policies also evict generations, which is safe, and leases. An evicted lease acts like one that expired early (see [Failures](#failures)).
+- `allkeys-*` policies also evict generations, which is safe: an evicted generation comes back as a new value, which no stored result matches.
 - Under `noeviction`, the default, a full server refuses writes, so every database write to a cached table fails with `InvalidationError` until memory is freed.
 
 ## Transactions
@@ -156,11 +154,9 @@ The ORM cache reads the isolation level per connection, from the `isolation_leve
 
 ## Failures
 
-A write that cannot take its lease, for example because the cache server is down, raises `django_cachex.orm.exceptions.InvalidationError` before the statement or `COMMIT` runs. The error is a `DatabaseError`, so `atomic()` rolls the transaction back. To keep writing through a cache outage, set `CACHEX_ORM["ENABLED"] = False`. A write that cannot reach the cache then logs a warning and goes ahead. Run `invalidate_orm_cache` before enabling it again.
+A write that cannot change the generations of its tables before it runs, for example because the cache server is down, raises `django_cachex.orm.exceptions.InvalidationError` before the statement or `COMMIT` runs. The error is a `DatabaseError`, so `atomic()` rolls the transaction back. To keep writing through a cache outage, set `CACHEX_ORM["ENABLED"] = False`. A write that cannot reach the cache then logs a warning and goes ahead. Run `invalidate_orm_cache` before enabling it again.
 
-If a write cannot release its lease or its process dies, queries on its tables run against the database until the lease expires after `LEASE_TIMEOUT`. A failed release, lookup or store logs a warning to the `django_cachex.orm` logger and does not raise.
-
-`LEASE_TIMEOUT` must outlast the longest write statement and `COMMIT`. Keep it above the database's `statement_timeout`. A lease that expires while its write still runs lets another process store what it read before the commit. That result is served until the write releases the lease, or until the result expires if the release fails.
+If the change after the write fails, or the process dies between the commit and that change, results that other processes read while the write ran can be served until the next write to one of their tables or until they expire. A failed lookup or store, or a failed change after a write, logs a warning to the `django_cachex.orm` logger and does not raise.
 
 ## API
 
@@ -206,7 +202,6 @@ def open_order_total():
 
 Read the generations before computing the value, and name every table the computation reads. `table_generations()` returns `None` when a value computed now must not be cached:
 
-- While a write to one of the tables holds its lease.
 - When the ORM cache is disabled or would not cache a query of these tables.
 - Inside a transaction that has written one of the tables or reads a snapshot.
 
@@ -234,7 +229,6 @@ python manage.py invalidate_orm_cache shop.Order --cache default --db default
 | `cachex_orm.E005` | The cache could not be loaded. |
 | `cachex_orm.E006` | A database listed in `DATABASES` is neither PostgreSQL nor SQLite. It is not cached. |
 | `cachex_orm.E007` | A table setting is not a list, tuple or set, like `("django_session")` without its comma. The value counts as empty. |
-| `cachex_orm.E008` | `LEASE_TIMEOUT` is not a positive number of seconds. |
 
 ## Limits
 
@@ -245,4 +239,4 @@ python manage.py invalidate_orm_cache shop.Order --cache default --db default
 - Leave replicas out of `DATABASES`. Writes to the primary do not invalidate what was cached from a replica's alias.
 - A failover of the cache server can lose the latest generation changes, which makes stale results current again. Run `invalidate_orm_cache` after a failover.
 - Writes made while the app was uninstalled, a database was left out of `DATABASES` or `CACHE` named another alias did not invalidate the cache. Run `invalidate_orm_cache` before switching back.
-- `migrate` invalidates every model after applying a migration, and so does `flush`. Migrations take leases like any write, so they need the cache too, or `ENABLED` off followed by `invalidate_orm_cache`.
+- `migrate` invalidates every model after applying a migration, and so does `flush`. Migrations change generations like any write, so they need the cache too, or `ENABLED` off followed by `invalidate_orm_cache`.

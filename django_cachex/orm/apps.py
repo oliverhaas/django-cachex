@@ -5,7 +5,6 @@
 
 import copyreg
 import datetime
-import math
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -176,19 +175,6 @@ def check_table_settings(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:
         )
         for name in TABLE_SETTINGS
         if user_settings().get(name, ()).__class__ not in ITERABLES
-    ]
-
-
-@register(Tags.caches)
-def check_lease_timeout(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:  # noqa: ARG001
-    value = orm_settings.LEASE_TIMEOUT
-    if not isinstance(value, bool) and isinstance(value, int | float) and 0 < value < math.inf:
-        return []
-    return [
-        Error(
-            f"`{SETTING_NAME}['LEASE_TIMEOUT']` must be a positive number of seconds, not {value!r}.",
-            id="cachex_orm.E008",
-        ),
     ]
 
 

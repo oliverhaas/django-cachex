@@ -329,25 +329,6 @@ def test_keygen_that_is_not_a_callable(name, value):
         pass
 
 
-@pytest.mark.parametrize(
-    "value",
-    [
-        pytest.param(0, id="zero"),
-        pytest.param(float("inf"), id="infinite"),
-        pytest.param("60", id="str"),
-        pytest.param(True, id="bool"),
-    ],
-)
-def test_lease_timeout_that_is_not_a_positive_number(value):
-    with override_orm_settings(LEASE_TIMEOUT=value):
-        assert run_checks(tags=[Tags.caches]) == [
-            Error(
-                f"`CACHEX_ORM['LEASE_TIMEOUT']` must be a positive number of seconds, not {value!r}.",
-                id="cachex_orm.E008",
-            ),
-        ]
-
-
 def test_cache_checks():
     assert run_checks(tags=[Tags.caches]) == []
 

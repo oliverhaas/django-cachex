@@ -15,7 +15,6 @@ from django_cachex.orm.api import _table_keys
 from django_cachex.orm.settings import orm_settings
 from django_cachex.orm.store import LocMemStore, RespStore, _entry_key, _generation_key, get_store
 from django_cachex.orm.utils import _get_tables, query_key_and_tables
-from django_cachex.script import keys_only_pre
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -104,14 +103,5 @@ def corrupt_entry(queryset: Any) -> None:
             store.cache._cache[entry_key] = b"garbage"  # ty: ignore[unresolved-attribute]
         return
     assert isinstance(store, RespStore)
-    entry_key = _entry_key(queryset.db, query_key)
-    store.cache.eval_script(
-        "return redis.call('HSET', KEYS[1], 'v', ARGV[1])",
-        keys=[entry_key],
-        args=[b"garbage"],
-        pre_hook=keys_only_pre,
-    )
-    if store.local is not None:
-        local_key = store.cache.make_key(entry_key)
-        generations, _ = store.local.entries[local_key]
-        store.local.entries[local_key] = (generations, b"garbage")
+    entry_key = store.cache.make_and_validate_key(_entry_key(queryset.db, query_key))
+    store.cache.adapter.get_client(write=True).set(entry_key, b"garbage")

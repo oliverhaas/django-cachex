@@ -125,17 +125,20 @@ def test_table_generations_when_not_cached():
 
 
 def test_table_generations_during_a_write():
-    generations = []
+    before = table_generations(Test)
+    during = []
 
     def read_generations(execute, sql, params, many, context):
-        generations.append(table_generations(Test))
+        during.append(table_generations(Test))
         return execute(sql, params, many, context)
 
     with connection.execute_wrapper(read_generations):
         Test.objects.create(name="test2")
 
-    assert generations == [None]
-    assert table_generations(Test) is not None
+    # A value computed from the old rows during the write is cached under generations that change after it.
+    [during_write] = during
+    assert during_write != before
+    assert table_generations(Test) != during_write
 
 
 def test_table_generations_in_a_transaction():

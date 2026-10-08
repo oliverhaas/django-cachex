@@ -1,4 +1,4 @@
-"""Keys of cached results, generations and leases, and the keygens that name them."""
+"""Keys of cached results and generations, and the keygens that name them."""
 
 import pytest
 from django.contrib.auth.models import User

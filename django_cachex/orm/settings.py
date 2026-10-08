@@ -36,9 +36,6 @@ DEFAULTS: dict[str, Any] = {
     "DATABASES": SUPPORTED_ONLY,
     # The cache's own default timeout.
     "TIMEOUT": DEFAULT_TIMEOUT,
-    # Seconds a write keeps its lease if it cannot release it; keep it above
-    # the database's statement timeout.
-    "LEASE_TIMEOUT": 60,
     "ONLY_CACHABLE_TABLES": (),
     "UNCACHABLE_TABLES": (),
     "ADDITIONAL_TABLES": (),
@@ -120,7 +117,6 @@ class OrmSettings:
     CACHE: str
     DATABASES: frozenset[str]
     TIMEOUT: Any
-    LEASE_TIMEOUT: float
     ONLY_CACHABLE_TABLES: frozenset[str]
     UNCACHABLE_TABLES: frozenset[str]
     ADDITIONAL_TABLES: list[str]

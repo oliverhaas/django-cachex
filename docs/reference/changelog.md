@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Improvements
+
+- While a write ran, the ORM cache sent the queries on its tables to the database, so slow commits cost hits: with 2 ms commits, its hit ratio in the [benchmark](benchmarks.md#races) was 20 to 22 points below cachalot's, and is now 6 to 7 below. A write no longer leases its tables. It changes their generations right before the statement or `COMMIT` and again right after it, before it returns or runs its `on_commit()` hooks, and a hit is one `MGET`, on a cluster too. For about one round trip between the commit and the second change, other processes can still be served results read while the write ran (see [How invalidation works](../user-guide/orm-cache.md#how-invalidation-works)). `table_generations()` no longer returns `None` while another process writes one of the tables.
+- `CACHEX_ORM["LEASE_TIMEOUT"]` is gone, with its `cachex_orm.E008` check. Remove it after upgrading, or `cachex_orm.W004` reports it as unknown. Processes of 0.13.0 and 0.13.1 serve no stale result while they share the cache with newer ones, but they log a warning and run the query for each result a newer process stored. The lease keys they leave, `orm:{<database alias>}:l:<table key>`, can be deleted. A result is now stored as one value with its generations, which the admin's key page shows, and `TrackingCache` keeps no local copies of results.
+
 ### Fixes
 
 - The Valkey and Redis backends and `TrackingCache` issued Django's `CacheKeyWarning` for a key that memcached refuses, one longer than 250 characters or holding a space or a control character, though Valkey and Redis take any key up to 512 MB. They now skip the check, which also saves about 1 µs per key. `LocMemCache` skips it too, so that tests on it accept the same keys. `DatabaseCache` keeps it, since its table holds keys of up to 255 characters. To get the warning back, override `validate_key()` in a subclass to call `BaseCache.validate_key()`.
