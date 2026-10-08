@@ -1,0 +1,2394 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Valkey and Redis cache backend for Django, with a Django admin UI for cache inspection.">
+      
+      
+      
+        <link rel="canonical" href="https://oliverhaas.github.io/django-cachex/0.13.2/reference/benchmarks/">
+      
+      
+        <link rel="prev" href="../api/">
+      
+      
+        <link rel="next" href="../changelog/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Benchmarks - Django CacheX</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="red" data-md-color-accent="red">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#benchmarks" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Django CacheX" class="md-header__button md-logo" aria-label="Django CacheX" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Django CacheX
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Benchmarks
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="red" data-md-color-accent="red"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="red" data-md-color-accent="red"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/oliverhaas/django-cachex" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    oliverhaas/django-cachex
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Django CacheX" class="md-nav__button md-logo" aria-label="Django CacheX" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Django CacheX
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/oliverhaas/django-cachex" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    oliverhaas/django-cachex
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/admin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cache Admin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/async/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Async Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/advanced/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/serializers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serializers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/compression/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compression
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/sentinel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sentinel
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/composite-backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TrackingCache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/orm-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ORM Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sync-direct" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sync direct
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#serializers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Serializers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compressors-macro" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compressors (macro)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compressors-micro" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compressors (micro)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django-request-cycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Django request cycle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#async-serial" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Async serial
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#async-concurrent-50-in-flight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Async concurrent (50 in flight)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#asgi-full-stack" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ASGI full-stack
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#orm-cache-vs-django-cachalot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ORM cache vs django-cachalot
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ORM cache vs django-cachalot">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#correctness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Correctness
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#races" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Races
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clock-skew" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clock skew
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#speed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Speed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#network-delay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network delay
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reproducing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reproducing
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sync-direct" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sync direct
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#serializers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Serializers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compressors-macro" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compressors (macro)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compressors-micro" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compressors (micro)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django-request-cycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Django request cycle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#async-serial" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Async serial
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#async-concurrent-50-in-flight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Async concurrent (50 in flight)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#asgi-full-stack" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ASGI full-stack
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#orm-cache-vs-django-cachalot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ORM cache vs django-cachalot
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ORM cache vs django-cachalot">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#correctness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Correctness
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#races" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Races
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clock-skew" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clock skew
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#speed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Speed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#network-delay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network delay
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reproducing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reproducing
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="benchmarks">Benchmarks<a class="headerlink" href="#benchmarks" title="Permanent link">&para;</a></h1>
+<p>Numbers from the <a href="https://github.com/oliverhaas/django-cachex/tree/main/benchmarks"><code>benchmarks/</code></a> harness. They shift from run to
+run, so trust the ordering more than the exact values.</p>
+<h2 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h2>
+<ul>
+<li>AMD Ryzen 9 5950X (16C/32T) · 32 GiB RAM · Ubuntu 24.04 · Linux 7.0</li>
+<li>CPython 3.14.2 (GIL build), Django 6.1.1</li>
+<li>Redis 8 / Valkey 9 in local Docker, paired natively per adapter
+  (<code>redis-py</code> → redis, <code>valkey-py</code> / <code>valkey-glide</code> → valkey, <code>django (builtin)</code> → redis)</li>
+<li>Every round trip 250 µs longer than on the local Docker network, as within
+  a cloud availability zone</li>
+</ul>
+<p>Each column from <code>get</code> to <code>delete</code> is a phase of 1,000 calls, or 100 calls of
+10 keys for <code>mget</code> and <code>mset</code>. Throughput is in calls per second. A phase has
+10 timed runs after a warmup pass. The cached value pickles to ~150 B, except
+in the compressor benchmarks.</p>
+<h2 id="sync-direct">Sync direct<a class="headerlink" href="#sync-direct" title="Permanent link">&para;</a></h2>
+<p>Cache calls such as <code>cache.get(...)</code>, with no Django request and no asyncio.
+The round trip takes most of each call, so the django-cachex adapters land
+within 7% of each other. Django's built-in <code>RedisCache</code> builds a <code>redis.Redis</code>
+client for every call, about 40 µs, and its <code>incr</code> makes two round trips
+(<code>EXISTS</code>, then <code>INCRBY</code>).</p>
+<table>
+<thead>
+<tr>
+<th>Adapter</th>
+<th style="text-align: right;">get</th>
+<th style="text-align: right;">get-miss</th>
+<th style="text-align: right;">set</th>
+<th style="text-align: right;">mget</th>
+<th style="text-align: right;">mset</th>
+<th style="text-align: right;">incr</th>
+<th style="text-align: right;">delete</th>
+<th style="text-align: right;">py-mem KiB</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>redis-py</td>
+<td style="text-align: right;">2,789</td>
+<td style="text-align: right;">2,896</td>
+<td style="text-align: right;">2,782</td>
+<td style="text-align: right;">2,362</td>
+<td style="text-align: right;">2,213</td>
+<td style="text-align: right;">2,887</td>
+<td style="text-align: right;">2,879</td>
+<td style="text-align: right;">64</td>
+</tr>
+<tr>
+<td>redis-py+hiredis</td>
+<td style="text-align: right;">2,783</td>
+<td style="text-align: right;">2,887</td>
+<td style="text-align: right;">2,777</td>
+<td style="text-align: right;">2,391</td>
+<td style="text-align: right;">2,215</td>
+<td style="text-align: right;">2,901</td>
+<td style="text-align: right;">2,905</td>
+<td style="text-align: right;">36</td>
+</tr>
+<tr>
+<td>valkey-py</td>
+<td style="text-align: right;">2,869</td>
+<td style="text-align: right;">2,946</td>
+<td style="text-align: right;">2,883</td>
+<td style="text-align: right;">2,396</td>
+<td style="text-align: right;">2,301</td>
+<td style="text-align: right;">2,953</td>
+<td style="text-align: right;">2,953</td>
+<td style="text-align: right;">91</td>
+</tr>
+<tr>
+<td>valkey-py+libvalkey</td>
+<td style="text-align: right;">2,920</td>
+<td style="text-align: right;">2,990</td>
+<td style="text-align: right;">2,922</td>
+<td style="text-align: right;">2,535</td>
+<td style="text-align: right;">2,383</td>
+<td style="text-align: right;">2,989</td>
+<td style="text-align: right;">2,979</td>
+<td style="text-align: right;">31</td>
+</tr>
+<tr>
+<td>valkey-glide</td>
+<td style="text-align: right;">2,733</td>
+<td style="text-align: right;">2,837</td>
+<td style="text-align: right;">2,743</td>
+<td style="text-align: right;">2,337</td>
+<td style="text-align: right;">2,297</td>
+<td style="text-align: right;">2,840</td>
+<td style="text-align: right;">2,834</td>
+<td style="text-align: right;">29</td>
+</tr>
+<tr>
+<td>django (builtin)</td>
+<td style="text-align: right;">2,511</td>
+<td style="text-align: right;">2,535</td>
+<td style="text-align: right;">2,458</td>
+<td style="text-align: right;">2,227</td>
+<td style="text-align: right;">2,032</td>
+<td style="text-align: right;">1,366</td>
+<td style="text-align: right;">2,526</td>
+<td style="text-align: right;">50</td>
+</tr>
+</tbody>
+</table>
+<h2 id="serializers">Serializers<a class="headerlink" href="#serializers" title="Permanent link">&para;</a></h2>
+<p>The <code>valkey-py+libvalkey</code> adapter with each serializer.</p>
+<table>
+<thead>
+<tr>
+<th>Serializer</th>
+<th style="text-align: right;">get</th>
+<th style="text-align: right;">get-miss</th>
+<th style="text-align: right;">set</th>
+<th style="text-align: right;">mget</th>
+<th style="text-align: right;">mset</th>
+<th style="text-align: right;">incr</th>
+<th style="text-align: right;">delete</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>pickle</td>
+<td style="text-align: right;">2,906</td>
+<td style="text-align: right;">2,976</td>
+<td style="text-align: right;">2,924</td>
+<td style="text-align: right;">2,499</td>
+<td style="text-align: right;">2,383</td>
+<td style="text-align: right;">2,984</td>
+<td style="text-align: right;">2,980</td>
+</tr>
+<tr>
+<td>json</td>
+<td style="text-align: right;">2,883</td>
+<td style="text-align: right;">2,967</td>
+<td style="text-align: right;">2,861</td>
+<td style="text-align: right;">2,395</td>
+<td style="text-align: right;">2,215</td>
+<td style="text-align: right;">2,963</td>
+<td style="text-align: right;">2,962</td>
+</tr>
+<tr>
+<td>msgpack</td>
+<td style="text-align: right;">2,917</td>
+<td style="text-align: right;">2,982</td>
+<td style="text-align: right;">2,914</td>
+<td style="text-align: right;">2,551</td>
+<td style="text-align: right;">2,392</td>
+<td style="text-align: right;">2,981</td>
+<td style="text-align: right;">2,990</td>
+</tr>
+<tr>
+<td>orjson</td>
+<td style="text-align: right;">2,923</td>
+<td style="text-align: right;">2,984</td>
+<td style="text-align: right;">2,936</td>
+<td style="text-align: right;">2,573</td>
+<td style="text-align: right;">2,456</td>
+<td style="text-align: right;">2,987</td>
+<td style="text-align: right;">2,980</td>
+</tr>
+<tr>
+<td>ormsgpack</td>
+<td style="text-align: right;">2,921</td>
+<td style="text-align: right;">2,956</td>
+<td style="text-align: right;">2,897</td>
+<td style="text-align: right;">2,549</td>
+<td style="text-align: right;">2,368</td>
+<td style="text-align: right;">2,966</td>
+<td style="text-align: right;">2,957</td>
+</tr>
+</tbody>
+</table>
+<h2 id="compressors-macro">Compressors (macro)<a class="headerlink" href="#compressors-macro" title="Permanent link">&para;</a></h2>
+<p>Cache calls through <code>valkey-py+libvalkey</code> with <code>pickle</code>, on a 14 KiB
+queryset-shaped payload.</p>
+<table>
+<thead>
+<tr>
+<th>Compressor</th>
+<th style="text-align: right;">get</th>
+<th style="text-align: right;">get-miss</th>
+<th style="text-align: right;">set</th>
+<th style="text-align: right;">mget</th>
+<th style="text-align: right;">mset</th>
+<th style="text-align: right;">incr</th>
+<th style="text-align: right;">delete</th>
+<th style="text-align: right;">srv-mem KiB</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>none</td>
+<td style="text-align: right;">2,372</td>
+<td style="text-align: right;">2,976</td>
+<td style="text-align: right;">2,711</td>
+<td style="text-align: right;">918</td>
+<td style="text-align: right;">1,480</td>
+<td style="text-align: right;">2,988</td>
+<td style="text-align: right;">2,982</td>
+<td style="text-align: right;">1,269</td>
+</tr>
+<tr>
+<td>zlib</td>
+<td style="text-align: right;">2,495</td>
+<td style="text-align: right;">2,983</td>
+<td style="text-align: right;">2,195</td>
+<td style="text-align: right;">1,105</td>
+<td style="text-align: right;">680</td>
+<td style="text-align: right;">2,971</td>
+<td style="text-align: right;">2,981</td>
+<td style="text-align: right;">169</td>
+</tr>
+<tr>
+<td>gzip</td>
+<td style="text-align: right;">2,471</td>
+<td style="text-align: right;">2,988</td>
+<td style="text-align: right;">2,099</td>
+<td style="text-align: right;">1,027</td>
+<td style="text-align: right;">608</td>
+<td style="text-align: right;">2,980</td>
+<td style="text-align: right;">2,978</td>
+<td style="text-align: right;">169</td>
+</tr>
+<tr>
+<td>lzma</td>
+<td style="text-align: right;">2,384</td>
+<td style="text-align: right;">2,985</td>
+<td style="text-align: right;">682</td>
+<td style="text-align: right;">920</td>
+<td style="text-align: right;">88</td>
+<td style="text-align: right;">2,988</td>
+<td style="text-align: right;">2,982</td>
+<td style="text-align: right;">167</td>
+</tr>
+<tr>
+<td>lz4</td>
+<td style="text-align: right;">2,551</td>
+<td style="text-align: right;">2,987</td>
+<td style="text-align: right;">2,677</td>
+<td style="text-align: right;">1,181</td>
+<td style="text-align: right;">1,420</td>
+<td style="text-align: right;">2,986</td>
+<td style="text-align: right;">2,978</td>
+<td style="text-align: right;">238</td>
+</tr>
+<tr>
+<td>zstd</td>
+<td style="text-align: right;">2,532</td>
+<td style="text-align: right;">2,984</td>
+<td style="text-align: right;">2,563</td>
+<td style="text-align: right;">1,153</td>
+<td style="text-align: right;">1,190</td>
+<td style="text-align: right;">2,987</td>
+<td style="text-align: right;">2,984</td>
+<td style="text-align: right;">169</td>
+</tr>
+</tbody>
+</table>
+<h2 id="compressors-micro">Compressors (micro)<a class="headerlink" href="#compressors-micro" title="Permanent link">&para;</a></h2>
+<p><code>compress</code> and <code>decompress</code> alone on the same 14 KiB payload, with no
+adapter and no network.</p>
+<table>
+<thead>
+<tr>
+<th>Compressor</th>
+<th style="text-align: right;">output ratio</th>
+<th style="text-align: right;">compress (MB/s)</th>
+<th style="text-align: right;">decompress (MB/s)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>zlib</td>
+<td style="text-align: right;">11.9%</td>
+<td style="text-align: right;">155.4</td>
+<td style="text-align: right;">1,074.4</td>
+</tr>
+<tr>
+<td>gzip</td>
+<td style="text-align: right;">11.8%</td>
+<td style="text-align: right;">128.4</td>
+<td style="text-align: right;">766.2</td>
+</tr>
+<tr>
+<td>lzma</td>
+<td style="text-align: right;">11.4%</td>
+<td style="text-align: right;">12.2</td>
+<td style="text-align: right;">419.3</td>
+</tr>
+<tr>
+<td>lz4</td>
+<td style="text-align: right;">16.6%</td>
+<td style="text-align: right;">2,511.6</td>
+<td style="text-align: right;">6,163.5</td>
+</tr>
+<tr>
+<td>zstd</td>
+<td style="text-align: right;">11.4%</td>
+<td style="text-align: right;">676.4</td>
+<td style="text-align: right;">1,695.5</td>
+</tr>
+</tbody>
+</table>
+<h2 id="django-request-cycle">Django request cycle<a class="headerlink" href="#django-request-cycle" title="Permanent link">&para;</a></h2>
+<p>The sync direct workload, with every cache call inside <code>Client().get(url)</code>
+(URL resolve → <code>CommonMiddleware</code> → view → <code>request_finished</code>). The gap to
+sync direct is Django's per-request overhead, about 115 µs here.</p>
+<table>
+<thead>
+<tr>
+<th>Adapter</th>
+<th style="text-align: right;">get</th>
+<th style="text-align: right;">get-miss</th>
+<th style="text-align: right;">set</th>
+<th style="text-align: right;">mget</th>
+<th style="text-align: right;">mset</th>
+<th style="text-align: right;">incr</th>
+<th style="text-align: right;">delete</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>redis-py</td>
+<td style="text-align: right;">2,105</td>
+<td style="text-align: right;">2,168</td>
+<td style="text-align: right;">2,090</td>
+<td style="text-align: right;">1,854</td>
+<td style="text-align: right;">1,738</td>
+<td style="text-align: right;">2,010</td>
+<td style="text-align: right;">2,081</td>
+</tr>
+<tr>
+<td>redis-py+hiredis</td>
+<td style="text-align: right;">2,150</td>
+<td style="text-align: right;">2,215</td>
+<td style="text-align: right;">2,142</td>
+<td style="text-align: right;">1,900</td>
+<td style="text-align: right;">1,806</td>
+<td style="text-align: right;">2,058</td>
+<td style="text-align: right;">2,097</td>
+</tr>
+<tr>
+<td>valkey-py</td>
+<td style="text-align: right;">2,184</td>
+<td style="text-align: right;">2,235</td>
+<td style="text-align: right;">2,191</td>
+<td style="text-align: right;">1,902</td>
+<td style="text-align: right;">1,803</td>
+<td style="text-align: right;">2,072</td>
+<td style="text-align: right;">2,246</td>
+</tr>
+<tr>
+<td>valkey-py+libvalkey</td>
+<td style="text-align: right;">2,201</td>
+<td style="text-align: right;">2,257</td>
+<td style="text-align: right;">2,205</td>
+<td style="text-align: right;">1,963</td>
+<td style="text-align: right;">1,862</td>
+<td style="text-align: right;">2,084</td>
+<td style="text-align: right;">2,236</td>
+</tr>
+<tr>
+<td>valkey-glide</td>
+<td style="text-align: right;">2,079</td>
+<td style="text-align: right;">2,126</td>
+<td style="text-align: right;">2,054</td>
+<td style="text-align: right;">1,823</td>
+<td style="text-align: right;">1,791</td>
+<td style="text-align: right;">1,974</td>
+<td style="text-align: right;">2,106</td>
+</tr>
+<tr>
+<td>django (builtin)</td>
+<td style="text-align: right;">1,955</td>
+<td style="text-align: right;">1,987</td>
+<td style="text-align: right;">1,934</td>
+<td style="text-align: right;">1,778</td>
+<td style="text-align: right;">1,647</td>
+<td style="text-align: right;">1,126</td>
+<td style="text-align: right;">1,875</td>
+</tr>
+</tbody>
+</table>
+<h2 id="async-serial">Async serial<a class="headerlink" href="#async-serial" title="Permanent link">&para;</a></h2>
+<p>One awaited call at a time, such as <code>await cache.aget(...)</code>. The gap to sync
+direct is asyncio loop overhead. Django's built-in <code>RedisCache</code> has no native
+async path, so it also pays for <code>sync_to_async</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Adapter</th>
+<th style="text-align: right;">get</th>
+<th style="text-align: right;">get-miss</th>
+<th style="text-align: right;">set</th>
+<th style="text-align: right;">mget</th>
+<th style="text-align: right;">mset</th>
+<th style="text-align: right;">incr</th>
+<th style="text-align: right;">delete</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>redis-py</td>
+<td style="text-align: right;">2,709</td>
+<td style="text-align: right;">2,805</td>
+<td style="text-align: right;">2,666</td>
+<td style="text-align: right;">2,316</td>
+<td style="text-align: right;">1,924</td>
+<td style="text-align: right;">2,793</td>
+<td style="text-align: right;">2,787</td>
+</tr>
+<tr>
+<td>redis-py+hiredis</td>
+<td style="text-align: right;">2,684</td>
+<td style="text-align: right;">2,774</td>
+<td style="text-align: right;">2,662</td>
+<td style="text-align: right;">2,335</td>
+<td style="text-align: right;">1,889</td>
+<td style="text-align: right;">2,776</td>
+<td style="text-align: right;">2,790</td>
+</tr>
+<tr>
+<td>valkey-py</td>
+<td style="text-align: right;">2,678</td>
+<td style="text-align: right;">2,768</td>
+<td style="text-align: right;">2,675</td>
+<td style="text-align: right;">2,318</td>
+<td style="text-align: right;">1,997</td>
+<td style="text-align: right;">2,756</td>
+<td style="text-align: right;">2,746</td>
+</tr>
+<tr>
+<td>valkey-py+libvalkey</td>
+<td style="text-align: right;">2,670</td>
+<td style="text-align: right;">2,762</td>
+<td style="text-align: right;">2,671</td>
+<td style="text-align: right;">2,318</td>
+<td style="text-align: right;">2,006</td>
+<td style="text-align: right;">2,766</td>
+<td style="text-align: right;">2,759</td>
+</tr>
+<tr>
+<td>valkey-glide</td>
+<td style="text-align: right;">2,615</td>
+<td style="text-align: right;">2,699</td>
+<td style="text-align: right;">2,619</td>
+<td style="text-align: right;">2,247</td>
+<td style="text-align: right;">2,202</td>
+<td style="text-align: right;">2,695</td>
+<td style="text-align: right;">2,680</td>
+</tr>
+<tr>
+<td>django (builtin)</td>
+<td style="text-align: right;">2,005</td>
+<td style="text-align: right;">2,031</td>
+<td style="text-align: right;">1,999</td>
+<td style="text-align: right;">1,826</td>
+<td style="text-align: right;">1,689</td>
+<td style="text-align: right;">1,205</td>
+<td style="text-align: right;">2,021</td>
+</tr>
+</tbody>
+</table>
+<h2 id="async-concurrent-50-in-flight">Async concurrent (50 in flight)<a class="headerlink" href="#async-concurrent-50-in-flight" title="Permanent link">&para;</a></h2>
+<p><code>asyncio.gather</code> of 50 calls at a time. redis-py and valkey-py open a
+connection per call in flight, and valkey-glide sends them all over one.
+Django's built-in <code>RedisCache</code> runs every call through <code>sync_to_async</code> on one
+thread, so it serves 50 in flight about as fast as one at a time. Connection
+counts, which include the harness's own, stay flat between phases on every
+adapter (<code>Δ = 0</code>).</p>
+<table>
+<thead>
+<tr>
+<th>Adapter</th>
+<th style="text-align: right;">get</th>
+<th style="text-align: right;">get-miss</th>
+<th style="text-align: right;">set</th>
+<th style="text-align: right;">mget</th>
+<th style="text-align: right;">mset</th>
+<th style="text-align: right;">incr</th>
+<th style="text-align: right;">delete</th>
+<th style="text-align: right;">conns peak</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>redis-py</td>
+<td style="text-align: right;">16,411</td>
+<td style="text-align: right;">18,362</td>
+<td style="text-align: right;">15,447</td>
+<td style="text-align: right;">8,937</td>
+<td style="text-align: right;">5,466</td>
+<td style="text-align: right;">18,488</td>
+<td style="text-align: right;">18,481</td>
+<td style="text-align: right;">51</td>
+</tr>
+<tr>
+<td>redis-py+hiredis</td>
+<td style="text-align: right;">16,885</td>
+<td style="text-align: right;">18,484</td>
+<td style="text-align: right;">15,476</td>
+<td style="text-align: right;">8,678</td>
+<td style="text-align: right;">5,383</td>
+<td style="text-align: right;">18,569</td>
+<td style="text-align: right;">18,543</td>
+<td style="text-align: right;">51</td>
+</tr>
+<tr>
+<td>valkey-py</td>
+<td style="text-align: right;">20,514</td>
+<td style="text-align: right;">22,735</td>
+<td style="text-align: right;">20,088</td>
+<td style="text-align: right;">10,133</td>
+<td style="text-align: right;">6,427</td>
+<td style="text-align: right;">22,510</td>
+<td style="text-align: right;">22,838</td>
+<td style="text-align: right;">51</td>
+</tr>
+<tr>
+<td>valkey-py+libvalkey</td>
+<td style="text-align: right;">20,541</td>
+<td style="text-align: right;">22,882</td>
+<td style="text-align: right;">20,318</td>
+<td style="text-align: right;">10,108</td>
+<td style="text-align: right;">6,430</td>
+<td style="text-align: right;">22,563</td>
+<td style="text-align: right;">23,058</td>
+<td style="text-align: right;">51</td>
+</tr>
+<tr>
+<td>valkey-glide</td>
+<td style="text-align: right;">43,804</td>
+<td style="text-align: right;">47,758</td>
+<td style="text-align: right;">33,133</td>
+<td style="text-align: right;">13,296</td>
+<td style="text-align: right;">10,043</td>
+<td style="text-align: right;">50,684</td>
+<td style="text-align: right;">49,981</td>
+<td style="text-align: right;">2</td>
+</tr>
+<tr>
+<td>django (builtin)</td>
+<td style="text-align: right;">2,244</td>
+<td style="text-align: right;">2,281</td>
+<td style="text-align: right;">2,220</td>
+<td style="text-align: right;">2,000</td>
+<td style="text-align: right;">1,863</td>
+<td style="text-align: right;">1,292</td>
+<td style="text-align: right;">2,188</td>
+<td style="text-align: right;">2</td>
+</tr>
+</tbody>
+</table>
+<h2 id="asgi-full-stack">ASGI full-stack<a class="headerlink" href="#asgi-full-stack" title="Permanent link">&para;</a></h2>
+<p><code>granian</code> (4 workers) and <code>httpx</code> (100 concurrent clients, 20 s) against a
+view that makes six async cache calls per request. The harness samples server
+RSS and <code>connected_clients</code> every 5 s, and the connection counts include about
+5 of its own. The req/s column is noisy, so read it in rough buckets: 500 to
+600 for the django-cachex adapters, 350 for Django's built-in <code>RedisCache</code>.</p>
+<p>Under ASGI, Django gives every request its own instance of a cache backend.
+The built-in <code>RedisCache</code> builds a connection pool for each instance, and its
+<code>close()</code> leaves the pool open, so its connections climb until the garbage
+collector frees the pools.</p>
+<table>
+<thead>
+<tr>
+<th>Adapter</th>
+<th style="text-align: right;">req/s</th>
+<th style="text-align: right;">avg ms</th>
+<th style="text-align: right;">p99 ms</th>
+<th style="text-align: right;">RSS peak (MiB)</th>
+<th style="text-align: right;">conns peak</th>
+<th style="text-align: right;">conns settled</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>redis-py</td>
+<td style="text-align: right;">487</td>
+<td style="text-align: right;">204.4</td>
+<td style="text-align: right;">1,522.8</td>
+<td style="text-align: right;">364</td>
+<td style="text-align: right;">105</td>
+<td style="text-align: right;">105</td>
+</tr>
+<tr>
+<td>redis-py+hiredis</td>
+<td style="text-align: right;">597</td>
+<td style="text-align: right;">167.1</td>
+<td style="text-align: right;">1,270.4</td>
+<td style="text-align: right;">368</td>
+<td style="text-align: right;">105</td>
+<td style="text-align: right;">105</td>
+</tr>
+<tr>
+<td>valkey-py</td>
+<td style="text-align: right;">613</td>
+<td style="text-align: right;">162.6</td>
+<td style="text-align: right;">1,317.0</td>
+<td style="text-align: right;">369</td>
+<td style="text-align: right;">104</td>
+<td style="text-align: right;">104</td>
+</tr>
+<tr>
+<td>valkey-py+libvalkey</td>
+<td style="text-align: right;">563</td>
+<td style="text-align: right;">177.0</td>
+<td style="text-align: right;">1,383.5</td>
+<td style="text-align: right;">368</td>
+<td style="text-align: right;">104</td>
+<td style="text-align: right;">104</td>
+</tr>
+<tr>
+<td>valkey-glide</td>
+<td style="text-align: right;">500</td>
+<td style="text-align: right;">199.2</td>
+<td style="text-align: right;">1,451.1</td>
+<td style="text-align: right;">425</td>
+<td style="text-align: right;">8</td>
+<td style="text-align: right;">8</td>
+</tr>
+<tr>
+<td>django (builtin)</td>
+<td style="text-align: right;">355</td>
+<td style="text-align: right;">279.6</td>
+<td style="text-align: right;">1,769.4</td>
+<td style="text-align: right;">459</td>
+<td style="text-align: right;">1,371</td>
+<td style="text-align: right;">180</td>
+</tr>
+</tbody>
+</table>
+<h2 id="orm-cache-vs-django-cachalot">ORM cache vs django-cachalot<a class="headerlink" href="#orm-cache-vs-django-cachalot" title="Permanent link">&para;</a></h2>
+<p>The <a href="../../user-guide/orm-cache/">ORM cache</a> derives from django-cachalot 2.9.1.
+The contenders are the database alone (<code>none</code>), <code>cachalot</code>, the ORM cache
+(<code>cachex</code>), and both over a
+<a href="../../user-guide/composite-backends/"><code>TrackingCache</code></a> (<code>+tracking</code>), which
+keeps local copies of what each process read.</p>
+<ul>
+<li>The machine above, with CPython 3.14.2 (free-threaded build, with the GIL
+  that libvalkey turns back on), Django 6.1.1, psycopg 3.3.6</li>
+<li>PostgreSQL 18 with <code>fsync=off</code> and Valkey 9 in local Docker, both libraries
+  on the <code>valkey-py+libvalkey</code> backend</li>
+<li>The same 250 µs added to every round trip, except in the clock skew runs</li>
+</ul>
+<h3 id="correctness">Correctness<a class="headerlink" href="#correctness" title="Permanent link">&para;</a></h3>
+<p>Twelve cases where a cached result can differ from the database, each checked
+against an uncached read. They are the known differences between the two
+libraries, not a sample of typical queries. Cachalot got all 12 wrong, the ORM
+cache none:</p>
+<ul>
+<li>A read while an autocommit <code>UPDATE</code> runs, and one by a process that an
+  <code>on_commit()</code> hook hands the new row to. Cachalot invalidates before an
+  autocommit statement runs, and in <code>atomic()</code> only after every hook has run.</li>
+<li>A subquery or <code>Now()</code> nested in a <code>filter()</code> expression, and
+  <code>order_by(Random())</code>. Cachalot looks for subqueries and <code>Now()</code> only as a
+  filter's direct operands, and refuses <code>order_by("?")</code> but not <code>Random()</code>.</li>
+<li>Two JSON filter values of the same length that agree in their first 35
+  characters. Cachalot's cache key holds each parameter's <code>str()</code>, which
+  psycopg 3 shortens to those characters and the length.</li>
+<li><code>DB_CASCADE</code> deletes, raw <code>TRUNCATE</code>, raw <code>REFRESH MATERIALIZED VIEW</code>, and
+  raw writes to a mixed-case or unmanaged table. Cachalot doesn't invalidate
+  every table these change.</li>
+<li>Reads in a <code>REPEATABLE READ</code> transaction from its old snapshot, which
+  cachalot stores in the shared cache at the commit.</li>
+</ul>
+<p><code>CACHALOT_FINAL_SQL_CHECK = True</code> and listing the unmanaged table in
+<code>CACHALOT_ADDITIONAL_TABLES</code> fix 2 of the 12.</p>
+<h3 id="races">Races<a class="headerlink" href="#races" title="Permanent link">&para;</a></h3>
+<p>Four reader processes read a counter row while a writer updates it 500 times,
+at random times 10 ms apart on average. A read is stale if it returns a
+version older than one committed before the read began. Stale reads per
+1,000, where the ORM cache column covers it with and without a
+<code>TrackingCache</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th style="text-align: right;">cachalot</th>
+<th style="text-align: right;">cachalot+tracking</th>
+<th style="text-align: right;">ORM cache</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Autocommit</td>
+<td style="text-align: right;">121</td>
+<td style="text-align: right;">482</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td>Autocommit, commits 2 ms slower</td>
+<td style="text-align: right;">753</td>
+<td style="text-align: right;">597</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td><code>atomic()</code></td>
+<td style="text-align: right;">7.2</td>
+<td style="text-align: right;">499</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td><code>atomic()</code>, 1 ms of later <code>on_commit()</code> hooks</td>
+<td style="text-align: right;">116</td>
+<td style="text-align: right;">578</td>
+<td style="text-align: right;">0</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Under autocommit, cachalot invalidates before the statement runs, so a read
+  before the commit stores the old row as newer than the write. The cache
+  serves it until the next write: cachalot hid 134 in 1,000 writes that way,
+  and with slower commits 995. Writes in quick succession, as in a
+  loop of updates, make it worse, since a raced read can store its old row
+  after the next write's invalidation too.</li>
+<li>In <code>atomic()</code>, cachalot invalidates only after all <code>on_commit()</code> hooks have
+  run, so a process that a hook hands the new row to, say through a task
+  queue, can get the old one. It also invalidates in two steps a round trip
+  apart, and until the second it can serve a row read before the commit.</li>
+<li><code>cachalot+tracking</code> serves hits from the process's memory. The thread that
+  evicts a copy after a write needs the GIL, and readers that never pause
+  make it wait up to 5 ms. At a read every 1 ms, it served 46 stale reads per
+  1,000.</li>
+<li>The ORM cache changes a table's generation right before and right after
+  each write, and after each change, reads miss until one of them has stored
+  the result again. That costs it 5 to 7 points of hit ratio against
+  cachalot, with slower commits too. Between the commit and the second
+  change, about one round trip, it can still serve the old row. The writer
+  announces each version after that change, as code running after the write
+  or in an <code>on_commit()</code> hook would, so these runs count no read in that
+  window as stale.</li>
+</ul>
+<h3 id="clock-skew">Clock skew<a class="headerlink" href="#clock-skew" title="Permanent link">&para;</a></h3>
+<p>Cachalot stamps results and invalidations with the <code>time.time()</code> of the
+process that makes them. If a reader's clock runs ahead by Δ, a result it
+stores right after a write outlives every write in the next Δ. With writes at
+random times and λ = Δ / mean time between writes, that hides λ / (1 + λ) of
+the writes. Runs with Δ from 2 to 60 ms came within 34 per 1,000 of that.
+Hidden writes per 1,000, by how far the reader's clock runs ahead and how
+often the table is written:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Skew</th>
+<th style="text-align: right;">Write every 1 s</th>
+<th style="text-align: right;">1 min</th>
+<th style="text-align: right;">15 min</th>
+<th style="text-align: right;">1 h</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">10 ms</td>
+<td style="text-align: right;">9.9</td>
+<td style="text-align: right;">0.17</td>
+<td style="text-align: right;">0.011</td>
+<td style="text-align: right;">0.003</td>
+</tr>
+<tr>
+<td style="text-align: right;">100 ms</td>
+<td style="text-align: right;">91</td>
+<td style="text-align: right;">1.7</td>
+<td style="text-align: right;">0.11</td>
+<td style="text-align: right;">0.028</td>
+</tr>
+<tr>
+<td style="text-align: right;">1 s</td>
+<td style="text-align: right;">500</td>
+<td style="text-align: right;">16</td>
+<td style="text-align: right;">1.1</td>
+<td style="text-align: right;">0.28</td>
+</tr>
+<tr>
+<td style="text-align: right;">10 s</td>
+<td style="text-align: right;">909</td>
+<td style="text-align: right;">143</td>
+<td style="text-align: right;">11</td>
+<td style="text-align: right;">2.8</td>
+</tr>
+</tbody>
+</table>
+<p>A hidden write stays hidden until the table's next write after the skew has
+passed. A writer's clock ahead costs only hits, keeping e^(−λ) of them, which
+the runs matched within 1.3 points: 1 s against a write every minute loses
+under 2%. The ORM cache keeps a generation per table on the cache server and
+reads no clock. With either clock 40 ms ahead, it hid no write.</p>
+<h3 id="speed">Speed<a class="headerlink" href="#speed" title="Permanent link">&para;</a></h3>
+<p>Median latency in µs over 2,000 calls. For <code>none</code>, the hit and the miss are
+the query alone.</p>
+<table>
+<thead>
+<tr>
+<th>Contender</th>
+<th style="text-align: right;">Hit</th>
+<th style="text-align: right;">Miss</th>
+<th style="text-align: right;">Autocommit write</th>
+<th style="text-align: right;"><code>atomic()</code> write</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>none</td>
+<td style="text-align: right;">537</td>
+<td style="text-align: right;">590</td>
+<td style="text-align: right;">553</td>
+<td style="text-align: right;">1,218</td>
+</tr>
+<tr>
+<td>cachalot</td>
+<td style="text-align: right;">497</td>
+<td style="text-align: right;">1,425</td>
+<td style="text-align: right;">969</td>
+<td style="text-align: right;">2,012</td>
+</tr>
+<tr>
+<td>cachex</td>
+<td style="text-align: right;">513</td>
+<td style="text-align: right;">1,468</td>
+<td style="text-align: right;">1,302</td>
+<td style="text-align: right;">2,004</td>
+</tr>
+<tr>
+<td>cachalot+tracking</td>
+<td style="text-align: right;">131</td>
+<td style="text-align: right;">1,489</td>
+<td style="text-align: right;">1,003</td>
+<td style="text-align: right;">2,090</td>
+</tr>
+<tr>
+<td>cachex+tracking</td>
+<td style="text-align: right;">499</td>
+<td style="text-align: right;">1,426</td>
+<td style="text-align: right;">1,320</td>
+<td style="text-align: right;">2,004</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>A hit takes a round trip, as the query does, so it saves only the
+  database's work. A hit on one row takes about 90% of the query's time, on
+  100 rows about half, and on 1,000 rows about a quarter.</li>
+<li>The ORM cache's hits take at most 16 µs longer than cachalot's. Its
+  autocommit writes make two round trips to Valkey, one before the statement
+  and one after, where cachalot makes one.</li>
+<li><code>cachalot+tracking</code> serves hits from memory in about a quarter of the time,
+  which is also what makes its reads stale. The ORM cache keeps no local
+  copies, so over a <code>TrackingCache</code> it reads from the server as well.</li>
+<li>In a mixed workload of 100-row reads by one of 20 queries, the caches serve
+  about 1.5 times the database's throughput at 1% writes, and
+  <code>cachalot+tracking</code> twice. At 10% writes they serve about a fifth less,
+  since every write makes the cached queries on its table miss, and a miss
+  takes three round trips.</li>
+<li>A <code>migrate</code> with nothing to apply emptied cachalot's cache of 100 queries
+  and left the ORM cache's intact.</li>
+</ul>
+<h3 id="network-delay">Network delay<a class="headerlink" href="#network-delay" title="Permanent link">&para;</a></h3>
+<p>The same runs with no added delay and with 1 ms. Without delay, a round trip
+takes about 60 µs to Valkey and 80 µs to PostgreSQL. A hit saves the
+database's work but not the round trip, so with delay it saves less: at 1 ms,
+cachalot's one-row hit took 95% of the query's time, against 82% without
+delay. A race lasts a few round trips, so with delay more reads fall in one.
+Cachalot's results, and the ORM cache's hit ratio in the last row:</p>
+<table>
+<thead>
+<tr>
+<th>Result</th>
+<th style="text-align: right;">No delay</th>
+<th style="text-align: right;">250 µs</th>
+<th style="text-align: right;">1 ms</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Throughput at 1% writes, × the database's</td>
+<td style="text-align: right;">1.9</td>
+<td style="text-align: right;">1.6</td>
+<td style="text-align: right;">1.2</td>
+</tr>
+<tr>
+<td>Throughput at 10% writes, × the database's</td>
+<td style="text-align: right;">0.95</td>
+<td style="text-align: right;">0.79</td>
+<td style="text-align: right;">0.63</td>
+</tr>
+<tr>
+<td>Stale reads per 1,000, autocommit</td>
+<td style="text-align: right;">94</td>
+<td style="text-align: right;">121</td>
+<td style="text-align: right;">240</td>
+</tr>
+<tr>
+<td>Stale reads per 1,000, <code>atomic()</code></td>
+<td style="text-align: right;">0.26</td>
+<td style="text-align: right;">7.2</td>
+<td style="text-align: right;">88</td>
+</tr>
+<tr>
+<td>Hit ratio at a read every 1 ms</td>
+<td style="text-align: right;">94%</td>
+<td style="text-align: right;">90%</td>
+<td style="text-align: right;">83%</td>
+</tr>
+<tr>
+<td>Hit ratio at a read every 1 ms, ORM cache</td>
+<td style="text-align: right;">92%</td>
+<td style="text-align: right;">85%</td>
+<td style="text-align: right;">64%</td>
+</tr>
+</tbody>
+</table>
+<p>The ORM cache's throughput stayed within 3% of cachalot's, and these runs
+counted no stale read at any delay. Its hit ratio falls faster: reads miss
+from a write's first change until one of them has stored the result after the
+second, a span of several round trips that grows with the delay.</p>
+<h2 id="reproducing">Reproducing<a class="headerlink" href="#reproducing" title="Permanent link">&para;</a></h2>
+<p>The harness starts its own Redis, Valkey and PostgreSQL containers, so a
+Docker daemon is the only host requirement:</p>
+<div class="language-console highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="gp"># </span>Everything,<span class="w"> </span>with<span class="w"> </span><span class="m">250</span><span class="w"> </span>µs<span class="w"> </span>added<span class="w"> </span>to<span class="w"> </span>every<span class="w"> </span>round<span class="w"> </span>trip
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="go">BENCH_NET_DELAY_US=250 uv run pytest benchmarks/ -c benchmarks/pytest.ini</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="gp"># </span>A<span class="w"> </span>single<span class="w"> </span>slice
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="go">uv run pytest benchmarks/test_throughput.py::test_adapters_sync \</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="go">  -c benchmarks/pytest.ini</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="gp"># </span>The<span class="w"> </span>ORM<span class="w"> </span>cache<span class="w"> </span>comparison<span class="w"> </span>alone
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="go">BENCH_NET_DELAY_US=250 uv run pytest benchmarks/test_orm.py \</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="go">  -c benchmarks/pytest.ini</span>
+</span></code></pre></div>
+<p><code>benchmarks/README.md</code> lists the slices, the knobs (<code>N_OPS</code>, <code>K_RUNS</code>,
+<code>WARMUP_KEYS</code>, <code>MGET_BATCH</code>) and the full methodology. <code>BENCH_NET_DELAY_US</code>
+delays everything the server containers send, using <code>tc netem</code> from a helper
+container, so it needs no host privileges.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.sections", "navigation.expand", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
