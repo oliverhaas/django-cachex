@@ -69,7 +69,7 @@ These are not cached:
 - Queries holding an expression without `get_source_expressions()`.
 - Queries with a parameter the cache key cannot represent exactly, such as JSON, binary and range parameters under psycopg2.
 - Raw SQL through `cursor.execute()` and `Manager.raw()`.
-- Inside a transaction, queries reading a table it has written, unless it reads a snapshot (see [Transactions](#transactions)).
+- Inside a transaction, queries reading a table it has written.
 
 The ORM cache does not search SQL you write for functions, so it caches a query with `RawSQL("now()")` or `Func(function="NOW")`. Run such queries inside [`orm_cache_disabled()`](#orm_cache_disabled).
 
@@ -148,9 +148,20 @@ A write does not delete the results it invalidates, so they stay in the cache un
 
 ## Transactions
 
-`READ COMMITTED`, PostgreSQL's default, and SQLite's default rollback journal let a transaction use the shared cache. Under `REPEATABLE READ` and `SERIALIZABLE`, and on SQLite in WAL mode, a transaction reads a snapshot that can be older than the shared cache. It caches up to 16 MiB of pickled results for itself instead, and drops them when it ends.
+The ORM cache assumes that every query in a transaction reads the rows committed before the query started. That holds for `READ COMMITTED`, PostgreSQL's default and the level Django assumes, and for SQLite with its default rollback journal.
 
-The ORM cache reads the isolation level per connection, from the `isolation_level` option or the server, and again after raw SQL changes the session default. Other SQL naming an isolation level, such as `SET TRANSACTION ISOLATION LEVEL`, makes the connection cache per transaction until it reconnects.
+Under `REPEATABLE READ` and `SERIALIZABLE`, a transaction reads a snapshot taken at its first query, and the ORM cache can serve it rows committed after that snapshot. The ORM cache also stores what the transaction reads from the snapshot. If a write committed after the snapshot, other processes get those old rows until the next write to their tables or until they expire. On SQLite in WAL mode, a transaction reads a snapshot too, unless the `transaction_mode` option is `"IMMEDIATE"` or `"EXCLUSIVE"`.
+
+Run such transactions inside [`orm_cache_disabled()`](#orm_cache_disabled), which sends their queries to the database and still lets their writes invalidate the cache:
+
+```python
+with orm_cache_disabled(), transaction.atomic():
+    with connection.cursor() as cursor:
+        cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+    orders = list(Order.objects.filter(status="open"))
+```
+
+The ORM cache does not read the isolation level, from the `isolation_level` option or from SQL. Leave a database whose `isolation_level` option is `REPEATABLE READ` or `SERIALIZABLE` out of `DATABASES`.
 
 ## Failures
 
@@ -203,7 +214,7 @@ def open_order_total():
 Read the generations before computing the value, and name every table the computation reads. `table_generations()` returns `None` when a value computed now must not be cached:
 
 - When the ORM cache is disabled or would not cache a query of these tables.
-- Inside a transaction that has written one of the tables or reads a snapshot.
+- Inside a transaction that has written one of the tables.
 
 ### Management command
 

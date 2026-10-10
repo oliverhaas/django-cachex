@@ -43,9 +43,6 @@ SQL_DATA_CHANGE_RE = re.compile(
     r"\b(?:insert|update|delete|truncate|alter|create|drop|refresh)\b|\b(?:replace|merge)\s+into\b",
 )
 _TRUNCATE_CASCADE_RE = re.compile(r"\btruncate\b.*\bcascade\b", flags=re.DOTALL)
-# Raw SQL changing the default isolation of the session, which can be read back.
-# Other statements naming isolation change it for one transaction only.
-_SESSION_ISOLATION_RE = re.compile(r"default_transaction_isolation|session\s+characteristics|journal_mode")
 
 # Set on a connection while a compiler runs, so the cursor patch leaves the
 # compiler's SQL alone.
@@ -79,12 +76,9 @@ def _read(compiler: Any, result_type: Any, execute: Callable[[], Any]) -> Any:
         query_key, tables = query_key_and_tables(compiler, result_type)
     except EmptyResultSet, UncachableQuery:
         return execute()
-    if transaction.in_transaction(connection):
-        if transaction.isolation(connection) == transaction.SNAPSHOT:
-            return _read_in_snapshot(connection, query_key, tables, execute)
-        # The transaction reads its own writes, which the shared cache must not see.
-        if not tables.isdisjoint(transaction.written(connection)):
-            return execute()
+    # The transaction reads its own writes, which the shared cache must not see.
+    if transaction.in_transaction(connection) and not tables.isdisjoint(transaction.written(connection)):
+        return execute()
     return _read_shared(store, connection.alias, query_key, tables, execute)
 
 
@@ -103,19 +97,6 @@ def _read_shared(store: Store, db_alias: str, query_key: str, tables: set[str], 
             store.store(db_alias, query_key, lookup.token, result, orm_settings.TIMEOUT)
         except Exception:
             logger.warning("Could not store a query result in the ORM cache.", exc_info=True)
-    return result
-
-
-def _read_in_snapshot(connection: Any, query_key: str, tables: set[str], execute: Callable[[], Any]) -> Any:
-    hit, value = transaction.cached(connection, query_key)
-    if hit:
-        return value
-    result, cachable = _execute(execute)
-    if cachable:
-        try:
-            transaction.cache(connection, query_key, tables, result)
-        except Exception:
-            logger.warning("Could not cache a query result for the transaction.", exc_info=True)
     return result
 
 
@@ -240,10 +221,7 @@ def _patch_cursor(original: Callable[..., Any]) -> Callable[..., Any]:
             if tables and (truncate or "delete" in lowered):
                 tables |= deletion_dependents(models_of_tables(tables), truncate=truncate)
             tables = filter_cachable(tables)
-        result = _write(connection, tables, lambda: original(cursor, sql, *args, **kwargs))
-        if "isolation" in lowered or "journal_mode" in lowered:
-            transaction.isolation_changed(connection, known=bool(_SESSION_ISOLATION_RE.search(lowered)))
-        return result
+        return _write(connection, tables, lambda: original(cursor, sql, *args, **kwargs))
 
     return inner
 
