@@ -4,12 +4,11 @@ import logging
 import re
 import time
 import uuid
-from threading import Thread
 from types import SimpleNamespace
 
 import pytest
 from django.conf import settings
-from django.contrib.auth.models import Permission, User
+from django.contrib.auth.models import Permission
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.db import DEFAULT_DB_ALIAS, connection, connections, models, transaction
 from django.test.utils import isolate_apps, override_settings
@@ -22,7 +21,7 @@ from django_cachex.orm.settings import orm_settings
 from django_cachex.orm.store import Lookup
 from django_cachex.orm.utils import deletion_dependents
 from tests.orm.app.models import Test, TestChild, TestParent
-from tests.orm.utils import assert_num_queries, assert_query_cached, orm_store, override_orm_settings
+from tests.orm.utils import assert_query_cached, orm_store, override_orm_settings
 
 # DB_CASCADE, DB_SET_NULL and DB_SET_DEFAULT arrived in Django 6.1.
 DATABASE_ON_DELETE = hasattr(models, "DB_CASCADE")
@@ -112,7 +111,7 @@ def test_timeout(protocol):
     assert not protocol.lookup().hit
 
 
-# What a transaction wrote and cached, across its savepoints.
+# What a transaction wrote, across its savepoints.
 
 
 @pytest.fixture
@@ -152,42 +151,6 @@ def test_unknown_savepoint(conn):
     orm_transaction.savepoint_rolled_back(conn, "unknown")
     orm_transaction.savepoint_released(conn, "unknown")
     assert orm_transaction.written(conn) == {"a"}
-
-
-def test_cached(conn):
-    assert orm_transaction.cached(conn, "q1") == (False, None)
-    orm_transaction.cache(conn, "q1", {"a"}, [1])
-    orm_transaction.savepoint_created(conn, "s1")
-    orm_transaction.cache(conn, "q2", {"b"}, [2])
-    assert orm_transaction.cached(conn, "q1") == (True, [1])
-    assert orm_transaction.cached(conn, "q2") == (True, [2])
-
-    orm_transaction.savepoint_rolled_back(conn, "s1")
-    assert orm_transaction.cached(conn, "q1") == (True, [1])
-    assert orm_transaction.cached(conn, "q2") == (False, None)
-    orm_transaction.cache(conn, "q3", {"c"}, [3])
-    orm_transaction.savepoint_released(conn, "s1")
-    assert orm_transaction.cached(conn, "q3") == (True, [3])
-
-    # A write drops what was read from its tables, whichever savepoint read it.
-    orm_transaction.savepoint_created(conn, "s2")
-    orm_transaction.cache(conn, "q4", {"a", "d"}, [4])
-    orm_transaction.mark_written(conn, {"a"})
-    assert orm_transaction.cached(conn, "q1") == (False, None)
-    assert orm_transaction.cached(conn, "q4") == (False, None)
-    assert orm_transaction.cached(conn, "q3") == (True, [3])
-
-    orm_transaction.reset(conn)
-    assert orm_transaction.cached(conn, "q3") == (False, None)
-
-
-def test_cached_copy(conn):
-    result = [1]
-    orm_transaction.cache(conn, "q", {"a"}, result)
-    result.append(2)
-    _, cached = orm_transaction.cached(conn, "q")
-    cached.append(3)
-    assert orm_transaction.cached(conn, "q") == (True, [1])
 
 
 # Generation bumps around the writes of the ORM and raw SQL.
@@ -444,120 +407,3 @@ def test_delete(create_tables):
 
     assert_query_cached(children, [])
     assert_query_cached(grandchildren, [None])
-
-
-# Transactions that read a snapshot, which may be older than the shared cache.
-
-
-@pytest.fixture
-def reset_session():
-    """Close the connection after the test, which resets its session."""
-    yield
-    connection.close()
-
-
-def set_session_isolation(level):
-    with connection.cursor() as cursor:
-        cursor.execute(f"SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL {level}")
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.skipif(connection.vendor != "postgresql", reason="sets the transaction isolation of PostgreSQL")
-@pytest.mark.usefixtures("reset_session")
-def test_results_are_cached_for_the_transaction():
-    set_session_isolation("REPEATABLE READ")
-    # Outside transactions, every statement reads the latest data.
-    assert_query_cached(Test.objects.all())
-    with transaction.atomic():
-        assert_query_cached(Test.objects.all(), [])
-        t = Test.objects.create(name="test")
-        assert_query_cached(Test.objects.all(), [t])
-    assert_query_cached(Test.objects.all(), [t])
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.skipif(connection.vendor != "postgresql", reason="sets the transaction isolation of PostgreSQL")
-@pytest.mark.usefixtures("reset_session")
-def test_results_cached_for_the_transaction_keep_to_a_budget(mocker):
-    mocker.patch.object(orm_transaction, "_CACHE_BUDGET", 100)
-    set_session_isolation("REPEATABLE READ")
-    Test.objects.bulk_create(Test(name=f"test{i}") for i in range(20))
-    names = Test.objects.values_list("name", flat=True)
-    with transaction.atomic():
-        assert_query_cached(names.filter(name="test1"))
-        assert_query_cached(names, after=1)
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.skipif(connection.vendor != "postgresql", reason="sets the transaction isolation of PostgreSQL")
-@pytest.mark.usefixtures("reset_session")
-def test_snapshot_is_not_mixed_with_newer_results():
-    set_session_isolation("REPEATABLE READ")
-
-    class Writer(Thread):
-        def run(self):
-            try:
-                self.t = Test.objects.create(name="test")
-                self.cached = list(Test.objects.all())
-            finally:
-                connection.close()
-
-    with transaction.atomic():
-        # The first query takes the snapshot.
-        assert User.objects.first() is None
-        writer = Writer()
-        writer.start()
-        writer.join()
-        assert writer.cached == [writer.t]
-        with assert_num_queries(1):
-            assert list(Test.objects.all()) == []
-    assert list(Test.objects.all()) == [writer.t]
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.skipif(connection.vendor != "postgresql", reason="sets the transaction isolation of PostgreSQL")
-@pytest.mark.usefixtures("reset_session")
-def test_isolation_is_read_again():
-    assert orm_transaction.isolation(connection) == orm_transaction.SHARED
-    set_session_isolation("SERIALIZABLE")
-    assert orm_transaction.isolation(connection) == orm_transaction.SNAPSHOT
-    set_session_isolation("READ COMMITTED")
-    assert orm_transaction.isolation(connection) == orm_transaction.SHARED
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.skipif(connection.vendor != "postgresql", reason="sets the transaction isolation of PostgreSQL")
-@pytest.mark.usefixtures("reset_session")
-def test_new_session_isolation_applies_from_the_next_transaction():
-    set_session_isolation("REPEATABLE READ")
-    with transaction.atomic():
-        assert orm_transaction.isolation(connection) == orm_transaction.SNAPSHOT
-        set_session_isolation("READ COMMITTED")
-        assert orm_transaction.isolation(connection) == orm_transaction.SNAPSHOT
-    assert orm_transaction.isolation(connection) == orm_transaction.SHARED
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.skipif(connection.vendor != "postgresql", reason="sets the transaction isolation of PostgreSQL")
-@pytest.mark.usefixtures("reset_session")
-def test_session_isolation_set_local_ends_with_the_transaction():
-    set_session_isolation("REPEATABLE READ")
-    with transaction.atomic():
-        with connection.cursor() as cursor:
-            cursor.execute("SET LOCAL default_transaction_isolation = 'read committed'")
-        assert orm_transaction.isolation(connection) == orm_transaction.SNAPSHOT
-    assert orm_transaction.isolation(connection) == orm_transaction.SNAPSHOT
-
-
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.skipif(connection.vendor != "postgresql", reason="sets the transaction isolation of PostgreSQL")
-@pytest.mark.usefixtures("reset_session")
-def test_isolation_of_one_transaction():
-    # Unreadable, so the connection counts as reading snapshots until it reconnects.
-    with transaction.atomic():
-        with connection.cursor() as cursor:
-            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-        assert_query_cached(Test.objects.all(), [])
-    assert orm_transaction.isolation(connection) == orm_transaction.SNAPSHOT
-    connection.close()
-    assert orm_transaction.isolation(connection) == orm_transaction.SHARED

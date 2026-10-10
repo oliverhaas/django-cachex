@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Improvements
+
+- Transactions under `REPEATABLE READ` or `SERIALIZABLE`, or on SQLite in WAL mode, skipped the shared cache and cached up to 16 MiB of results for themselves. The ORM cache now treats them like any other transaction. Run them inside `orm_cache_disabled()`, or set the SQLite `transaction_mode` option to `"IMMEDIATE"`. Otherwise the ORM cache can serve them rows committed after their snapshot. It can also store the old rows they read, which other processes then get until the next write to those tables (see [Transactions](../user-guide/orm-cache.md#transactions)). The ORM cache assumes `READ COMMITTED`, as Django does, and no longer reads the isolation level, which cost a query on each new connection.
+
+### Fixes
+
+- After raw SQL containing `isolation` ran on a connection, such as `SET TRANSACTION ISOLATION LEVEL` or `SHOW transaction_isolation`, every later transaction on the connection skipped the shared cache until the connection closed. Those transactions now use the shared cache.
+
 ## 0.13.2 (October 2026)
 
 ### Improvements
