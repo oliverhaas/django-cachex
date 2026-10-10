@@ -150,7 +150,7 @@ A write does not delete the results it invalidates, so they stay in the cache un
 
 `READ COMMITTED`, PostgreSQL's default, and SQLite's default rollback journal let a transaction use the shared cache. Under `REPEATABLE READ` and `SERIALIZABLE`, and on SQLite in WAL mode, a transaction reads a snapshot that can be older than the shared cache. It caches up to 16 MiB of pickled results for itself instead, and drops them when it ends.
 
-The ORM cache reads the isolation level per connection, from the `isolation_level` option or the server, and again after raw SQL changes the session default. Other SQL naming an isolation level, such as `SET TRANSACTION ISOLATION LEVEL`, makes the connection cache per transaction until it reconnects.
+The ORM cache reads the isolation level per connection, from the `isolation_level` option or the server, and again after raw SQL changes the session default. Other SQL naming an isolation level, such as `SET TRANSACTION ISOLATION LEVEL`, makes the transaction it runs in cache results for itself. The ORM cache reads the level again for the next transaction.
 
 ## Failures
 

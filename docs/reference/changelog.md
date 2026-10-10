@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- After raw SQL such as `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ` or `SHOW transaction_isolation`, the ORM cache treated later transactions on the connection as `REPEATABLE READ`. Those transactions skipped the shared cache, and a query repeated in one of them returned its first result even after another transaction committed a change. The wrong level stayed until the connection closed, and with `OPTIONS["pool"]` it applied again when the thread got the same connection from the pool. Now only the transaction that runs such SQL caches its results for itself, and the ORM cache reads the level again for the next one.
+
 ## 0.13.2 (October 2026)
 
 ### Improvements

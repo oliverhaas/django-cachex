@@ -553,11 +553,10 @@ def test_session_isolation_set_local_ends_with_the_transaction():
 @pytest.mark.skipif(connection.vendor != "postgresql", reason="sets the transaction isolation of PostgreSQL")
 @pytest.mark.usefixtures("reset_session")
 def test_isolation_of_one_transaction():
-    # Unreadable, so the connection counts as reading snapshots until it reconnects.
+    assert_query_cached(Test.objects.all(), [])
     with transaction.atomic():
         with connection.cursor() as cursor:
             cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
         assert_query_cached(Test.objects.all(), [])
-    assert orm_transaction.isolation(connection) == orm_transaction.SNAPSHOT
-    connection.close()
-    assert orm_transaction.isolation(connection) == orm_transaction.SHARED
+    with transaction.atomic(), assert_num_queries(0):
+        assert list(Test.objects.all()) == []

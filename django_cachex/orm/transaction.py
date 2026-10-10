@@ -45,7 +45,7 @@ class _State:
         self.isolation: str | None = None
         # The DB-API connection ``isolation`` was read from.
         self.isolation_connection: Any = None
-        # The session default changed during the transaction: read it again once the transaction ends.
+        # Raw SQL changed the isolation during the transaction: read it again after the transaction ends.
         self.reread_isolation = False
 
 
@@ -198,15 +198,13 @@ def _read_isolation(connection: BaseDatabaseWrapper) -> str:
 
 
 def isolation_changed(connection: BaseDatabaseWrapper, *, known: bool) -> None:
-    """Raw SQL changed the isolation: read it again if ``known``, else assume SNAPSHOT until reconnecting."""
+    """Raw SQL changed the isolation, the session default if ``known``: read it again after the transaction ends."""
     state = _state(connection)
-    if not known:
-        state.isolation, state.isolation_connection = SNAPSHOT, connection.connection
-        state.reread_isolation = False
-    elif in_transaction(connection):
-        # A new session default applies from the next transaction, and SET LOCAL or a rollback undoes it.
-        if state.isolation is None or state.isolation_connection is not connection.connection:
-            state.isolation, state.isolation_connection = SNAPSHOT, connection.connection
-        state.reread_isolation = True
-    else:
+    if not in_transaction(connection):
         state.isolation = None
+        return
+    # SET TRANSACTION changes this transaction. A new session default applies from the next one,
+    # and SET LOCAL or a rollback undoes it.
+    if not known or state.isolation is None or state.isolation_connection is not connection.connection:
+        state.isolation, state.isolation_connection = SNAPSHOT, connection.connection
+    state.reread_isolation = True
