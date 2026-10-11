@@ -2046,9 +2046,9 @@ keeps local copies of what each process read.</p>
 </ul>
 <h3 id="correctness">Correctness<a class="headerlink" href="#correctness" title="Permanent link">&para;</a></h3>
 <p>Twelve cases where a cached result can differ from the database, each checked
-against an uncached read. They are the known differences between the two
-libraries, not a sample of typical queries. Cachalot got all 12 wrong, the ORM
-cache none:</p>
+against an uncached read. They are not a sample of typical queries: 11 are the
+known differences between the two libraries, and in the last one both serve
+stale rows. Cachalot got all 12 wrong, the ORM cache 1:</p>
 <ul>
 <li>A read while an autocommit <code>UPDATE</code> runs, and one by a process that an
   <code>on_commit()</code> hook hands the new row to. Cachalot invalidates before an
@@ -2063,7 +2063,9 @@ cache none:</p>
   raw writes to a mixed-case or unmanaged table. Cachalot doesn't invalidate
   every table these change.</li>
 <li>Reads in a <code>REPEATABLE READ</code> transaction from its old snapshot, which
-  cachalot stores in the shared cache at the commit.</li>
+  cachalot stores in the shared cache at the commit and the ORM cache at the
+  read. The ORM cache needs such transactions inside
+  <a href="../../user-guide/orm-cache/#transactions"><code>orm_cache_disabled()</code></a>.</li>
 </ul>
 <p><code>CACHALOT_FINAL_SQL_CHECK = True</code> and listing the unmanaged table in
 <code>CACHALOT_ADDITIONAL_TABLES</code> fix 2 of the 12.</p>
