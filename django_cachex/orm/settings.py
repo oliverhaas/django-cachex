@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 SETTING_NAME = "CACHEX_ORM"
 
-# Database vendors whose transaction isolation the ORM cache knows how to read.
+# Database vendors the ORM cache is tested against.
 SUPPORTED_VENDORS = frozenset({"postgresql", "sqlite"})
 
 SUPPORTED_ONLY = "supported_only"

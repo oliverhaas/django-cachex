@@ -220,18 +220,14 @@ def repeatable_read() -> bool:
     def read() -> list[int]:
         return list(Threshold.objects.filter(pk=1).values_list("level", flat=True))
 
-    try:
-        with transaction.atomic():
-            with connection.cursor() as cursor:
-                cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-                # Takes the snapshot.
-                cursor.execute("SELECT 1")
-            _in_thread(lambda: Threshold.objects.filter(pk=1).update(level=F("level") + 1))
-            read()
-        return _matches_database(read)
-    finally:
-        # The ORM cache treats the connection as a snapshot one until it reconnects.
-        connection.close()
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            # Takes the snapshot.
+            cursor.execute("SELECT 1")
+        _in_thread(lambda: Threshold.objects.filter(pk=1).update(level=F("level") + 1))
+        read()
+    return _matches_database(read)
 
 
 def run(args: dict[str, Any]) -> dict[str, Any]:

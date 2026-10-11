@@ -162,9 +162,9 @@ keeps local copies of what each process read.
 ### Correctness
 
 Twelve cases where a cached result can differ from the database, each checked
-against an uncached read. They are the known differences between the two
-libraries, not a sample of typical queries. Cachalot got all 12 wrong, the ORM
-cache none:
+against an uncached read. They are not a sample of typical queries: 11 are the
+known differences between the two libraries, and in the last one both serve
+stale rows. Cachalot got all 12 wrong, the ORM cache 1:
 
 - A read while an autocommit `UPDATE` runs, and one by a process that an
   `on_commit()` hook hands the new row to. Cachalot invalidates before an
@@ -179,7 +179,9 @@ cache none:
   raw writes to a mixed-case or unmanaged table. Cachalot doesn't invalidate
   every table these change.
 - Reads in a `REPEATABLE READ` transaction from its old snapshot, which
-  cachalot stores in the shared cache at the commit.
+  cachalot stores in the shared cache at the commit and the ORM cache at the
+  read. The ORM cache needs such transactions inside
+  [`orm_cache_disabled()`](../user-guide/orm-cache.md#transactions).
 
 `CACHALOT_FINAL_SQL_CHECK = True` and listing the unmanaged table in
 `CACHALOT_ADDITIONAL_TABLES` fix 2 of the 12.

@@ -193,3 +193,13 @@ def test_set_autocommit_off_again_keeps_the_transaction_writes():
         transaction.set_autocommit(True)
     with assert_num_queries(1):
         assert list(Test.objects.all()) == [t]
+
+
+@pytest.mark.skipif(connection.vendor != "postgresql", reason="sets the transaction isolation of PostgreSQL")
+def test_set_transaction_isolation_leaves_later_transactions_on_the_shared_cache():
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+    with assert_num_queries(1):
+        assert list(Test.objects.all()) == []
+    with assert_num_queries(0), transaction.atomic():
+        assert list(Test.objects.all()) == []

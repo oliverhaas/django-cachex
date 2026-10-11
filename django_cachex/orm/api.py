@@ -116,10 +116,7 @@ def table_generations(*tables_or_models: Any, db_alias: str = DEFAULT_DB_ALIAS) 
     ):
         return None
     connection = connections[db_alias]
-    if transaction.in_transaction(connection) and (
-        transaction.isolation(connection) == transaction.SNAPSHOT
-        or not transaction.written(connection).isdisjoint(tables)
-    ):
+    if transaction.in_transaction(connection) and not transaction.written(connection).isdisjoint(tables):
         return None
     store = get_store(orm_settings.CACHE)
     if store is None:
