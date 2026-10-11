@@ -145,7 +145,7 @@ def check_cache(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:  # noqa:
             Warning(
                 f"The ORM cache cannot use the cache {alias!r} ({settings.CACHES[alias]['BACKEND']}), so it "
                 "caches nothing.",
-                hint="Use a django-cachex Redis or Valkey backend, TrackingCache or LocMemCache.",
+                hint="Use a django-cachex Redis or Valkey backend or LocMemCache.",
                 id="cachex_orm.W001",
             ),
         )

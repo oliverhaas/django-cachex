@@ -254,17 +254,10 @@ def test_locmem_and_database_have_no_streams():
     assert set(offered) == set(CREATABLE_TYPES) - {KeyType.STREAM}
 
 
-def test_tracking_cache_writes_strings_only():
-    from django_cachex.cache.tracking import _TRACKING_REGISTRY, TrackingCache
+def test_a_limited_cachex_backend_creates_strings_only():
+    from django_cachex.cache.base import BaseCachex
 
-    location = "tracking:creatable-types"
-    try:
-        cache = TrackingCache(location, {"OPTIONS": {"transport": "unused"}})
-        assert creatable_types(cache) == (KeyType.STRING,)
-    finally:
-        state = _TRACKING_REGISTRY.pop(location, None)
-        if state is not None:
-            state.shutdown()
+    assert creatable_types(BaseCachex(params={})) == (KeyType.STRING,)
 
 
 def test_stock_django_backend_creates_nothing():
@@ -289,9 +282,6 @@ def test_message_for_an_unsupported_and_an_unknown_type():
 
 
 def test_get_size_on_unsupported_container_is_quiet(caplog):
-    """TrackingCache lists its transport's containers but cannot size them;
-    that used to log a full traceback per key on every key list."""
-
     class _StringsOnly:
         def llen(self, key: str) -> int:
             raise NotSupportedError("llen", "StringsOnly")

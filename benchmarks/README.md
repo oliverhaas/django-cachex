@@ -176,8 +176,8 @@ processes also give each one its own clock and connections.
 
 - `none`: the database alone.
 - `cachalot` and `cachex`.
-- `cachalot+tracking` and `cachex+tracking`: the same over a
-  `TrackingCache`, which keeps local copies of the values each process read.
+- `cachalot+tracking` and `cachex+tracking`: the same with client tracking
+  on the cache alias, which keeps local copies of the values each process read.
 
 **Correctness** (`test_scorecard`) runs the 12 cases of
 [ormbench/scorecard.py](ormbench/scorecard.py). Each is a way a cached result

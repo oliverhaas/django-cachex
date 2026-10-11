@@ -4,7 +4,7 @@ from urllib.parse import quote, unquote
 from django.conf import settings
 from django.db import models
 
-from django_cachex.admin.helpers import CacheUnavailableError, get_cache, key_display, mask_credentials, mask_location
+from django_cachex.admin.helpers import CacheUnavailableError, get_cache, key_display, mask_location
 
 
 class Cache(models.Model):
@@ -60,15 +60,7 @@ class Cache(models.Model):
 
     @property
     def location(self) -> str:
-        """Get the cache location, with connection passwords masked.
-
-        Checks for a ``_cachex_location`` attribute on the cache instance
-        first (``TrackingCache`` sets it; its ``LOCATION`` is only a registry
-        key), then falls back to the ``LOCATION`` config key.
-        """
-        cache = self._get_cache()
-        if cache is not None and hasattr(cache, "_cachex_location"):
-            return mask_credentials(str(cache._cachex_location))
+        """Get the cache location, with connection passwords masked."""
         return mask_location(self.config.get("LOCATION", ""))
 
     def _get_cache(self) -> Any | None:

@@ -356,7 +356,7 @@ def test_cache_checks():
             Warning(
                 "The ORM cache cannot use the cache 'dummy' "
                 "(django.core.cache.backends.dummy.DummyCache), so it caches nothing.",
-                hint="Use a django-cachex Redis or Valkey backend, TrackingCache or LocMemCache.",
+                hint="Use a django-cachex Redis or Valkey backend or LocMemCache.",
                 id="cachex_orm.W001",
             ),
         ]
@@ -369,8 +369,6 @@ def test_cache_checks():
 )
 def test_cache_serializer_check():
     cache = {**settings.CACHES[DEFAULT_CACHE_ALIAS]}
-    if "transport" in cache.get("OPTIONS", {}):
-        cache = {**settings.CACHES[cache["OPTIONS"]["transport"]]}
     cache["OPTIONS"] = {**cache.get("OPTIONS", {}), "serializer": "django_cachex.serializers.json.JsonSerializer"}
     with override_settings(CACHES={**settings.CACHES, "json": cache}), override_orm_settings(CACHE="json"):
         assert run_checks(tags=[Tags.caches]) == [

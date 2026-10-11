@@ -28,7 +28,6 @@ from django_cachex.admin.cas import (
     supports_cas,
 )
 from django_cachex.cache.resp import RespCache
-from django_cachex.cache.tracking import TrackingCache
 from django_cachex.exceptions import CompressorError, NotSupportedError, SerializerError
 from django_cachex.types import KeyType
 from django_cachex.utils import _deep_getsizeof
@@ -253,17 +252,8 @@ def _backend_class(alias: str) -> type | None:
 
 
 def can_access_cache(request: HttpRequest, alias: str) -> bool:
-    """Report whether ``request`` can use the keys of cache ``alias``.
-
-    A ``TrackingCache`` alias shows the keys of its transport, so it needs both permissions.
-    """
-    if not request.user.has_perm(f"django_cachex.access_{alias}"):  # ty: ignore[unresolved-attribute]
-        return False
-    backend = _backend_class(alias)
-    if backend is None or not issubclass(backend, TrackingCache):
-        return True
-    transport = (settings.CACHES[alias].get("OPTIONS") or {}).get("transport")
-    return request.user.has_perm(f"django_cachex.access_{transport}")  # ty: ignore[unresolved-attribute]
+    """Report whether ``request`` can use the keys of cache ``alias``."""
+    return request.user.has_perm(f"django_cachex.access_{alias}")  # ty: ignore[unresolved-attribute]
 
 
 def accessible_caches(request: HttpRequest) -> list[str]:
@@ -417,8 +407,7 @@ def creatable_types(cache: Any) -> tuple[KeyType, ...]:
 
     Stock Django backends have no ``type()``, and every create action checks
     the type first, so nothing can be created there. A "limited" cachex
-    backend such as ``TrackingCache`` only writes strings. Streams live on
-    ``RespCache`` alone.
+    backend only writes strings. Streams live on ``RespCache`` alone.
     """
     if not hasattr(cache, "type"):
         return ()
@@ -682,8 +671,7 @@ def get_size(cache: Any, key: str, key_type: str | None = None) -> int | None:
         method = size_methods.get(key_type)
         return method() if method else None
     except NotSupportedError:
-        # A backend that reports the type but cannot size it (TrackingCache
-        # sees its transport's containers) is not an error worth a traceback.
+        # A backend that reports the type but cannot size it is not an error worth a traceback.
         return None
     except Exception:
         logger.exception("get_size: size lookup failed for key %r (type=%s)", key, key_type)

@@ -21,7 +21,7 @@ from itertools import batched
 from typing import TYPE_CHECKING, Any, cast, override
 from urllib.parse import parse_qs, urlsplit
 
-from django.core.cache.backends.base import DEFAULT_TIMEOUT
+from django.core.cache.backends.base import DEFAULT_TIMEOUT, default_key_func
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
 
@@ -37,6 +37,9 @@ if TYPE_CHECKING:
 from django_cachex.cache.base import BaseCachex, CachexSupportLevel
 from django_cachex.exceptions import CompressorError, NotSupportedError, SerializerError, maybe_wrap_set_nx_get
 from django_cachex.script import ScriptHelpers, reject_stray_encoded
+from django_cachex.tracking.adapter import TrackedAdapter
+from django_cachex.tracking.config import parse_tracking
+from django_cachex.tracking.tracker import registry_key
 from django_cachex.utils import (
     _validate_hset_items,
     _validate_linsert_where,
@@ -185,6 +188,8 @@ class RespCache(BaseCachex):
     _cachex_support: CachexSupportLevel = "cachex"
 
     _adapter_class: builtins.type[RespAdapterProtocol]
+    # Whether OPTIONS["tracking"] can turn on client tracking.
+    _supports_tracking: bool = True
 
     def __init__(self, server: str | list[str], params: dict[str, Any]) -> None:
         super().__init__(params)
@@ -216,6 +221,16 @@ class RespCache(BaseCachex):
                 f"str-decoding client breaks every read. Remove the option."
             )
             raise ImproperlyConfigured(msg)
+
+        self._tracking = parse_tracking(
+            self._options.pop("tracking", False),
+            backend=type(self).__name__,
+            supported=self._supports_tracking,
+            key_prefix=self.key_prefix,
+            default_key_func=self.key_func is default_key_func,
+            options=self._options,
+            urls=self._servers,
+        )
 
         # Top-level like Django's ``KEY_FUNCTION``; dotted path or callable.
         reverse_key_func = params.get("REVERSE_KEY_FUNCTION")
@@ -258,7 +273,11 @@ class RespCache(BaseCachex):
                 f"'django_cachex.cache.ValkeyGlideCache'."
             )
             raise ImproperlyConfigured(msg)
-        return adapter_class(self._servers, **self._options)
+        adapter = adapter_class(self._servers, **self._options)
+        if self._tracking is None:
+            return adapter
+        key = registry_key(adapter_class, self._servers, self._options, self._tracking)
+        return cast("RespAdapterProtocol", TrackedAdapter(adapter, self._tracking, key))
 
     # =========================================================================
     # Serializer / Compressor stack. Encoding lives at the cache layer
@@ -4020,7 +4039,10 @@ class RespCache(BaseCachex):
         """
         if section:
             return self.adapter.info(section)
-        return self.adapter.info()
+        result = self.adapter.info()
+        if self._tracking is not None:
+            result["tracking"] = cast("TrackedAdapter", self.adapter).tracking_info()
+        return result
 
     def slowlog_get(self, count: int = 10) -> list[Any]:
         """Get slow query log entries.
@@ -4226,6 +4248,8 @@ class RespClusterCache(RespCache):
     transactions on pipelines). Subclasses set ``_adapter_class`` to
     their specific cluster adapter.
     """
+
+    _supports_tracking = False
 
     @override
     def pipeline(

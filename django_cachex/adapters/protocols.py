@@ -17,7 +17,7 @@ pipeline layers rely on.
   driver's real implementations.
 """
 
-from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
@@ -29,24 +29,6 @@ if TYPE_CHECKING:
 # Aliases for builtins shadowed by `set`/`type` methods (PEP 649 defers
 # annotations at runtime, but type checkers still resolve them in class scope).
 _set = set
-
-
-class Invalidation(NamedTuple):
-    """One CLIENT TRACKING message: the made keys to drop, or ``None`` after ``FLUSHDB``/``FLUSHALL``."""
-
-    keys: tuple[str, ...] | None
-
-
-@runtime_checkable
-class InvalidationListenerProtocol(Protocol):
-    """A live CLIENT TRACKING BCAST subscription; any exception from ``poll``/``ping`` means it is lost."""
-
-    # Server-side id of the tracking connection, for diagnostics and tests.
-    client_id: int
-
-    def poll(self, timeout: float) -> Invalidation | None: ...
-    def ping(self) -> None: ...
-    def close(self) -> None: ...
 
 
 class _RespPipelineCommandsProtocol(Protocol):
@@ -637,13 +619,10 @@ class RespAdapterProtocol(Protocol):
     ) -> Any: ...
     def pipeline(self, *, transaction: bool = True) -> RespPipelineProtocol: ...
     async def apipeline(self, *, transaction: bool = True) -> RespAsyncPipelineProtocol: ...
-    # CLIENT TRACKING BCAST subscription on the primary; NotSupportedError where the driver cannot host one.
-    def invalidation_listener(
-        self,
-        prefixes: Sequence[str],
-        *,
-        timeout: float = 5.0,
-    ) -> InvalidationListenerProtocol: ...
+    # A new RESP3 connection to the primary for client tracking; NotSupportedError where the driver cannot host one.
+    def tracking_connection(self) -> Any: ...
+    # The primary's address as the Sentinels name it now; None without Sentinel.
+    def tracking_primary(self) -> tuple[str, int] | None: ...
     def info(self, section: str | None = None) -> dict[str, Any]: ...
     def slowlog_get(self, count: int = 10) -> list[dict[str, Any]]: ...
     def slowlog_len(self) -> int: ...
@@ -1237,8 +1216,6 @@ class RespAdapterProtocol(Protocol):
 
 
 __all__ = [
-    "Invalidation",
-    "InvalidationListenerProtocol",
     "RespAdapterProtocol",
     "RespAsyncPipelineProtocol",
     "RespPipelineProtocol",

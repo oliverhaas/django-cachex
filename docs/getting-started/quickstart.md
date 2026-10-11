@@ -22,7 +22,8 @@ All backends live in `django_cachex.cache`. The [configuration reference](../use
 | `ValkeyClusterCache` / `RedisClusterCache` | Cluster sharding (valkey-py / redis-py) |
 | `ValkeyGlideCache` / `ValkeyGlideClusterCache` | Standalone / cluster through valkey-glide (`valkey-glide` extra, experimental) |
 | `LocMemCache` / `DatabaseCache` | Drop-in replacements for Django's backends of the same name |
-| `TrackingCache` | Local read cache over a Redis or Valkey alias, kept coherent by `CLIENT TRACKING` |
+
+The standalone and Sentinel backends on valkey-py and redis-py can keep local copies of the values they read, see [Client Tracking](../user-guide/client-tracking.md).
 
 Valkey and Redis are protocol-compatible, so either backend works with either server. The redis-py backends reject `valkey://` and `valkeys://` URLs, though: the first cache call raises `ValueError`.
 

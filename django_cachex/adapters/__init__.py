@@ -12,8 +12,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from django_cachex.adapters.pipeline import AsyncPipeline, Pipeline
     from django_cachex.adapters.protocols import (
-        Invalidation,
-        InvalidationListenerProtocol,
         RespAdapterProtocol,
         RespAsyncPipelineProtocol,
         RespPipelineProtocol,
@@ -43,8 +41,6 @@ if TYPE_CHECKING:
 _LAZY_EXPORTS = {
     "AsyncPipeline": "django_cachex.adapters.pipeline",
     "Pipeline": "django_cachex.adapters.pipeline",
-    "Invalidation": "django_cachex.adapters.protocols",
-    "InvalidationListenerProtocol": "django_cachex.adapters.protocols",
     "RespAdapterProtocol": "django_cachex.adapters.protocols",
     "RespAsyncPipelineProtocol": "django_cachex.adapters.protocols",
     "RespPipelineProtocol": "django_cachex.adapters.protocols",
@@ -82,8 +78,6 @@ def __dir__() -> list[str]:
 
 __all__ = [
     "AsyncPipeline",
-    "Invalidation",
-    "InvalidationListenerProtocol",
     "Pipeline",
     "RedisPyAdapter",
     "RedisPyAsyncPipelineAdapter",

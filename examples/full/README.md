@@ -11,7 +11,7 @@ Example demonstrating django-cachex cache admin with multiple cache backends.
 | `celery` | `RedisCache` | Celery broker and results (Redis db 1), raw keys via pass-through key functions |
 | `cluster` | `RedisClusterCache` | Redis Cluster, 6 nodes (ports 7001-7006) |
 | `sentinel` | `RedisSentinelCache` | Redis Sentinel, 3 sentinels (ports 26379-26381) |
-| `tracking` | `TrackingCache` | Local cache invalidated by `CLIENT TRACKING BCAST`, over the `redis` alias |
+| `tracking` | `RedisCache` | Redis with client tracking: local copies that `CLIENT TRACKING BCAST` keeps current |
 | `locmem` | `LocMemCache` | Local memory cache (cachex drop-in) |
 | `database` | `DatabaseCache` | Database-backed cache (cachex drop-in) |
 | `file` | Django `FileBasedCache` | File-based cache |

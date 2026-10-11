@@ -43,7 +43,6 @@ from django_cachex.admin.helpers import (
 )
 from django_cachex.admin.models import Cache, Key
 from django_cachex.cache.resp import RespCache, RespClusterCache
-from django_cachex.cache.tracking import TrackingCache
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
@@ -341,8 +340,7 @@ def _scan_pattern(search_query: str) -> str:
 
 def _clear_scope(cache: Any) -> tuple[str, str]:
     """Say what ``cache.clear()`` removes: for the Clear confirmation, and as a note for its message."""
-    # A TrackingCache clears its transport, which is always a RespCache.
-    if isinstance(cache, RespCache | TrackingCache):
+    if isinstance(cache, RespCache):
         return "This removes keys for the current cache version.", "current version"
     if isinstance(cache, BaseDatabaseCache):
         return "This empties its whole database table, for every version and every cache using it.", "whole table"

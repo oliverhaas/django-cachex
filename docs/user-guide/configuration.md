@@ -158,11 +158,11 @@ compound operation or `incr()`, on SQLite the database's write lock, lasts
 until the outer transaction ends. Keep these calls out of long-running
 transactions.
 
-### Composite backend
+### Client tracking
 
-`TrackingCache` is a read-through local cache over a Redis/Valkey alias,
-invalidated by the server's `CLIENT TRACKING`. See
-[TrackingCache](composite-backends.md).
+The standalone and Sentinel backends on valkey-py and redis-py take
+`OPTIONS["tracking"]`, which keeps local copies of the values each process
+reads. See [Client Tracking](client-tracking.md).
 
 ## LOCATION
 
@@ -206,6 +206,7 @@ scheme, username and password, and on `ValkeyGlideCache` also on the database.
 | `serializer`, `compressor`, `stampede_prevention`, `username`, `password` | Every Valkey/Redis backend, valkey-glide included |
 | `pool_class`, `async_pool_class`, `parser_class` | redis-py and valkey-py backends except cluster, see [Connection Pool](#connection-pool) |
 | `sentinels`, `sentinel_kwargs` | redis-py and valkey-py Sentinel backends |
+| `tracking` | `RedisCache`, `ValkeyCache`, `RedisSentinelCache` and `ValkeySentinelCache`, see [Client Tracking](client-tracking.md) |
 | Any other key, such as `socket_timeout`, `socket_connect_timeout`, `retry_on_timeout`, `ssl_*` and `db` | redis-py and valkey-py backends, which pass it to the driver's `from_url()` |
 | `db`, `use_tls` / `ssl`, `request_timeout`, `client_name` | valkey-glide backends, see [Valkey-Glide OPTIONS](#valkey-glide-options) |
 
@@ -217,7 +218,9 @@ last. On valkey-glide backends, `OPTIONS["db"]` overrides the URL.
 backends. Every Valkey/Redis backend rejects a true
 `OPTIONS["decode_responses"]`, and `decode_responses` in the `LOCATION` query,
 with `ImproperlyConfigured`, because the cache decodes the raw bytes itself.
-valkey-glide silently ignores every other key, such as `socket_timeout`.
+The cluster backends and `ValkeyGlideCache` reject `OPTIONS["tracking"]` with
+`ImproperlyConfigured` too, unless it is `False`. valkey-glide silently ignores
+every other key, such as `socket_timeout`.
 
 ### Serialization
 
@@ -353,8 +356,7 @@ value until the key expires, up to `buffer` seconds after its timeout.
 
 !!! warning "Valkey/Redis backends only"
     `LocMemCache` and `DatabaseCache` ignore the option, and passing the
-    keyword to them raises `TypeError`. `TrackingCache` follows its
-    transport's option and takes no keyword.
+    keyword to them raises `TypeError`.
 
 ### Valkey-Glide OPTIONS
 
@@ -488,5 +490,4 @@ changes the keys that `keys()`, `iter_keys()`, `scan()`, `blpop()`, `brpop()`
 and their `a*` twins return, not the stored keys.
 
 !!! warning "Valkey/Redis backends only"
-    `LocMemCache` and `DatabaseCache` ignore `REVERSE_KEY_FUNCTION`. For a
-    `TrackingCache`, set it on the transport alias.
+    `LocMemCache` and `DatabaseCache` ignore `REVERSE_KEY_FUNCTION`.

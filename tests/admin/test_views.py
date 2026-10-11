@@ -5343,18 +5343,6 @@ def test_cache_pages_link_the_key_list_only_when_the_user_can_open_it(db, test_c
     assert (_key_list_url("default") in listing_hrefs) == linked
 
 
-def test_a_tracking_cache_needs_the_permission_of_its_transport(db, test_cache):
-    client = _staff_client(["view_key"], aliases=("tracking",))
-
-    with _extra_cache(
-        "tracking",
-        {"BACKEND": "django_cachex.cache.TrackingCache", "OPTIONS": {"transport": "default"}},
-    ):
-        response = client.get(_key_list_url("tracking"))
-
-    assert response.status_code == 403
-
-
 @pytest.mark.usefixtures("_allow_flush")
 @pytest.mark.parametrize(
     "backend",

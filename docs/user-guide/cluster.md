@@ -34,6 +34,9 @@ A cluster has these restrictions, which cover the `a*` twins too:
   key by name.
 - The redis-py and valkey-py cluster backends reject `pool_class`,
   `async_pool_class` and `parser_class` in `OPTIONS`.
+- Every cluster backend, `ValkeyGlideClusterCache` too, rejects `tracking` in
+  `OPTIONS` with `ImproperlyConfigured`, unless it is `False`. See
+  [Client Tracking](client-tracking.md).
 
 ## Hash Tags
 

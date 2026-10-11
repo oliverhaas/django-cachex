@@ -149,9 +149,9 @@ collector frees the pools.
 
 The [ORM cache](../user-guide/orm-cache.md) derives from django-cachalot 2.9.1.
 The contenders are the database alone (`none`), `cachalot`, the ORM cache
-(`cachex`), and both over a
-[`TrackingCache`](../user-guide/composite-backends.md) (`+tracking`), which
-keeps local copies of what each process read.
+(`cachex`), and both on a cache alias with
+[client tracking](../user-guide/client-tracking.md) (`+tracking`), which keeps
+local copies of the values each process read.
 
 - The machine above, with CPython 3.14.2 (free-threaded build, with the GIL
   that libvalkey turns back on), Django 6.1.1, psycopg 3.3.6
@@ -191,19 +191,18 @@ stale rows. Cachalot got all 12 wrong, the ORM cache 1:
 Four reader processes read a counter row while a writer updates it 500 times,
 at random times 10 ms apart on average. A read is stale if it returns a
 version older than one committed before the read began. Stale reads per
-1,000, where the ORM cache column covers it with and without a
-`TrackingCache`:
+1,000, where the ORM cache column covers it with and without client tracking:
 
 | Scenario | cachalot | cachalot+tracking | ORM cache |
 |----------|---------:|------------------:|----------:|
-| Autocommit                                    | 121 | 482 | 0 |
-| Autocommit, commits 2 ms slower               | 753 | 597 | 0 |
-| `atomic()`                                    | 7.2 | 499 | 0 |
-| `atomic()`, 1 ms of later `on_commit()` hooks | 116 | 578 | 0 |
+| Autocommit                                    | 170 | 154 | 0 |
+| Autocommit, commits 2 ms slower               | 756 | 909 | 0 |
+| `atomic()`                                    | 8.1 |  26 | 0 |
+| `atomic()`, 1 ms of later `on_commit()` hooks | 118 | 152 | 0 |
 
 - Under autocommit, cachalot invalidates before the statement runs, so a read
   before the commit stores the old row as newer than the write. The cache
-  serves it until the next write: cachalot hid 134 in 1,000 writes that way,
+  serves it until the next write: cachalot hid 172 in 1,000 writes that way,
   and with slower commits 995. Writes in quick succession, as in a
   loop of updates, make it worse, since a raced read can store its old row
   after the next write's invalidation too.
@@ -211,13 +210,17 @@ version older than one committed before the read began. Stale reads per
   run, so a process that a hook hands the new row to, say through a task
   queue, can get the old one. It also invalidates in two steps a round trip
   apart, and until the second it can serve a row read before the commit.
-- `cachalot+tracking` serves hits from the process's memory. The thread that
-  evicts a copy after a write needs the GIL, and readers that never pause
-  make it wait up to 5 ms. At a read every 1 ms, it served 46 stale reads per
-  1,000.
+- With client tracking, a process learns of another process's write when the
+  server's invalidation reaches it, about one network delay after the write.
+  That adds the delay to each of cachalot's races: in `atomic()`,
+  `cachalot+tracking` served 26 stale reads per 1,000 against cachalot's 8.1.
+  The ORM cache with client tracking served none in these runs. The server
+  sends the invalidation in the same event loop iteration as its reply to the
+  writer. The invalidation therefore normally arrives before a read that the
+  write's return sets off in another process.
 - The ORM cache changes a table's generation right before and right after
   each write, and after each change, reads miss until one of them has stored
-  the result again. That costs it 5 to 7 points of hit ratio against
+  the result again. That costs it 5 to 8 points of hit ratio against
   cachalot, with slower commits too. Between the commit and the second
   change, about one round trip, it can still serve the old row. The writer
   announces each version after that change, as code running after the write
@@ -254,51 +257,53 @@ the query alone.
 
 | Contender | Hit | Miss | Autocommit write | `atomic()` write |
 |-----------|----:|-----:|-----------------:|-----------------:|
-| none              | 537 |   590 |   553 | 1,218 |
-| cachalot          | 497 | 1,425 |   969 | 2,012 |
-| cachex            | 513 | 1,468 | 1,302 | 2,004 |
-| cachalot+tracking | 131 | 1,489 | 1,003 | 2,090 |
-| cachex+tracking   | 499 | 1,426 | 1,320 | 2,004 |
+| none              | 548 |   601 |   560 | 1,256 |
+| cachalot          | 499 | 1,441 |   974 | 2,022 |
+| cachex            | 502 | 1,433 | 1,305 | 2,005 |
+| cachalot+tracking | 134 | 1,545 | 1,002 | 2,099 |
+| cachex+tracking   | 140 | 1,537 | 1,379 | 2,071 |
 
 - A hit takes a round trip, as the query does, so it saves only the
   database's work. A hit on one row takes about 90% of the query's time, on
-  100 rows about half, and on 1,000 rows about a quarter.
-- The ORM cache's hits take at most 16 µs longer than cachalot's. Its
-  autocommit writes make two round trips to Valkey, one before the statement
-  and one after, where cachalot makes one.
-- `cachalot+tracking` serves hits from memory in about a quarter of the time,
-  which is also what makes its reads stale. The ORM cache keeps no local
-  copies, so over a `TrackingCache` it reads from the server as well.
+  100 rows about half, and on 1,000 rows under a third.
+- The ORM cache's hits take about as long as cachalot's. Its autocommit
+  writes make two round trips to Valkey, one before the statement and one
+  after, where cachalot makes one.
+- With client tracking, both serve hits from the process's memory in under a
+  third of the time. Their misses take about 100 µs longer, and their writes
+  up to 80 µs.
 - In a mixed workload of 100-row reads by one of 20 queries, the caches serve
-  about 1.5 times the database's throughput at 1% writes, and
-  `cachalot+tracking` twice. At 10% writes they serve about a fifth less,
-  since every write makes the cached queries on its table miss, and a miss
-  takes three round trips.
+  about 1.5 times the database's throughput at 1% writes, and with client
+  tracking 1.8 times (cachalot) and 2 times (the ORM cache). At 10% writes
+  they serve about a fifth less, since every write makes the cached queries
+  on its table miss, and a miss takes three round trips.
 - A `migrate` with nothing to apply emptied cachalot's cache of 100 queries
   and left the ORM cache's intact.
 
 ### Network delay
 
-The same runs with no added delay and with 1 ms. Without delay, a round trip
-takes about 60 µs to Valkey and 80 µs to PostgreSQL. A hit saves the
-database's work but not the round trip, so with delay it saves less: at 1 ms,
-cachalot's one-row hit took 95% of the query's time, against 82% without
-delay. A race lasts a few round trips, so with delay more reads fall in one.
-Cachalot's results, and the ORM cache's hit ratio in the last row:
+The 250 µs column comes from the runs in [Races](#races) and [Speed](#speed),
+the other two from separate runs of the same benchmarks. Without delay, a
+round trip takes about 60 µs to Valkey and 80 µs to PostgreSQL. A hit saves
+the database's work but not the round trip, so with delay it saves less. At
+1 ms, cachalot's one-row hit took 95% of the query's time, against 82%
+without delay. A race lasts a few round trips, so with delay more reads fall
+in one. Cachalot's results, and the ORM cache's hit ratio in the last row:
 
 | Result | No delay | 250 µs | 1 ms |
 |--------|---------:|-------:|-----:|
-| Throughput at 1% writes, × the database's  | 1.9  | 1.6  | 1.2  |
+| Throughput at 1% writes, × the database's  | 1.9  | 1.5  | 1.2  |
 | Throughput at 10% writes, × the database's | 0.95 | 0.79 | 0.63 |
-| Stale reads per 1,000, autocommit          | 94   | 121  | 240  |
-| Stale reads per 1,000, `atomic()`          | 0.26 | 7.2  | 88   |
+| Stale reads per 1,000, autocommit          | 94   | 170  | 240  |
+| Stale reads per 1,000, `atomic()`          | 0.26 | 8.1  | 88   |
 | Hit ratio at a read every 1 ms             | 94%  | 90%  | 83%  |
-| Hit ratio at a read every 1 ms, ORM cache  | 92%  | 85%  | 64%  |
+| Hit ratio at a read every 1 ms, ORM cache  | 92%  | 86%  | 64%  |
 
-The ORM cache's throughput stayed within 3% of cachalot's, and these runs
-counted no stale read at any delay. Its hit ratio falls faster: reads miss
-from a write's first change until one of them has stored the result after the
-second, a span of several round trips that grows with the delay.
+Without client tracking, the ORM cache's throughput stayed within 3% of
+cachalot's, and these runs counted no stale read at any delay. Its hit ratio
+falls faster, because reads miss from a write's first change until one of
+them has stored the result after the second. That span lasts several round
+trips and grows with the delay.
 
 ## Reproducing
 

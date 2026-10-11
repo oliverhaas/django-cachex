@@ -16,7 +16,7 @@ from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.cache.backends.locmem import LocMemCache
 
 from django_cachex.cache.resp import RespCache
-from django_cachex.cache.tracking import TrackingCache
+from django_cachex.tracking.adapter import TrackedAdapter
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -57,8 +57,6 @@ class Store(Protocol):
 def get_store(cache_alias: str) -> Store | None:
     """Return the store over cache ``cache_alias``, or None if its backend cannot hold one."""
     cache = caches[cache_alias]
-    if isinstance(cache, TrackingCache):
-        return RespStore(cache._transport)
     if isinstance(cache, RespCache):
         return RespStore(cache)
     if isinstance(cache, LocMemCache):
@@ -87,7 +85,10 @@ def _new_generation() -> str:
 
 
 class RespStore:
-    """Results and generations in Redis or Valkey: a lookup is one MGET, a bump one MSET."""
+    """Results and generations in Redis or Valkey: a lookup is one MGET, a bump one MSET.
+
+    With client tracking, a lookup whose keys all have copies sends nothing.
+    """
 
     def __init__(self, cache: RespCache) -> None:
         self.cache = cache
@@ -102,6 +103,13 @@ class RespStore:
         for command in commands:
             pipe.execute_command(*command)
         return pipe.execute()
+
+    def _read(self, keys: list[Any]) -> list[Any]:
+        # With client tracking, the keys this process holds copies of cost no round trip.
+        adapter = self.cache.adapter
+        if isinstance(adapter, TrackedAdapter):
+            return adapter.read_many(keys)
+        return self._run(("MGET", *keys))[0]
 
     def _generation_keys(self, db_alias: str, table_keys: Sequence[str]) -> list[str]:
         return [self.cache.make_and_validate_key(_generation_key(db_alias, k)) for k in table_keys]
@@ -123,7 +131,7 @@ class RespStore:
     def lookup(self, db_alias: str, query_key: str, table_keys: Sequence[str]) -> Lookup:
         generation_keys = self._generation_keys(db_alias, table_keys)
         entry_key = self.cache.make_and_validate_key(_entry_key(db_alias, query_key))
-        *generations, entry = self._run(("MGET", *generation_keys, entry_key))[0]
+        *generations, entry = self._read([*generation_keys, entry_key])
         token = self._token(generation_keys, generations)
         if token is None:
             return BYPASS
@@ -161,7 +169,7 @@ class RespStore:
 
     def generations(self, db_alias: str, table_keys: Sequence[str]) -> list[str] | None:
         generation_keys = self._generation_keys(db_alias, table_keys)
-        token = self._token(generation_keys, self._run(("MGET", *generation_keys))[0])
+        token = self._token(generation_keys, self._read(generation_keys))
         return None if token is None else token.split(":")
 
 

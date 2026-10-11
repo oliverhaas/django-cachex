@@ -87,6 +87,14 @@ class _RedisPyMixin:
     def _missing_lib_error() -> ImportError:
         return _missing_redis()
 
+    def _tracking_connection_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        # Maintenance notifications would read pushes on the tracking socket.
+        if "maint_notifications_config" in kwargs or "maint_notifications_pool_handler" in kwargs:
+            kwargs.pop("maint_notifications_pool_handler", None)
+            kwargs.pop("oss_cluster_maint_notifications_handler", None)
+            kwargs["maint_notifications_config"] = None
+        return kwargs
+
 
 # redis-py and valkey-py share an identical pipeline API surface; alias
 # directly rather than carry empty subclasses.

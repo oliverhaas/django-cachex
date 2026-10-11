@@ -17,6 +17,7 @@ class ValkeyGlideCache(RespCache):
     """Django cache backend using ``valkey-glide-sync`` standalone."""
 
     _adapter_class = ValkeyGlideAdapter
+    _supports_tracking = False
 
 
 class ValkeyGlideClusterCache(RespClusterCache):

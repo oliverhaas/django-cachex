@@ -30,7 +30,6 @@ from urllib.parse import parse_qs, unquote, urlparse
 from django.core.exceptions import ImproperlyConfigured
 
 from django_cachex.adapters.protocols import (
-    InvalidationListenerProtocol,
     RespAdapterProtocol,
     RespAsyncPipelineProtocol,
     RespPipelineProtocol,
@@ -2047,9 +2046,12 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         del kwargs
         self._sweep_async_clients()
 
-    def invalidation_listener(self, prefixes: Sequence[str], *, timeout: float = 5.0) -> InvalidationListenerProtocol:
-        """Not offered: glide's push handler drops RESP3 ``invalidate`` frames."""
-        raise NotSupportedError("invalidation_listener", "valkey-glide")
+    def tracking_connection(self) -> Any:
+        """Not offered: glide gives no access to a raw connection."""
+        raise NotSupportedError("tracking_connection", "valkey-glide")
+
+    def tracking_primary(self) -> tuple[str, int] | None:
+        raise NotSupportedError("tracking_primary", "valkey-glide")
 
     # ---- TTL ----
     def ttl(self, key: str) -> int | None:

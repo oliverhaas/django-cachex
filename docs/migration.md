@@ -119,7 +119,7 @@ CACHEX_ORM = {
 | `CACHALOT_QUERY_KEYGEN`, `CACHALOT_TABLE_KEYGEN` | `QUERY_KEYGEN`, `TABLE_KEYGEN`. They take keyword arguments, so a cachalot keygen needs adapting (see [Cache keys](user-guide/orm-cache.md#cache-keys)). The default query keys already start with their table names, and `__in` values are sorted before any keygen runs. Keys also go through the cache alias's `KEY_FUNCTION`. If it tells tenants apart, a write to a table they share invalidates only the writing tenant's results, so list shared tables in `UNCACHABLE_TABLES`. |
 | `CACHALOT_USE_UNSUPPORTED_DATABASE`, `CACHALOT_ADDITIONAL_SUPPORTED_DATABASES` | Removed. Only PostgreSQL and SQLite are cached. |
 
-`CACHE` must name a django-cachex Redis or Valkey backend, or a `TrackingCache` over one. Its serializer must keep Python types, as the default pickle serializer does. Other backends cache nothing, apart from `LocMemCache` for tests and single processes (see [Caches and databases](user-guide/orm-cache.md#caches-and-databases)).
+`CACHE` must name a django-cachex Redis or Valkey backend. Its serializer must keep Python types, as the default pickle serializer does. Other backends cache nothing, apart from `LocMemCache` for tests and single processes (see [Caches and databases](user-guide/orm-cache.md#caches-and-databases)).
 
 ### API
 

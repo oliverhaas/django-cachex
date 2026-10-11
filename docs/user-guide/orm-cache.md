@@ -30,10 +30,11 @@ Every process that writes to the database must run with the app installed.
 The ORM cache works with these cache backends:
 
 - The Redis and Valkey backends: standalone, Sentinel and Cluster on redis-py and valkey-py, standalone and Cluster on valkey-glide.
-- `TrackingCache` over one of them, which the ORM cache uses as if `CACHE` named its transport. It keeps no local copies of results.
 - `LocMemCache`, Django's or django-cachex's. It keeps everything in the process, so a write in one process does not invalidate the others. Use it for tests and single-process setups.
 
 Other backends, such as Memcached, `DatabaseCache` or Django's own `RedisCache`, cache nothing (`cachex_orm.W001`).
+
+With [client tracking](client-tracking.md) on the cache alias, each process keeps local copies of the results and generations it read, and a lookup whose keys all have copies sends no command.
 
 The cache's serializer must bring results back with their Python types, such as `Decimal`, `datetime` and tuples. The default pickle serializer does, and the JSON and MsgPack serializers fail the `cachex_orm.E004` check. Any compressor works.
 
@@ -79,7 +80,9 @@ Every table has a generation in the cache, and every committed write to the tabl
 
 A write changes the generations of its tables twice: right before the statement under autocommit, or before the `COMMIT` inside a transaction, and again right after it. The first change drops the results stored before the write, and a write whose first change fails does not run (see [Failures](#failures)). The second change drops the results that queries read while the write ran. Between the commit and the second change, about one round trip to the cache, other processes can still be served those results, which show the tables as they were before the write. The write returns, and its `on_commit()` hooks run, only after the second change, so queries that run after the write returns, in the same process or in a task it starts, get the new rows.
 
-A cached read costs one round trip to the cache, an `MGET` of the generations and the result, and a miss two. A write under autocommit, or the commit of a transaction that wrote, also costs two. Reads go to the primary even when the cache alias lists replicas, since a replica can lag behind a write. On a redis-py or valkey-py cluster, `read_from_replicas` or a `load_balancing_strategy` in the alias's `OPTIONS` sends them to replicas, which can serve the old rows until they have caught up with a write.
+With [client tracking](client-tracking.md), the writing process still gets the new rows after the write returns. Another process gets them after the server's invalidation of the second change reaches it, about one network delay after that change. The invalidation normally arrives well before a task message reaches a worker, and the new rows show at most `max_staleness` after the change.
+
+Without [client tracking](client-tracking.md), a cached read costs one round trip to the cache, an `MGET` of the generations and the result, and a miss two. With it, a lookup whose keys all have copies sends no command, and any other lookup takes one round trip. A write under autocommit, or the commit of a transaction that wrote, costs two. Reads go to the primary even when the cache alias lists replicas, since a replica can lag behind a write. On a redis-py or valkey-py cluster, `read_from_replicas` or a `load_balancing_strategy` in the alias's `OPTIONS` sends them to replicas, which can serve the old rows until they have caught up with a write.
 
 ### Cache keys
 
@@ -192,7 +195,7 @@ Queries in the block run against the database, and writes in it still invalidate
 
 ### table_generations()
 
-`table_generations(*tables_or_models, db_alias="default")` returns the current generations of the given tables as a tuple of strings. Every committed write to one of the tables changes the tuple, so a value computed from the tables can be cached under it:
+`table_generations(*tables_or_models, db_alias="default")` returns the current generations of the given tables as a tuple of strings. With [client tracking](client-tracking.md), the generations come from the process's copies, at most `max_staleness` behind, and show its own writes after they return. Every committed write to one of the tables changes the tuple, so a value computed from the tables can be cached under it:
 
 ```python
 from django.core.cache import cache

@@ -7,7 +7,7 @@ Example Django projects demonstrating django-cachex cache admin.
 | Example | Description |
 |---------|-------------|
 | [simple](simple/) | Minimal setup with a single Valkey instance plus locmem |
-| [full](full/) | Standalone, cluster, sentinel, tracking-invalidated, the cachex local drop-ins, and two stock Django backends |
+| [full](full/) | Standalone, cluster, sentinel, client tracking, the cachex local drop-ins, and two stock Django backends |
 
 ## Quick Start
 
@@ -38,8 +38,8 @@ The `full` example wires up ten cache aliases:
 **Sentinel:**
 - Redis Sentinel with 3 sentinels (ports 26379-26381) in front of a master (6390) and two replicas (6391, 6392)
 
-**Tracking-invalidated:**
-- `TrackingCache`, a local cache the server invalidates over `CLIENT TRACKING BCAST`
+**Client tracking:**
+- `RedisCache` with the `tracking` option, whose local copies the server invalidates over `CLIENT TRACKING BCAST`
 
 **Local drop-ins (cachex):**
 - `LocMemCache`, `DatabaseCache`

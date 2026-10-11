@@ -18,7 +18,7 @@ A replacement for Django's built-in Redis cache that takes the same settings ([t
 - Lua scripting with `eval_script()`, with optional key-prefixing and encoding hooks.
 - Pluggable [serializers](user-guide/serializers.md) and [compressors](user-guide/compression.md), each with a fallback chain to migrate between formats.
 - Cache stampede prevention (TTL-based XFetch).
-- [`TrackingCache`](user-guide/composite-backends.md), a local read cache over a Redis or Valkey alias, invalidated by the server's `CLIENT TRACKING` or bounded by a local TTL.
+- [Client tracking](user-guide/client-tracking.md), one option that keeps local copies of the values each process reads, kept current by the server's `CLIENT TRACKING`.
 - An opt-in [ORM cache](user-guide/orm-cache.md), `django_cachex.orm`, that caches ORM query results per table and invalidates them on every write.
 - `LocMemCache` and `DatabaseCache` extensions with the hash, list, set and sorted set operations, `ttl()`/`expire()`/`persist()`, key patterns and admin support, but no streams, locks, pipelines or Lua.
 - Experimental `ValkeyGlideCache` and `ValkeyGlideClusterCache` backends on `valkey-glide`, Valkey's official client with a Rust core.

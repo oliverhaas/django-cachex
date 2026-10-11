@@ -35,12 +35,8 @@ _VALKEY: dict[str, Any] = {
     "OPTIONS": dict(_adapter.options),
 }
 if VARIANT == "tracking":
-    CACHES = {
-        "default": {"BACKEND": "django_cachex.cache.TrackingCache", "OPTIONS": {"transport": "transport"}},
-        "transport": _VALKEY,
-    }
-else:
-    CACHES = {"default": _VALKEY}
+    _VALKEY["OPTIONS"]["tracking"] = True
+CACHES = {"default": _VALKEY}
 
 # One lifetime for both: cachalot keeps results for ever by default, the ORM cache for the cache's default timeout.
 CACHALOT_TIMEOUT = 3600

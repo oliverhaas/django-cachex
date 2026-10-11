@@ -25,7 +25,7 @@ Superusers have every permission. Staff users need Django permissions of two kin
 - `django_cachex.delete_key`: delete keys.
 - `django_cachex.access_<alias>`, one per alias in `CACHES`, shown as "Can access keys in cache '<alias>'": use the permissions above on that cache's keys.
 
-Every key operation needs both kinds, so `view_key` with `access_default` lists the keys of the `default` cache and of no other. A `TrackingCache` alias keeps its keys in its transport alias, so its key operations also need the transport's permission.
+Every key operation needs both kinds, so `view_key` with `access_default` lists the keys of the `default` cache and of no other.
 
 Some operations reach past one alias and need the permission of every alias in `CACHES`:
 
@@ -72,11 +72,9 @@ They still need the `change_cache` permission and the [permission of the cache](
 
 ## Support Levels
 
-The cache list badges each cache "cachex" or "limited". The Valkey and Redis backends, `LocMemCache` and `DatabaseCache` are "cachex" and get the features in [Backend Abilities](#backend-abilities). Stock Django backends (`django.core.cache.backends.*`), custom backends and `TrackingCache` are "limited", with no key browsing.
+The cache list badges each cache "cachex" or "limited". The Valkey and Redis backends, `LocMemCache` and `DatabaseCache` are "cachex" and get the features in [Backend Abilities](#backend-abilities). Stock Django backends (`django.core.cache.backends.*`) and custom backends are "limited", with no key browsing.
 
 Switch Django's stock `LocMemCache` or `DatabaseCache` to `django_cachex.cache.LocMemCache` or `django_cachex.cache.DatabaseCache`, their drop-in replacements, for full support. To replace Django's stock Redis backend with `ValkeyCache` or `RedisCache`, follow the [migration guide](../migration.md).
-
-Browse and edit the keys of a `TrackingCache` alias on its transport alias, which has the "cachex" badge.
 
 ### Browsing a cluster alias
 

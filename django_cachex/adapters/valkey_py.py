@@ -26,7 +26,6 @@ import os
 import random
 import threading
 import weakref
-from collections import deque
 from contextlib import contextmanager, suppress
 from datetime import datetime, timedelta
 from functools import cached_property
@@ -38,8 +37,6 @@ from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
 
 from django_cachex.adapters.protocols import (
-    Invalidation,
-    InvalidationListenerProtocol,
     RespAdapterProtocol,
     RespAsyncPipelineProtocol,
     RespPipelineProtocol,
@@ -212,6 +209,9 @@ def _driver_copy(value: Any, depth: int = 0) -> Any:
 # Seconds. Without it, redis-py 7 and the sync valkey-py Sentinel clients wait out
 # the kernel's TCP connect timeout, about two minutes, on an unreachable host.
 _DEFAULT_SOCKET_CONNECT_TIMEOUT = 5
+
+# Seconds the client tracking handshake waits for each reply.
+_TRACKING_SOCKET_TIMEOUT = 5.0
 
 
 def _connect_timeout_given(options: Mapping[str, Any], urls: Sequence[str] = ()) -> bool:
@@ -607,112 +607,6 @@ def _text(value: Any) -> str:
     return value.decode("utf-8", "surrogateescape") if isinstance(value, bytes) else str(value)
 
 
-def _is_connected(conn: Any) -> bool:
-    # Both drivers keep the live socket in ``_sock``; only redis-py wraps it in ``is_connected``.
-    return conn._sock is not None
-
-
-class _ValkeyPyInvalidationListener(InvalidationListenerProtocol):
-    """One RESP3 connection running ``CLIENT TRACKING ON BCAST``.
-
-    RESP3 delivers invalidations as out-of-band pushes on the tracking
-    connection itself, so there is no redirect and no second connection.
-    The parser hands each push to :meth:`_on_invalidation`, including the
-    ones it reads while waiting for a command reply, and :meth:`poll`
-    hands them out in arrival order.
-    """
-
-    def __init__(self, pool: Any, prefixes: Sequence[str], *, parser_class: Any, timeout: float) -> None:
-        self._pool = pool
-        self._timeout = timeout
-        self._buffered: deque[Invalidation] = deque()
-        kwargs = {
-            **pool.connection_kwargs,
-            "protocol": 3,
-            "decode_responses": False,
-            # libvalkey carries no push support; the data path keeps its own parser.
-            "parser_class": parser_class,
-            # The driver's health check would read a reply out from under
-            # ``poll``; :meth:`ping` does the liveness check instead.
-            "health_check_interval": 0,
-        }
-        # Built like the pool's connections but never checked out of it, so ``max_connections`` is unaffected.
-        self._conn = pool.connection_class(**kwargs)
-        try:
-            self._conn.connect()
-            self._conn._parser.set_invalidation_push_handler(self._on_invalidation)
-            client_id = int(self._command("CLIENT", "ID"))
-            args: list[Any] = ["CLIENT", "TRACKING", "ON", "BCAST"]
-            for prefix in prefixes:
-                if prefix:
-                    args += ["PREFIX", prefix]
-            self._command(*args)
-        except BaseException:
-            self.close()
-            raise
-        self.client_id = client_id
-
-    def _command(self, *args: Any) -> Any:
-        conn = self._conn
-        conn.send_command(*args)
-        if not conn.can_read(timeout=self._timeout):
-            # A late reply must never be read as the answer to the next command.
-            conn.disconnect()
-            msg = f"No reply to {args[0]} from the invalidation listener within {self._timeout}s"
-            raise TimeoutError(msg)
-        # ``push_request=False``: pushes waiting ahead of the reply reach
-        # ``_on_invalidation`` and the parser reads on to the reply itself.
-        return conn.read_response()
-
-    def _on_invalidation(self, push: Any) -> None:
-        """Parser callback for ``[b"invalidate", [key, ...]]``; the key list is nil after FLUSHDB/FLUSHALL."""
-        keys = push[1] if isinstance(push, list | tuple) and len(push) > 1 else None
-        if keys is None:
-            self._buffered.append(Invalidation(keys=None))
-        else:
-            self._buffered.append(Invalidation(keys=tuple(_text(key) for key in keys)))
-
-    def poll(self, timeout: float) -> Invalidation | None:
-        if self._buffered:
-            return self._buffered.popleft()
-        # A driver reconnect would come back untracked; fail and let
-        # TrackingCache rebuild the listener.
-        if not _is_connected(self._conn):
-            msg = "The invalidation listener lost its connection"
-            raise ConnectionError(msg)
-        if not self._conn.can_read(timeout=timeout):
-            return None
-        # Straight to the parser: valkey-py's ``read_response`` drops ``push_request``.
-        self._conn._parser.read_response(push_request=True)
-        return self._buffered.popleft() if self._buffered else None
-
-    def ping(self) -> None:
-        # A dropped socket counts as lost: the driver would reopen it without tracking.
-        if not _is_connected(self._conn):
-            msg = "The invalidation listener lost its connection"
-            raise ConnectionError(msg)
-        self._check_primary()
-        reply = self._command("PING")
-        if _text(reply) != "PONG":
-            msg = f"Unexpected PING reply from the invalidation listener: {reply!r}"
-            raise ConnectionError(msg)
-
-    def _check_primary(self) -> None:
-        """A Sentinel failover leaves the socket on the demoted node, which keeps answering PING."""
-        pool = self._pool
-        if not getattr(pool, "is_master", False):
-            return
-        primary = pool.get_master_address()
-        listening_on = (self._conn.host, self._conn.port)
-        if primary != listening_on:
-            msg = f"Sentinel reports the primary at {primary!r}; the invalidation listener is on {listening_on!r}"
-            raise ConnectionError(msg)
-
-    def close(self) -> None:
-        with suppress(Exception):
-            self._conn.disconnect()
-
-
 class ValkeyPyAdapter(RespAdapterProtocol):
     """Cache adapter implementation for redis-py-shaped clients.
 
@@ -731,7 +625,6 @@ class ValkeyPyAdapter(RespAdapterProtocol):
     _pool_class: builtins.type[Any] | None = None
     _async_client_class: builtins.type[Any] | None = None
     _async_pool_class: builtins.type[Any] | None = None
-    # Pure-Python RESP3 parser, for the invalidation listener only.
     _resp3_parser_class: builtins.type[Any] | None = None
 
     # Polymorphic availability check: redis-py subclasses override
@@ -996,14 +889,37 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         # Sentinel overrides this to also close its discovery clients.
         await pool.aclose()
 
-    def invalidation_listener(self, prefixes: Sequence[str], *, timeout: float = 5.0) -> InvalidationListenerProtocol:
-        """Open a CLIENT TRACKING BCAST subscription on the primary; see :class:`_ValkeyPyInvalidationListener`."""
-        return _ValkeyPyInvalidationListener(
-            self._get_connection_pool(write=True),
-            prefixes,
-            parser_class=self._resp3_parser_class,
-            timeout=timeout,
-        )
+    def tracking_connection(self) -> Any:
+        """Open a RESP3 connection to the primary for client tracking, connected through its handshake only."""
+        pool = self._get_connection_pool(write=True)
+        kwargs = {
+            **pool.connection_kwargs,
+            "protocol": 3,
+            "decode_responses": False,
+            "parser_class": self._resp3_parser_class,
+            "health_check_interval": 0,
+            "client_name": "django-cachex-tracking",
+            "socket_timeout": _TRACKING_SOCKET_TIMEOUT,
+        }
+        conn = pool.connection_class(**self._tracking_connection_kwargs(kwargs))
+        try:
+            conn.connect()
+        except BaseException:
+            with suppress(Exception):
+                conn.disconnect()
+            raise
+        return conn
+
+    def _tracking_connection_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        return kwargs
+
+    def tracking_primary(self) -> tuple[str, int] | None:
+        """The primary's address as the Sentinels name it now; None without Sentinel."""
+        pool = self._get_connection_pool(write=True)
+        if not getattr(pool, "is_master", False):
+            return None
+        host, port = pool.get_master_address()
+        return host, port
 
     # =========================================================================
     # Core Cache Operations
@@ -4304,9 +4220,13 @@ class ValkeyPyClusterAdapter(ValkeyPyAdapter):
         _evict_closed_loops(self._async_clusters)
 
     @override
-    def invalidation_listener(self, prefixes: Sequence[str], *, timeout: float = 5.0) -> InvalidationListenerProtocol:
-        """BCAST tracking would need a listener per primary that follows slot migrations; not offered."""
-        raise NotSupportedError("invalidation_listener", "cluster")
+    def tracking_connection(self) -> Any:
+        """Client tracking would need a connection per primary that follows slot migrations; not offered."""
+        raise NotSupportedError("tracking_connection", "cluster")
+
+    @override
+    def tracking_primary(self) -> tuple[str, int] | None:
+        raise NotSupportedError("tracking_primary", "cluster")
 
     # =========================================================================
     # Async Override Methods

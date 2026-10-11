@@ -38,7 +38,7 @@ cache.set(key, value, timeout=300, nx=False, xx=False, get=False)
 | `xx` | Only set if key exists |
 | `get` | Return the previous value (atomic get-and-set) |
 
-The Valkey/Redis backends and `LocMemCache` take all three flags, and `TrackingCache` passes them to its transport. `DatabaseCache` takes only `nx`. `nx` together with `get` needs Redis 7.0+.
+The Valkey/Redis backends and `LocMemCache` take all three flags. `DatabaseCache` takes only `nx`. `nx` together with `get` needs Redis 7.0+.
 
 ### Extended Methods
 

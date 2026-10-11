@@ -5,14 +5,12 @@ suppression, stub-shaped driver pipelines)."""
 import gc
 import importlib
 import weakref
-from collections import deque
 from typing import Any
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
 from django_cachex.adapters import valkey_py
-from django_cachex.adapters.protocols import Invalidation
 from django_cachex.adapters.redis_py import RedisPyAdapter, RedisPyClusterAdapter, RedisPySentinelAdapter
 from django_cachex.adapters.valkey_py import (
     _VALKEY_AVAILABLE,
@@ -22,7 +20,6 @@ from django_cachex.adapters.valkey_py import (
     ValkeyPyPipelineAdapter,
     ValkeyPySentinelAdapter,
     _options_key,
-    _ValkeyPyInvalidationListener,
 )
 from django_cachex.exceptions import NotSupportedError, WrongTypeError, translate_server_error
 from django_cachex.script import script_sha
@@ -1918,36 +1915,6 @@ async def test_another_instance_closes_the_creators_clients(monkeypatch: pytest.
 
     assert pool.closed == 1
     assert [client.closed for client in pool.sentinel_manager.sentinels] == [1]
-
-
-class _DeadConnection:
-    """Driver connection stub whose socket has dropped."""
-
-    _sock = None
-
-    def can_read(self, timeout: float = 0) -> bool:
-        msg = "can_read reconnects through the driver; poll must not get here"
-        raise AssertionError(msg)
-
-
-def test_dropped_socket_raises():
-    # Regression: ``can_read`` on a connection without a socket calls
-    # ``connect()``, which comes back without CLIENT TRACKING and under a
-    # new client id, so invalidations were silently lost from then on.
-    listener = _ValkeyPyInvalidationListener.__new__(_ValkeyPyInvalidationListener)
-    listener._buffered = deque()
-    listener._conn = _DeadConnection()
-
-    with pytest.raises(ConnectionError, match="lost its connection"):
-        listener.poll(0.01)
-
-
-def test_buffered_pushes_are_still_drained():
-    listener = _ValkeyPyInvalidationListener.__new__(_ValkeyPyInvalidationListener)
-    listener._buffered = deque([Invalidation(keys=("k",))])
-    listener._conn = _DeadConnection()
-
-    assert listener.poll(0.01) == Invalidation(keys=("k",))
 
 
 class _SetClient:

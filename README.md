@@ -32,7 +32,7 @@ CACHES = {
 - Lua scripting with `eval_script()`, with optional key-prefixing and encoding hooks.
 - Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with a fallback chain to migrate between formats.
 - Cache stampede prevention (TTL-based XFetch).
-- `TrackingCache`, a local read cache over a Redis or Valkey alias, invalidated by the server's `CLIENT TRACKING` or bounded by a local TTL.
+- [Client tracking](https://oliverhaas.github.io/django-cachex/latest/user-guide/client-tracking/), one option that keeps local copies of the values each process reads, kept current by the server's `CLIENT TRACKING`.
 - An opt-in [ORM cache](https://oliverhaas.github.io/django-cachex/latest/user-guide/orm-cache/), `django_cachex.orm`, that caches ORM query results per table and invalidates them on every write.
 - `LocMemCache` and `DatabaseCache` extensions with the hash, list, set and sorted set operations, `ttl()`/`expire()`/`persist()`, key patterns and admin support, but no streams, locks, pipelines or Lua.
 - Experimental `ValkeyGlideCache` and `ValkeyGlideClusterCache` backends on `valkey-glide`, Valkey's official client with a Rust core.

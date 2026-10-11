@@ -53,7 +53,11 @@ if TEST_CACHE == "locmem":
 elif TEST_CACHE == "redis":
     _default_cache = {"BACKEND": "django_cachex.cache.RedisCache", "LOCATION": _REDIS_LOCATION}
 elif TEST_CACHE == "tracking":
-    _default_cache = {"BACKEND": "django_cachex.cache.TrackingCache", "OPTIONS": {"transport": "transport"}}
+    _default_cache = {
+        "BACKEND": "django_cachex.cache.RedisCache",
+        "LOCATION": _REDIS_LOCATION,
+        "OPTIONS": {"tracking": True},
+    }
 else:
     msg = f"CACHEX_ORM_TEST_CACHE must be 'locmem', 'redis' or 'tracking', not {TEST_CACHE!r}"
     raise ValueError(msg)
@@ -62,8 +66,6 @@ CACHES: dict[str, dict[str, Any]] = {
     "default": _default_cache,
     "other": {"BACKEND": "django_cachex.cache.LocMemCache", "LOCATION": "other", "OPTIONS": _UNCULLED},
 }
-if TEST_CACHE == "tracking":
-    CACHES["transport"] = {"BACKEND": "django_cachex.cache.RedisCache", "LOCATION": _REDIS_LOCATION}
 
 MIGRATION_MODULES = {"ormtest": "tests.orm.app.migrations"}
 

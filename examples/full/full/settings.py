@@ -5,7 +5,7 @@ Setup covering the backends this example ships:
 - Standalone: Valkey, Redis
 - Cluster: Redis Cluster (6 nodes)
 - Sentinel: Redis Sentinel (1 master + 2 replicas + 3 sentinels)
-- Composite: TrackingCache (CLIENT TRACKING)
+- Client tracking: Redis with local copies that CLIENT TRACKING keeps current
 - Local drop-ins (cachex): LocMem, Database
 - Stock Django: File, Dummy
 
@@ -142,15 +142,13 @@ CACHES = {
         },
     },
     # -------------------------------------------------------------------------
-    # COMPOSITE BACKEND (local cache kept coherent through a transport)
+    # CLIENT TRACKING (local copies that the server keeps current)
     # -------------------------------------------------------------------------
     "tracking": {
-        "BACKEND": "django_cachex.cache.TrackingCache",
-        "OPTIONS": {
-            "transport": "redis",
-            "coherence": "tracking",
-            "MAX_ENTRIES": 1000,
-        },
+        "BACKEND": "django_cachex.cache.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6380/0",
+        "KEY_PREFIX": "tracking",
+        "OPTIONS": {"tracking": True},
     },
     # -------------------------------------------------------------------------
     # LOCAL BACKENDS
