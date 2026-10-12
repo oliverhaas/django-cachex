@@ -686,14 +686,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../user-guide/composite-backends/" class="md-nav__link">
+      <a href="../user-guide/client-tracking/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    TrackingCache
+    Client Tracking
   
 
     
@@ -1459,7 +1459,7 @@
 </tr>
 </tbody>
 </table>
-<p><code>CACHE</code> must name a django-cachex Redis or Valkey backend, or a <code>TrackingCache</code> over one. Its serializer must keep Python types, as the default pickle serializer does. Other backends cache nothing, apart from <code>LocMemCache</code> for tests and single processes (see <a href="../user-guide/orm-cache/#caches-and-databases">Caches and databases</a>).</p>
+<p><code>CACHE</code> must name a django-cachex Redis or Valkey backend. Its serializer must keep Python types, as the default pickle serializer does. Other backends cache nothing, apart from <code>LocMemCache</code> for tests and single processes (see <a href="../user-guide/orm-cache/#caches-and-databases">Caches and databases</a>).</p>
 <h3 id="api">API<a class="headerlink" href="#api" title="Permanent link">&para;</a></h3>
 <p>Import from <code>django_cachex.orm.api</code> instead of <code>cachalot.api</code>:</p>
 <table>

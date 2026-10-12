@@ -16,7 +16,7 @@
         <link rel="prev" href="../sentinel/">
       
       
-        <link rel="next" href="../composite-backends/">
+        <link rel="next" href="../client-tracking/">
       
       
         
@@ -755,14 +755,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../composite-backends/" class="md-nav__link">
+      <a href="../client-tracking/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    TrackingCache
+    Client Tracking
   
 
     
@@ -1110,6 +1110,9 @@ therefore needs all its keys in one slot.</p>
   key by name.</li>
 <li>The redis-py and valkey-py cluster backends reject <code>pool_class</code>,
   <code>async_pool_class</code> and <code>parser_class</code> in <code>OPTIONS</code>.</li>
+<li>Every cluster backend, <code>ValkeyGlideClusterCache</code> too, rejects <code>tracking</code> in
+  <code>OPTIONS</code> with <code>ImproperlyConfigured</code>, unless it is <code>False</code>. See
+  <a href="../client-tracking/">Client Tracking</a>.</li>
 </ul>
 <h2 id="hash-tags">Hash Tags<a class="headerlink" href="#hash-tags" title="Permanent link">&para;</a></h2>
 <p>Keys with the same hash tag, the part between <code>{</code> and <code>}</code>, land in the same

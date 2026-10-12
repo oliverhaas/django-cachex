@@ -872,14 +872,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../composite-backends/" class="md-nav__link">
+      <a href="../client-tracking/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    TrackingCache
+    Client Tracking
   
 
     
@@ -1332,7 +1332,7 @@
 <li><code>django_cachex.delete_key</code>: delete keys.</li>
 <li><code>django_cachex.access_&lt;alias&gt;</code>, one per alias in <code>CACHES</code>, shown as "Can access keys in cache '<alias>'": use the permissions above on that cache's keys.</li>
 </ul>
-<p>Every key operation needs both kinds, so <code>view_key</code> with <code>access_default</code> lists the keys of the <code>default</code> cache and of no other. A <code>TrackingCache</code> alias keeps its keys in its transport alias, so its key operations also need the transport's permission.</p>
+<p>Every key operation needs both kinds, so <code>view_key</code> with <code>access_default</code> lists the keys of the <code>default</code> cache and of no other.</p>
 <p>Some operations reach past one alias and need the permission of every alias in <code>CACHES</code>:</p>
 <ul>
 <li>The danger zone's Flush database runs <code>FLUSHDB</code>, which removes every key in the database, whichever alias wrote it.</li>
@@ -1364,11 +1364,10 @@
 </span></code></pre></div>
 <p>They still need the <code>change_cache</code> permission and the <a href="#permissions">permission of the cache</a>, or that of every cache where they empty a whole database or server. While they are off, the admin hides them and refuses their requests.</p>
 <h2 id="support-levels">Support Levels<a class="headerlink" href="#support-levels" title="Permanent link">&para;</a></h2>
-<p>The cache list badges each cache "cachex" or "limited". The Valkey and Redis backends, <code>LocMemCache</code> and <code>DatabaseCache</code> are "cachex" and get the features in <a href="#backend-abilities">Backend Abilities</a>. Stock Django backends (<code>django.core.cache.backends.*</code>), custom backends and <code>TrackingCache</code> are "limited", with no key browsing.</p>
+<p>The cache list badges each cache "cachex" or "limited". The Valkey and Redis backends, <code>LocMemCache</code> and <code>DatabaseCache</code> are "cachex" and get the features in <a href="#backend-abilities">Backend Abilities</a>. Stock Django backends (<code>django.core.cache.backends.*</code>) and custom backends are "limited", with no key browsing.</p>
 <p>Switch Django's stock <code>LocMemCache</code> or <code>DatabaseCache</code> to <code>django_cachex.cache.LocMemCache</code> or <code>django_cachex.cache.DatabaseCache</code>, their drop-in replacements, for full support. To replace Django's stock Redis backend with <code>ValkeyCache</code> or <code>RedisCache</code>, follow the <a href="../../migration/">migration guide</a>.</p>
-<p>Browse and edit the keys of a <code>TrackingCache</code> alias on its transport alias, which has the "cachex" badge.</p>
 <h3 id="browsing-a-cluster-alias">Browsing a cluster alias<a class="headerlink" href="#browsing-a-cluster-alias" title="Permanent link">&para;</a></h3>
-<p><code>RedisClusterCache</code>, <code>ValkeyClusterCache</code> and <code>ValkeyGlideClusterCache</code> have the "cachex" badge. Their key browser stays empty. The key detail page (opened by key name), Add key, Flush and the danger zone work as usual.</p>
+<p><code>RedisClusterCache</code>, <code>ValkeyClusterCache</code> and <code>ValkeyGlideClusterCache</code> have the "cachex" badge. Their key browser stays empty. The key detail page (opened by key name), Add key, Flush and the danger zone work as usual. The info page shows the figures of one node, not of the whole cluster. On <code>ValkeyGlideClusterCache</code>, the node can change on each reload.</p>
 <h2 id="views">Views<a class="headerlink" href="#views" title="Permanent link">&para;</a></h2>
 <h3 id="caches">Caches<a class="headerlink" href="#caches" title="Permanent link">&para;</a></h3>
 <p>In the cache list, a cache's name opens its info page, and its List Keys link opens the key browser. The info page shows the configuration and, where the backend reports them, the server, memory, clients, statistics, keyspace and slow log sections.</p>
@@ -1378,7 +1377,7 @@
 <h3 id="key-browser">Key Browser<a class="headerlink" href="#key-browser" title="Permanent link">&para;</a></h3>
 <p>The key browser pages through a cache's keys with their type, TTL and size. Search with <code>*</code> as a wildcard, as in <code>user:*</code>. Select keys to delete them in bulk.</p>
 <p><img alt="The key browser with a wildcard search" src="../../assets/screenshot-key-list.png" /></p>
-<p>The Add key tool asks for a key name and a data type: string, list, set, hash, zset or stream. Its Continue button opens the key detail page without writing. The first value you add there creates the key.</p>
+<p>The Add key tool asks for a key name and a data type: string, list, set, hash, zset or stream. <code>LocMemCache</code> and <code>DatabaseCache</code> offer no stream. Its Continue button opens the key detail page without writing. The first value you add there creates the key.</p>
 <h3 id="key-detail">Key Detail<a class="headerlink" href="#key-detail" title="Permanent link">&para;</a></h3>
 <p>The key detail page shows and edits a key's value and TTL, runs the operations for its data type, and deletes it. Enter valid JSON to store an object or array.</p>
 <p>The admin rejects an edit if the key's type changed after the page loaded. On the Valkey and Redis backends, it also rejects an edit if the value changed.</p>

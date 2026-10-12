@@ -777,14 +777,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/composite-backends/" class="md-nav__link">
+      <a href="../../user-guide/client-tracking/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    TrackingCache
+    Client Tracking
   
 
     
@@ -1161,12 +1161,9 @@
 <td><code>LocMemCache</code> / <code>DatabaseCache</code></td>
 <td>Drop-in replacements for Django's backends of the same name</td>
 </tr>
-<tr>
-<td><code>TrackingCache</code></td>
-<td>Local read cache over a Redis or Valkey alias, kept coherent by <code>CLIENT TRACKING</code></td>
-</tr>
 </tbody>
 </table>
+<p>The standalone and Sentinel backends on valkey-py and redis-py can keep local copies of the values they read, see <a href="../../user-guide/client-tracking/">Client Tracking</a>.</p>
 <p>Valkey and Redis are protocol-compatible, so either backend works with either server. The redis-py backends reject <code>valkey://</code> and <code>valkeys://</code> URLs, though: the first cache call raises <code>ValueError</code>.</p>
 <h2 id="connection-url-formats">Connection URL Formats<a class="headerlink" href="#connection-url-formats" title="Permanent link">&para;</a></h2>
 <p><code>LOCATION</code> uses the valkey-py and redis-py URL notation:</p>

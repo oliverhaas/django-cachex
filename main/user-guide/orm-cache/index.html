@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://oliverhaas.github.io/django-cachex/main/user-guide/orm-cache/">
       
       
-        <link rel="prev" href="../composite-backends/">
+        <link rel="prev" href="../client-tracking/">
       
       
         <link rel="next" href="../../recipes/">
@@ -686,14 +686,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../composite-backends/" class="md-nav__link">
+      <a href="../client-tracking/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    TrackingCache
+    Client Tracking
   
 
     
@@ -1413,10 +1413,10 @@
 <p>The ORM cache works with these cache backends:</p>
 <ul>
 <li>The Redis and Valkey backends: standalone, Sentinel and Cluster on redis-py and valkey-py, standalone and Cluster on valkey-glide.</li>
-<li><code>TrackingCache</code> over one of them, which the ORM cache uses as if <code>CACHE</code> named its transport. It keeps no local copies of results.</li>
 <li><code>LocMemCache</code>, Django's or django-cachex's. It keeps everything in the process, so a write in one process does not invalidate the others. Use it for tests and single-process setups.</li>
 </ul>
 <p>Other backends, such as Memcached, <code>DatabaseCache</code> or Django's own <code>RedisCache</code>, cache nothing (<code>cachex_orm.W001</code>).</p>
+<p>With <a href="../client-tracking/">client tracking</a> on the cache alias, each process keeps local copies of the results and generations it read, and a lookup whose keys all have copies sends no command.</p>
 <p>The cache's serializer must bring results back with their Python types, such as <code>Decimal</code>, <code>datetime</code> and tuples. The default pickle serializer does, and the JSON and MsgPack serializers fail the <code>cachex_orm.E004</code> check. Any compressor works.</p>
 <p>Only PostgreSQL and SQLite databases are cached.</p>
 <h2 id="settings">Settings<a class="headerlink" href="#settings" title="Permanent link">&para;</a></h2>
@@ -1499,7 +1499,8 @@
 <h2 id="how-invalidation-works">How invalidation works<a class="headerlink" href="#how-invalidation-works" title="Permanent link">&para;</a></h2>
 <p>Every table has a generation in the cache, and every committed write to the table changes it. A result is stored with the generations of the tables it read and served only while all of them are unchanged.</p>
 <p>A write changes the generations of its tables twice: right before the statement under autocommit, or before the <code>COMMIT</code> inside a transaction, and again right after it. The first change drops the results stored before the write, and a write whose first change fails does not run (see <a href="#failures">Failures</a>). The second change drops the results that queries read while the write ran. Between the commit and the second change, about one round trip to the cache, other processes can still be served those results, which show the tables as they were before the write. The write returns, and its <code>on_commit()</code> hooks run, only after the second change, so queries that run after the write returns, in the same process or in a task it starts, get the new rows.</p>
-<p>A cached read costs one round trip to the cache, an <code>MGET</code> of the generations and the result, and a miss two. A write under autocommit, or the commit of a transaction that wrote, also costs two. Reads go to the primary even when the cache alias lists replicas, since a replica can lag behind a write. On a redis-py or valkey-py cluster, <code>read_from_replicas</code> or a <code>load_balancing_strategy</code> in the alias's <code>OPTIONS</code> sends them to replicas, which can serve the old rows until they have caught up with a write.</p>
+<p>With <a href="../client-tracking/">client tracking</a>, the writing process still gets the new rows after the write returns. Another process gets them after the server's invalidation of the second change reaches it, about one network delay after that change. The invalidation normally arrives well before a task message reaches a worker, and the new rows show at most <code>max_staleness</code> after the change.</p>
+<p>Without <a href="../client-tracking/">client tracking</a>, a cached read costs one round trip to the cache, an <code>MGET</code> of the generations and the result, and a miss two. With it, a lookup whose keys all have copies sends no command, and any other lookup takes one round trip. A write under autocommit, or the commit of a transaction that wrote, costs two. Reads go to the primary even when the cache alias lists replicas, since a replica can lag behind a write. On a redis-py or valkey-py cluster, <code>read_from_replicas</code> or a <code>load_balancing_strategy</code> in the alias's <code>OPTIONS</code> sends them to replicas, which can serve the old rows until they have caught up with a write.</p>
 <h3 id="cache-keys">Cache keys<a class="headerlink" href="#cache-keys" title="Permanent link">&para;</a></h3>
 <p>A result is stored under <code>orm:{&lt;database alias&gt;}:q:&lt;query key&gt;:&lt;result type&gt;</code> and the generation of a table under <code>orm:{&lt;database alias&gt;}:g:&lt;table key&gt;</code>, both under the cache alias's <code>KEY_PREFIX</code> and <code>VERSION</code>. The database alias is the hash tag, so on a cluster all keys of one database live on one shard. The keys name database aliases, not databases. Projects or environments sharing a cache server need distinct <code>KEY_PREFIX</code>es or database numbers, or each serves the results the other read.</p>
 <p>By default the query key is the sorted names of the tables the query reads, joined with <code>.</code>, then <code>:</code> and the SHA-1 digest of the database alias, SQL and parameters. Past 100 characters, the names that do not fit are left out and counted, as in <code>shop_customer.+3more</code>. The table key is the table name:</p>
@@ -1573,7 +1574,7 @@
 </span></code></pre></div>
 <p>Queries in the block run against the database, and writes in it still invalidate the cache. It applies to the current thread or asyncio task.</p>
 <h3 id="table_generations">table_generations()<a class="headerlink" href="#table_generations" title="Permanent link">&para;</a></h3>
-<p><code>table_generations(*tables_or_models, db_alias="default")</code> returns the current generations of the given tables as a tuple of strings. Every committed write to one of the tables changes the tuple, so a value computed from the tables can be cached under it:</p>
+<p><code>table_generations(*tables_or_models, db_alias="default")</code> returns the current generations of the given tables as a tuple of strings. With <a href="../client-tracking/">client tracking</a>, the generations come from the process's copies, at most <code>max_staleness</code> behind, and show its own writes after they return. Every committed write to one of the tables changes the tuple, so a value computed from the tables can be cached under it:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex.orm.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">table_generations</span>
 </span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
@@ -1593,7 +1594,9 @@
 <ul>
 <li>When the ORM cache is disabled or would not cache a query of these tables.</li>
 <li>Inside a transaction that has written one of the tables.</li>
+<li>When the generations cannot be read from the cache. A warning is logged.</li>
 </ul>
+<p>Called without a table or model, it raises <code>TypeError</code>.</p>
 <h3 id="management-command">Management command<a class="headerlink" href="#management-command" title="Permanent link">&para;</a></h3>
 <div class="language-console highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="go">python manage.py invalidate_orm_cache                    # every table</span>
 </span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="go">python manage.py invalidate_orm_cache shop               # an app's models, many-to-many tables included</span>
@@ -1660,14 +1663,15 @@
 </table>
 <h2 id="limits">Limits<a class="headerlink" href="#limits" title="Permanent link">&para;</a></h2>
 <ul>
-<li>The ORM cache does not see writes by other applications and database clients, triggers and rules, <code>COPY</code>, or stored procedures run with <code>callproc()</code>. Call <code>invalidate()</code> or <code>invalidate_orm_cache</code> after them. Deletes follow the foreign keys that Django declares with a database-level <code>on_delete</code> (<code>DB_CASCADE</code>, <code>DB_SET_NULL</code>, <code>DB_SET_DEFAULT</code>). <code>TRUNCATE ... CASCADE</code> follows every table that references a truncated one.</li>
+<li>The ORM cache does not see writes by other applications and database clients, triggers and rules, or <code>COPY</code>. It does not see writes by stored procedures and functions either, whether run with <code>callproc()</code> or with <code>CALL</code> or <code>SELECT f()</code> through <code>execute()</code>. SQLite's <code>executescript()</code> bypasses it too. Call <code>invalidate()</code> or <code>invalidate_orm_cache</code> after them. Deletes follow the foreign keys that Django declares with a database-level <code>on_delete</code> (<code>DB_CASCADE</code>, <code>DB_SET_NULL</code>, <code>DB_SET_DEFAULT</code>). <code>TRUNCATE ... CASCADE</code> follows every table that references a truncated one.</li>
 <li>Raw SQL writes are recognized by keyword (<code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>, <code>TRUNCATE</code>, <code>ALTER</code>, <code>CREATE</code>, <code>DROP</code>, <code>REFRESH</code>, <code>REPLACE INTO</code>, <code>MERGE INTO</code>) and their tables by name. Tables without a model are found only when listed in <code>ADDITIONAL_TABLES</code>. Transactions opened with a raw <code>BEGIN</code> are not seen, so use <code>atomic()</code>.</li>
 <li>Results read from a view are cached under the view's name, so writes to the tables behind it do not invalidate them. List views in <code>UNCACHABLE_TABLES</code>, or <code>invalidate()</code> them after such writes. <code>REFRESH MATERIALIZED VIEW</code> invalidates the view it names.</li>
 <li>A result is keyed by the database alias, SQL and parameters. If the same SQL returns other rows depending on session state, such as django-tenants' per-tenant <code>search_path</code> or a row-level security policy reading a session setting, one tenant is served another's rows. Add that state to the query key (see <a href="#cache-keys">Cache keys</a>).</li>
 <li>Leave replicas out of <code>DATABASES</code>. Writes to the primary do not invalidate what was cached from a replica's alias.</li>
+<li>Generations belong to a database alias. Two aliases of the same database, such as a pooled and a direct connection, do not invalidate each other. List only one of them in <code>DATABASES</code>.</li>
 <li>A failover of the cache server can lose the latest generation changes, which makes stale results current again. Run <code>invalidate_orm_cache</code> after a failover.</li>
 <li>Writes made while the app was uninstalled, a database was left out of <code>DATABASES</code> or <code>CACHE</code> named another alias did not invalidate the cache. Run <code>invalidate_orm_cache</code> before switching back.</li>
-<li><code>migrate</code> invalidates every model after applying a migration, and so does <code>flush</code>. Migrations change generations like any write, so they need the cache too, or <code>ENABLED</code> off followed by <code>invalidate_orm_cache</code>.</li>
+<li><code>migrate</code> invalidates every model of the database alias it migrates after applying a migration, and so does <code>flush</code>. After <code>migrate --database=direct</code>, run <code>invalidate_orm_cache --db &lt;alias&gt;</code> for a cached alias of the same database. Migrations change generations like any write, so they need the cache too, or <code>ENABLED</code> off followed by <code>invalidate_orm_cache</code>.</li>
 </ul>
 
 

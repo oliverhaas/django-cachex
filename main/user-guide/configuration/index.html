@@ -578,10 +578,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#composite-backend" class="md-nav__link">
+  <a href="#client-tracking" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Composite backend
+        Client tracking
       
     </span>
   </a>
@@ -943,14 +943,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../composite-backends/" class="md-nav__link">
+      <a href="../client-tracking/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    TrackingCache
+    Client Tracking
   
 
     
@@ -1281,10 +1281,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#composite-backend" class="md-nav__link">
+  <a href="#client-tracking" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Composite backend
+        Client tracking
       
     </span>
   </a>
@@ -1622,11 +1622,18 @@ database vendor. These methods and their <code>a*</code> twins raise <code>NotSu
 <li><code>semaphore()</code> on <code>DatabaseCache</code>. On <code>LocMemCache</code>, it returns the
   in-process <code>django_cachex.Semaphore</code>.</li>
 </ul>
-<p>Streams are not implemented.</p>
+<p>Streams are not implemented. <code>xlen()</code> raises <code>NotSupportedError</code>, and the
+other stream methods do not exist, so a call raises <code>AttributeError</code>.</p>
 <p><code>incr_version()</code> and <code>decr_version()</code> move keys of every type and keep their
 TTL, like Redis <code>RENAME</code>. <code>DatabaseCache.incr()</code> and <code>decr()</code> update the row
 atomically and keep the key's TTL. Like Django, they raise <code>ValueError</code> on a
 missing key, where the Valkey/Redis backends create it.</p>
+<p><code>incr()</code>, <code>decr()</code>, <code>hincrby()</code> and <code>hincrbyfloat()</code> fail where the server
+fails. They raise <code>ValueError</code> with the server's message, for example on a
+value that is not an integer or on a sum beyond 64 bits.</p>
+<p><code>LocMemCache</code> keeps copies of list elements and hash values, as it does of
+plain values. Changing an object after <code>rpush()</code>, <code>hset()</code> or a read leaves the
+cache unchanged. Set and sorted set members are stored by reference.</p>
 <p>Members compare as Python values, where the Valkey/Redis backends compare
 their serialized bytes. <code>1</code>, <code>True</code> and <code>1.0</code> are one member of a set or a
 sorted set, where the server stores three, and <code>lrem()</code> with any one of them
@@ -1649,10 +1656,10 @@ waiting for the lock. Add <code>"transaction_mode": "IMMEDIATE"</code> to the da
 compound operation or <code>incr()</code>, on SQLite the database's write lock, lasts
 until the outer transaction ends. Keep these calls out of long-running
 transactions.</p>
-<h3 id="composite-backend">Composite backend<a class="headerlink" href="#composite-backend" title="Permanent link">&para;</a></h3>
-<p><code>TrackingCache</code> is a read-through local cache over a Redis/Valkey alias,
-invalidated by the server's <code>CLIENT TRACKING</code>. See
-<a href="../composite-backends/">TrackingCache</a>.</p>
+<h3 id="client-tracking">Client tracking<a class="headerlink" href="#client-tracking" title="Permanent link">&para;</a></h3>
+<p>The standalone and Sentinel backends on valkey-py and redis-py take
+<code>OPTIONS["tracking"]</code>, which keeps local copies of the values each process
+reads. See <a href="../client-tracking/">Client Tracking</a>.</p>
 <h2 id="location">LOCATION<a class="headerlink" href="#location" title="Permanent link">&para;</a></h2>
 <p><code>LOCATION</code> takes one or more server URLs:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Single server (Valkey)</span>
@@ -1705,6 +1712,10 @@ scheme, username and password, and on <code>ValkeyGlideCache</code> also on the 
 <td>redis-py and valkey-py Sentinel backends</td>
 </tr>
 <tr>
+<td><code>tracking</code></td>
+<td><code>RedisCache</code>, <code>ValkeyCache</code>, <code>RedisSentinelCache</code> and <code>ValkeySentinelCache</code>, see <a href="../client-tracking/">Client Tracking</a></td>
+</tr>
+<tr>
 <td>Any other key, such as <code>socket_timeout</code>, <code>socket_connect_timeout</code>, <code>retry_on_timeout</code>, <code>ssl_*</code> and <code>db</code></td>
 <td>redis-py and valkey-py backends, which pass it to the driver's <code>from_url()</code></td>
 </tr>
@@ -1721,7 +1732,9 @@ last. On valkey-glide backends, <code>OPTIONS["db"]</code> overrides the URL.</p
 backends. Every Valkey/Redis backend rejects a true
 <code>OPTIONS["decode_responses"]</code>, and <code>decode_responses</code> in the <code>LOCATION</code> query,
 with <code>ImproperlyConfigured</code>, because the cache decodes the raw bytes itself.
-valkey-glide silently ignores every other key, such as <code>socket_timeout</code>.</p>
+The cluster backends and <code>ValkeyGlideCache</code> reject <code>OPTIONS["tracking"]</code> with
+<code>ImproperlyConfigured</code> too, unless it is <code>False</code>. valkey-glide silently ignores
+every other key, such as <code>socket_timeout</code>.</p>
 <h3 id="serialization">Serialization<a class="headerlink" href="#serialization" title="Permanent link">&para;</a></h3>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="s2">"OPTIONS"</span><span class="p">:</span> <span class="p">{</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="c1"># Single serializer (string path, class, or instance)</span>
@@ -1865,11 +1878,14 @@ keys expire logically at their timeout. A field of the wrong type raises
 <code>TypeError</code>, and one out of range <code>ValueError</code>.</p>
 <p>The <code>stampede_prevention=</code> keyword overrides the option for one call. It takes
 <code>True</code>, <code>False</code>, a <code>StampedeConfig</code>, or <code>None</code>, the default, which keeps the
-<code>OPTIONS</code> setting. <code>get</code>, <code>set</code>, <code>add</code>, <code>touch</code>, <code>get_or_set</code>, <code>get_many</code>,
-<code>set_many</code>, <code>ttl</code>, <code>pttl</code>, <code>expire</code>, <code>expireat</code>, <code>pexpire</code>, <code>pexpireat</code>,
-<code>expiretime</code> and their <code>a*</code> twins take it. On <code>touch</code>, pass the value the
-original write used, because it decides whether the new TTL includes the
-buffer.</p>
+<code>OPTIONS</code> setting. <code>get</code>, <code>set</code>, <code>add</code>, <code>has_key</code>, <code>touch</code>, <code>get_or_set</code>,
+<code>get_many</code>, <code>set_many</code>, <code>ttl</code>, <code>pttl</code>, <code>expire</code>, <code>expireat</code>, <code>pexpire</code>,
+<code>pexpireat</code>, <code>expiretime</code> and their <code>a*</code> twins take it. On <code>touch</code>, pass the
+value the original write used, because it decides whether the new TTL
+includes the buffer.</p>
+<p>A key inside the buffer is logically expired, so <code>get()</code> misses it and
+<code>has_key()</code> returns <code>False</code>. <code>touch()</code> leaves it alone and returns <code>False</code>.
+<code>add()</code> and <code>set()</code> with <code>nx</code>, <code>xx</code> or <code>get</code> treat it as absent.</p>
 <p>Counters and data structures get the buffer too. <code>expire()</code> and its relatives
 add it to any key, and <code>incr()</code> keeps counting on a key that <code>get()</code> already
 reports as expired. Pass <code>stampede_prevention=False</code> to the calls that write
@@ -1879,8 +1895,7 @@ value until the key expires, up to <code>buffer</code> seconds after its timeout
 <div class="admonition warning">
 <p class="admonition-title">Valkey/Redis backends only</p>
 <p><code>LocMemCache</code> and <code>DatabaseCache</code> ignore the option, and passing the
-keyword to them raises <code>TypeError</code>. <code>TrackingCache</code> follows its
-transport's option and takes no keyword.</p>
+keyword to them raises <code>TypeError</code>.</p>
 </div>
 <h3 id="valkey-glide-options">Valkey-Glide OPTIONS<a class="headerlink" href="#valkey-glide-options" title="Permanent link">&para;</a></h3>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="s2">"OPTIONS"</span><span class="p">:</span> <span class="p">{</span>
@@ -2008,12 +2023,13 @@ A valkey-glide list must agree on them, as <a href="#location">LOCATION</a> desc
 <p><code>REVERSE_KEY_FUNCTION</code> takes the full internal key and returns the user key,
 the inverse of <code>KEY_FUNCTION</code>. It accepts a dotted path or a callable. Set it
 when a custom <code>KEY_FUNCTION</code> breaks the default <code>prefix:version:</code> stripping. It
-changes the keys that <code>keys()</code>, <code>iter_keys()</code>, <code>scan()</code>, <code>blpop()</code>, <code>brpop()</code>
-and their <code>a*</code> twins return, not the stored keys.</p>
+changes the keys that <code>keys()</code>, <code>iter_keys()</code>, <code>scan()</code>, <code>largest_keys()</code>,
+<code>blpop()</code>, <code>brpop()</code> and their <code>a*</code> twins return, not the stored keys. Without
+it, these methods return the full internal key for a key the default stripping
+cannot parse.</p>
 <div class="admonition warning">
 <p class="admonition-title">Valkey/Redis backends only</p>
-<p><code>LocMemCache</code> and <code>DatabaseCache</code> ignore <code>REVERSE_KEY_FUNCTION</code>. For a
-<code>TrackingCache</code>, set it on the transport alias.</p>
+<p><code>LocMemCache</code> and <code>DatabaseCache</code> ignore <code>REVERSE_KEY_FUNCTION</code>.</p>
 </div>
 
 

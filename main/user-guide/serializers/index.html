@@ -788,14 +788,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../composite-backends/" class="md-nav__link">
+      <a href="../client-tracking/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    TrackingCache
+    Client Tracking
   
 
     
@@ -1340,6 +1340,7 @@ comes back as that type, and the caller converts it on read. A cross means
 </tr>
 </tbody>
 </table>
+<p>Two primitives have limits. orjson stores a <code>float</code> NaN or infinity as <code>null</code>, so it comes back as <code>None</code>. An <code>int</code> below <code>-2**63</code> or above <code>2**64 - 1</code> makes <code>dumps</code> raise <code>SerializerError</code> on msgpack, orjson and ormsgpack.</p>
 <p>For Django model instances and types the table does not list, use <code>pickle</code> or
 a custom serializer. For JSON-compatible values, <code>orjson</code> and <code>ormsgpack</code> are
 the fastest encoders on batch writes, and <code>json</code> is the slowest. The encoder

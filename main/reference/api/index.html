@@ -686,14 +686,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/composite-backends/" class="md-nav__link">
+      <a href="../../user-guide/client-tracking/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    TrackingCache
+    Client Tracking
   
 
     
@@ -1590,7 +1590,7 @@
 
 <h1 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h1>
 <h2 id="cache-methods">Cache Methods<a class="headerlink" href="#cache-methods" title="Permanent link">&para;</a></h2>
-<p>A method that the backend or the connected server does not support raises <code>NotSupportedError</code>. <a href="../../user-guide/configuration/#local-backends">Local backends</a> lists what <code>LocMemCache</code> and <code>DatabaseCache</code> lack.</p>
+<p>A method that the backend or the connected server does not support raises <code>NotSupportedError</code>. <a href="../../user-guide/configuration/#local-backends">Local backends</a> lists what <code>LocMemCache</code> and <code>DatabaseCache</code> lack. Those two backends have no stream methods except <code>xlen()</code>, so the others raise <code>AttributeError</code>.</p>
 <h3 id="standard-django-cache-methods">Standard Django Cache Methods<a class="headerlink" href="#standard-django-cache-methods" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -1630,7 +1630,7 @@
 </tr>
 <tr>
 <td><code>delete_many(keys)</code></td>
-<td>Delete multiple keys</td>
+<td>Delete multiple keys and return the number deleted</td>
 </tr>
 <tr>
 <td><code>get_or_set(key, default, timeout=DEFAULT)</code></td>
@@ -1638,7 +1638,7 @@
 </tr>
 <tr>
 <td><code>clear()</code></td>
-<td>Clear the cache, see <a href="#clearing-keys">Clearing keys</a></td>
+<td>Clear the cache and return <code>True</code>, see <a href="#clearing-keys">Clearing keys</a></td>
 </tr>
 <tr>
 <td><code>has_key(key)</code></td>
@@ -1695,7 +1695,7 @@
 </tr>
 </tbody>
 </table>
-<p>The Valkey/Redis backends and <code>LocMemCache</code> take all three flags, and <code>TrackingCache</code> passes them to its transport. <code>DatabaseCache</code> takes only <code>nx</code>. <code>nx</code> together with <code>get</code> needs Redis 7.0+.</p>
+<p>The Valkey/Redis backends and <code>LocMemCache</code> take all three flags. <code>DatabaseCache</code> takes only <code>nx</code>. <code>nx</code> together with <code>get</code> needs Redis 7.0+.</p>
 <h3 id="extended-methods">Extended Methods<a class="headerlink" href="#extended-methods" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -1739,7 +1739,7 @@
 </tr>
 <tr>
 <td><code>type(key)</code></td>
-<td>Get the data type of a key</td>
+<td>The key's type as a <code>django_cachex.KeyType</code>, such as <code>KeyType.HASH</code>, or <code>None</code> for a missing key. Module types, such as JSON, give <code>KeyType.UNKNOWN</code></td>
 </tr>
 <tr>
 <td><code>memory_usage(key, version=None, *, samples=None)</code></td>
@@ -1780,6 +1780,14 @@
 <tr>
 <td><code>delete_pattern(pattern)</code></td>
 <td>Delete keys matching pattern</td>
+</tr>
+<tr>
+<td><code>make_pattern(pattern, version=None)</code></td>
+<td>The server-side pattern that <code>keys()</code> sends for <code>pattern</code>, with the escaped <code>KEY_PREFIX</code> and the version. Valkey/Redis backends only</td>
+</tr>
+<tr>
+<td><code>reverse_key(key)</code></td>
+<td>The cache key of a full key name, without <code>KEY_PREFIX</code> and version, or <code>REVERSE_KEY_FUNCTION</code>'s result when set. Valkey/Redis backends only</td>
 </tr>
 <tr>
 <td><code>rename(src, dst, version=None, version_src=None, version_dst=None)</code></td>
@@ -2513,7 +2521,7 @@
 <p>A pipeline queues <code>get</code>, <code>set</code>, <code>delete</code>, <code>exists</code>, <code>incr</code>, <code>decr</code>, <code>type</code>, <code>rename</code>, <code>renamenx</code>, <code>memory_usage</code>, <code>eval_script</code> and the TTL methods from <code>ttl</code> to <code>persist</code>. It also queues the hash, list, set, sorted-set and stream methods, except <code>sscan</code>, <code>sscan_iter</code> and the blocking <code>blpop</code>, <code>brpop</code> and <code>blmove</code>. Other methods, such as <code>set_many</code>, <code>add</code> or <code>delete_pattern</code>, have no pipeline form, so queue their underlying commands. <code>execute()</code> returns the results as a list in queue order.</p>
 <p>The queueing methods take the parameters of the cache methods. Their flags decide what a step adds to the results:</p>
 <ul>
-<li><code>set()</code> adds <code>True</code>, or <code>False</code> when <code>nx</code> or <code>xx</code> blocks the write. With <code>get=True</code> it adds the previous value or <code>None</code> instead.</li>
+<li><code>set()</code> adds <code>True</code>, or <code>False</code> when <code>nx</code> or <code>xx</code> blocks the write. With <code>get=True</code> it adds the previous value or <code>None</code> instead. As with <code>cache.set()</code>, a key inside the stampede buffer counts as absent.</li>
 <li><code>zadd(key, mapping, *, ..., incr=False)</code> takes <code>incr=True</code> on the pipeline only. It sends <code>ZADD ... INCR</code> for the single pair in <code>mapping</code> and adds the new score, or <code>None</code> when <code>nx</code>, <code>xx</code>, <code>gt</code> or <code>lt</code> blocked it.</li>
 <li><code>zrange(key, start, end, *, withscores=False, desc=False)</code> takes <code>desc=True</code> on the pipeline only, which gives the result of <code>zrevrange</code>.</li>
 <li><code>xautoclaim(..., justid=True)</code> raises <code>NotSupportedError</code> when queued. Use <code>justid=False</code>, or call <code>cache.xautoclaim()</code>.</li>
