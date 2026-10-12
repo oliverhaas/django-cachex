@@ -755,12 +755,12 @@ def _tracking_ids(server, username="default"):
     }
 
 
-def test_instances_with_the_same_settings_share_one_connection_and_its_copies(build, server):
+def test_instances_with_the_same_settings_share_one_connection_and_its_copies(build, plain, server):
     before = _tracking_ids(server)
-    first = build(tracking=True)
-    first.set("k", "v")
+    plain.set("k", "v")
+    first = build(tracking={"max_staleness": 3600})
     assert first.get("k") == "v"
-    second = build(tracking=True, warm_key="other")
+    second = build(tracking={"max_staleness": 3600}, warm_key="other")
     server.config_resetstat()
 
     assert second.get("k") == "v"
