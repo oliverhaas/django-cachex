@@ -24,6 +24,7 @@ from django_cachex.admin.helpers import (
     RENDERABLE_TYPES,
     CacheUnavailableError,
     creatable_types,
+    exists_on_server,
     format_value_for_display,
     get_cache,
     get_type_data,
@@ -88,7 +89,7 @@ def _stay_after_emptying(
     if request.GET.get("type"):
         return response
     try:
-        if cache.has_key(key):
+        if exists_on_server(cache, key):
             return response
     except Exception:  # noqa: BLE001
         return response
@@ -379,6 +380,10 @@ def _handle_ltrim(request: HttpRequest, cache: Any, cache_name: str, key: str, p
 def _handle_lset(request: HttpRequest, cache: Any, cache_name: str, key: str, page: int) -> HttpResponse:
     try:
         index = int(request.POST.get("index", "0"))
+    except ValueError:
+        messages.error(request, "Index must be an integer.")
+        return _redirect_to_key(request, cache_name, key, page)
+    try:
         value = parse_json_or_str(request.POST.get("value", "").strip())
         original_sha1 = request.POST.get("original_sha1", "").strip()
         if original_sha1 and supports_cas(cache):
@@ -396,8 +401,6 @@ def _handle_lset(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         else:
             cache.lset(key, index, value)
             messages.success(request, f"Updated element at index {index}.")
-    except ValueError:
-        messages.error(request, "Index must be an integer.")
     except Exception as e:  # noqa: BLE001
         messages.error(request, f"Could not update the element: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
@@ -559,11 +562,15 @@ def _handle_zadd(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
         messages.error(request, "Member and score are required.")
         return _redirect_to_key(request, cache_name, key, page)
     try:
+        score = float(score_str)
+    except ValueError:
+        messages.error(request, "Score must be a number.")
+        return _redirect_to_key(request, cache_name, key, page)
+    try:
         member = parse_json_or_str(raw_member)
         if not is_hashable(member):
             messages.error(request, _UNHASHABLE_MEMBER_ERROR)
             return _redirect_to_key(request, cache_name, key, page)
-        score = float(score_str)
         original_score = request.POST.get("original_score", "").strip()
         if original_score and supports_cas(cache):
             cas_result = cas_update_zset_score(cache, key, member, original_score, score)
@@ -598,8 +605,6 @@ def _handle_zadd(request: HttpRequest, cache: Any, cache_name: str, key: str, pa
                 )
             else:
                 messages.success(request, f"Updated '{member}' score to {score}.")
-    except ValueError:
-        messages.error(request, "Score must be a number.")
     except Exception as e:  # noqa: BLE001
         messages.error(request, f"Could not update the sorted set: {mask_credentials(str(e))}")
     return _redirect_to_key(request, cache_name, key, page)
@@ -846,7 +851,7 @@ def _check_post_permission(request: HttpRequest, action: str | None, cache: Any,
     # runs for users who would actually be blocked by it.
     if action in _CREATE_ACTIONS and may_change != may_add:
         try:
-            exists = cache.has_key(key)
+            exists = exists_on_server(cache, key)
         except Exception as exc:
             raise CacheUnavailableError(unreachable_message(cache_name, exc)) from exc
         if exists != may_change:
@@ -914,7 +919,7 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
                 if not may_view:
                     exists = True
                     with contextlib.suppress(Exception):
-                        exists = cache.has_key(key)
+                        exists = exists_on_server(cache, key)
                     if exists:
                         return redirect("admin:index")
                 return response
@@ -922,7 +927,7 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
             messages.error(request, f"Unknown action: {action!r}." if action else "No action specified.")
 
     try:
-        key_exists = cache.has_key(key)
+        key_exists = exists_on_server(cache, key)
     except Exception as exc:  # noqa: BLE001
         messages.error(request, unreachable_message(cache_name, exc))
         return cache_list_redirect(request)

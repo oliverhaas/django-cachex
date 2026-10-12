@@ -304,7 +304,7 @@ async def test_aset_flags_stored_ttl_includes_buffer(stampede_cache: RespCache, 
 # Regression: ``touch()`` stored the raw timeout, so a touched key lost its buffer and was eligible for recompute.
 def test_touch_reapplies_buffer(stampede_cache: RespCache):
     stampede_cache.set("sp_touch", "val", timeout=300)
-    stampede_cache.expire("sp_touch", 50, stampede_prevention=False)
+    stampede_cache.expire("sp_touch", 100, stampede_prevention=False)
 
     assert stampede_cache.touch("sp_touch", timeout=300) is True
     ttl = stampede_cache.ttl("sp_touch", stampede_prevention=False)
@@ -334,7 +334,7 @@ def test_touch_none_makes_persistent(stampede_cache: RespCache):
 @pytest.mark.asyncio
 async def test_atouch_reapplies_buffer(stampede_cache: RespCache):
     await stampede_cache.aset("asp_touch", "val", timeout=300)
-    await stampede_cache.aexpire("asp_touch", 50, stampede_prevention=False)
+    await stampede_cache.aexpire("asp_touch", 100, stampede_prevention=False)
 
     assert await stampede_cache.atouch("asp_touch", timeout=300) is True
     ttl = await stampede_cache.attl("asp_touch", stampede_prevention=False)
@@ -1033,3 +1033,67 @@ def test_set_nx_get_on_a_logically_expired_key_raises_not_supported_before_redis
     with pytest.raises(NotSupportedError):
         stampede_cache.set("sp_nx_get_old_server", "fresh", timeout=300, nx=True, get=True)
     assert stampede_cache.get("sp_nx_get_old_server", stampede_prevention=False) == "stale"
+
+
+def test_has_key_misses_a_logically_expired_key(stampede_cache: RespCache):
+    stampede_cache.set("sp_has_stale", "val", timeout=300)
+    stampede_cache.set("sp_has_forever", "val", timeout=None)
+    stampede_cache.expire("sp_has_stale", 50, stampede_prevention=False)
+
+    assert stampede_cache.has_key("sp_has_stale") is False
+    assert "sp_has_stale" not in stampede_cache
+    assert stampede_cache.has_key("sp_has_stale", stampede_prevention=False) is True
+    assert stampede_cache.has_key("sp_has_forever") is True
+
+
+def test_touch_leaves_a_logically_expired_key_expired(stampede_cache: RespCache):
+    stampede_cache.set("sp_touch_stale", "val", timeout=300)
+    stampede_cache.expire("sp_touch_stale", 50, stampede_prevention=False)
+
+    assert stampede_cache.touch("sp_touch_stale", timeout=300) is False
+    assert stampede_cache.get("sp_touch_stale") is None
+    ttl = stampede_cache.ttl("sp_touch_stale", stampede_prevention=False)
+    assert ttl is not None
+    assert ttl <= 50
+
+
+@pytest.mark.asyncio
+async def test_ahas_key_and_atouch_treat_a_logically_expired_key_as_absent(stampede_cache: RespCache):
+    await stampede_cache.aset("asp_has_stale", "val", timeout=300)
+    await stampede_cache.aexpire("asp_has_stale", 50, stampede_prevention=False)
+
+    assert await stampede_cache.ahas_key("asp_has_stale") is False
+    assert await stampede_cache.atouch("asp_has_stale", timeout=300) is False
+    assert await stampede_cache.aget("asp_has_stale") is None
+
+
+@pytest.mark.parametrize(
+    ("flags", "reply", "stored", "raw_ttl"),
+    [
+        ({"nx": True}, True, "fresh", 360),
+        ({"nx": True, "get": True}, None, "fresh", 360),
+        ({"xx": True}, False, "stale", 50),
+        ({"xx": True, "get": True}, None, "stale", 50),
+        ({"get": True}, None, "fresh", 360),
+    ],
+    ids=["nx", "nx-get", "xx", "xx-get", "get"],
+)
+def test_pipeline_flagged_set_counts_a_logically_expired_key_as_absent(
+    stampede_cache: RespCache,
+    flags: dict[str, bool],
+    reply: bool | None,
+    stored: str,
+    raw_ttl: int,
+):
+    if flags.get("nx") and flags.get("get"):
+        skip_below_server(stampede_cache, redis=(7, 0), feature="SET NX GET")
+    stampede_cache.set("sp_pipe_flags_stale", "stale", timeout=300)
+    stampede_cache.expire("sp_pipe_flags_stale", 50, stampede_prevention=False)
+
+    with stampede_cache.pipeline() as pipe:
+        pipe.set("sp_pipe_flags_stale", "fresh", timeout=300, **flags)
+        assert pipe.execute() == [reply]
+    assert stampede_cache.get("sp_pipe_flags_stale", stampede_prevention=False) == stored
+    ttl = stampede_cache.ttl("sp_pipe_flags_stale", stampede_prevention=False)
+    assert ttl is not None
+    assert raw_ttl - 10 < ttl <= raw_ttl

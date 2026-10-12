@@ -175,7 +175,7 @@ def test_nx_and_get_combined(locmem_cache: LocMemCache):
 
 
 def test_nx_xx_mutually_exclusive(locmem_cache: LocMemCache):
-    with pytest.raises(ValueError, match="mutually exclusive"):
+    with pytest.raises(ValueError, match="at most one of nx and xx"):
         locmem_cache.set("k", 1, nx=True, xx=True)
 
 
@@ -2337,3 +2337,63 @@ def test_async_twin_cases_cover_every_async_method():
     defined = {name for name, owner in owners.items() if owner is LocMemCache}
     # ``asemaphore`` builds a new Semaphore per call; test_semaphores.py covers it.
     assert defined - {"asemaphore"} == {case[0] for case in _ASYNC_TWIN_CASES}
+
+
+def test_nan_score_bound_is_rejected(locmem_cache: LocMemCache):
+    locmem_cache.zadd("k", {"a": 1.0, "b": 2.0, "c": 3.0})
+    with pytest.raises(ValueError, match="not a float"):
+        locmem_cache.zremrangebyscore("k", "nan", "nan")
+    assert locmem_cache.zcard("k") == 3
+
+
+def test_delete_many_and_clear_return_what_resp_returns(locmem_cache: LocMemCache):
+    locmem_cache.set_many({"a": 1, "b": 2})
+    locmem_cache.set("gone", "v", timeout=-1)
+    locmem_cache.rpush("l", "x")
+    assert locmem_cache.delete_many(["a", "l", "gone", "missing", "a"]) == 2
+    assert locmem_cache.delete_many([]) == 0
+    assert set(locmem_cache._expire_info) == {locmem_cache.make_key("b")}
+    assert locmem_cache.clear() is True
+    assert not locmem_cache._cache
+
+
+def test_list_and_hash_members_are_not_shared_with_the_caller(locmem_cache: LocMemCache):
+    member = {"tags": ["a"]}
+    locmem_cache.rpush("l", member)
+    locmem_cache.hset("h", "f", member)
+    member["tags"].append("after write")
+    locmem_cache.lindex("l", 0)["tags"].append("after read")
+    locmem_cache.lrange("l", 0, -1)[0]["tags"].append("after read")
+    locmem_cache.hget("h", "f")["tags"].append("after read")
+    locmem_cache.hgetall("h")["f"]["tags"].append("after read")
+    assert locmem_cache.lrange("l", 0, -1) == [{"tags": ["a"]}]
+    assert locmem_cache.hgetall("h") == {"f": {"tags": ["a"]}}
+    assert locmem_cache.lpos("l", {"tags": ["a"]}) == 0
+    assert locmem_cache.lrem("l", 0, {"tags": ["a"]}) == 1
+
+
+def test_arithmetic_raises_where_redis_raises(locmem_cache: LocMemCache):
+    locmem_cache.hincrbyfloat("h", "f", 0.1)
+    assert locmem_cache.hincrbyfloat("h", "f", 0.2) == 0.3
+    with pytest.raises(ValueError, match="NaN or Infinity"):
+        locmem_cache.hincrbyfloat("h", "f", float("inf"))
+    with pytest.raises(ValueError, match="not a valid float"):
+        locmem_cache.hincrbyfloat("h", "f", float("nan"))
+    locmem_cache.hset("h", "i", 2**63 - 1)
+    with pytest.raises(ValueError, match="would overflow"):
+        locmem_cache.hincrby("h", "i", 1)
+    with pytest.raises(ValueError, match="not an integer or out of range"):
+        locmem_cache.hincrby("h", "new", 2**63)
+    assert locmem_cache.hgetall("h") == {"f": 0.3, "i": 2**63 - 1}
+    locmem_cache.set_many({"max": 2**63 - 1, "float": 1.5, "str": "5", "int": 1})
+    with pytest.raises(ValueError, match="would overflow"):
+        locmem_cache.incr("max")
+    for key, delta in (("float", 1), ("str", 1), ("int", 0.5), ("int", True)):
+        with pytest.raises(ValueError, match="not an integer or out of range"):
+            locmem_cache.incr(key, delta)
+    assert locmem_cache.get_many(["max", "float", "str", "int"]) == {
+        "max": 2**63 - 1,
+        "float": 1.5,
+        "str": "5",
+        "int": 1,
+    }

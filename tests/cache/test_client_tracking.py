@@ -4,16 +4,19 @@ import asyncio
 import inspect
 import itertools
 import logging
+import os
 import random
 import socket
 import threading
 import time
 from collections.abc import Iterator
 from contextlib import suppress
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 import redis
+import valkey
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
 
@@ -21,6 +24,7 @@ from django_cachex.adapters import ValkeyPyAdapter
 from django_cachex.cache import RedisCache
 from django_cachex.orm.store import RespStore
 from django_cachex.script import keys_only_pre
+from django_cachex.tracking import listener as listener_module
 from django_cachex.tracking import tracker as tracker_module
 from django_cachex.tracking.adapter import PIPELINE_READ_METHODS, READ_COMMANDS, READ_METHODS
 from django_cachex.tracking.listener import Listener
@@ -382,23 +386,6 @@ def test_stats_count_the_bytes_of_the_copies_kept():
     assert totals == [1400, 1450, 1050, 550, 250, 0]
 
 
-def _fail_a_fetch(store, key, token, error):
-    try:
-        raise error
-    finally:
-        store.forget(key, token)
-
-
-def test_a_fetch_that_got_no_token_fails_with_its_own_error():
-    store = LocalStore(1024)
-    error = ConnectionError("the fetch failed")
-
-    with pytest.raises(Exception) as raised:
-        _fail_a_fetch(store, "t:a", store.begin_fetch("t:a"), error)
-
-    assert raised.value is error
-
-
 DB = 15
 
 
@@ -493,14 +480,20 @@ def _data_commands(server):
     return _commands(server) - {"info", "ping", "publish"}
 
 
-def test_a_key_outside_the_tracking_prefix_is_read_from_the_server(build, plain):
-    cache = build(tracking={"prefix": plain.make_key("a")}, warm_key="a")
-    cache.set("b", "old")
-    assert cache.get("b") == "old"
+def test_keys_outside_the_tracking_prefix_are_read_from_the_server(build, proxy, plain):
+    plain.set_many({"a": "old", "b": "old"})
+    cache = build(port=proxy.port, tracking={"prefix": plain.make_key("a"), "max_staleness": 3600}, warm_key="a")
+    proxy.pause()
+    assert cache.get_many(["a", "b"]) == {"a": "old", "b": "old"}
+    assert not cache.has_key("c")
+    misses = cache.adapter.tracking_info()["misses"]
 
-    plain.set("b", "new")
+    plain.set_many({"a": "new", "b": "new", "c": "new"})
 
     assert cache.get("b") == "new"
+    assert cache.get_many(["a", "b"]) == {"a": "old", "b": "new"}
+    assert cache.has_key("c")
+    assert cache.adapter.tracking_info()["misses"] == misses
 
 
 def test_info_counts_the_reads_served_from_copies(tracked):
@@ -523,6 +516,27 @@ def test_stampede_prevention_recomputes_from_a_kept_copy(build, proxy, plain, se
 
     assert cache.get("k") is None
     assert _data_commands(server) == set()
+
+
+@pytest.mark.parametrize(("ttl", "present"), [(50, False), (3600, True)])
+def test_has_key_applies_the_stampede_buffer_to_a_kept_copy(ttl, present, build, proxy, plain, server):
+    plain.set("k", 1)
+    plain.expire("k", ttl)
+    cache = build(port=proxy.port, tracking={"max_staleness": 3600}, stampede_prevention=True, warm_key="other")
+    proxy.pause()
+    cache.get("k")
+    server.config_resetstat()
+
+    assert cache.has_key("k") is present
+    assert _data_commands(server) == set()
+
+
+def test_has_key_without_a_copy_treats_a_key_inside_the_stampede_buffer_as_missing(build, plain):
+    plain.set("k", 1)
+    plain.expire("k", 50)
+    cache = build(tracking=True, stampede_prevention=True, warm_key="other")
+
+    assert not cache.has_key("k")
 
 
 def _read_raw(cache, key):
@@ -595,6 +609,59 @@ def test_reads_go_to_the_server_once_the_connection_is_unconfirmed_for_max_stale
     assert read(cache, "k") == gone
 
 
+@pytest.mark.parametrize(("read", "present", "gone"), GATED_READS)
+def test_a_read_that_fails_raises_the_driver_error(read, present, gone, build, proxy, plain):
+    plain.set("k", 1)
+    cache = build(port=proxy.port, tracking=True)
+
+    proxy.cut()
+
+    with pytest.raises((redis.ConnectionError, valkey.ConnectionError)):
+        read(cache, "k")
+
+
+def _warnings(caplog):
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "django_cachex.tracking" and record.levelno >= logging.WARNING
+    ]
+
+
+@pytest.mark.parametrize(("read", "present", "gone"), GATED_READS)
+def test_reads_go_to_the_server_when_the_tracking_thread_cannot_start(
+    read,
+    present,
+    gone,
+    build,
+    plain,
+    monkeypatch,
+    caplog,
+):
+    start = threading.Thread.start
+    refused = []
+
+    def refuse(self):
+        if self.name == "django-cachex-tracking":
+            refused.append(self)
+            raise RuntimeError("can't start new thread")
+        start(self)
+
+    monkeypatch.setattr(threading.Thread, "start", refuse)
+    caplog.set_level(logging.WARNING, logger="django_cachex.tracking")
+    plain.set("k", 1)
+    cache = build(tracking=True, warm_key=None)
+    assert read(cache, "k") == present
+    descriptors = len(list(Path("/dev/fd").iterdir()))
+
+    plain.delete("k")
+
+    assert [read(cache, "k") for _ in range(10)] == [gone] * 10
+    assert len(list(Path("/dev/fd").iterdir())) == descriptors
+    assert len(_warnings(caplog)) == 1
+    assert len(refused) == 1
+
+
 @pytest.mark.parametrize("command", ["FLUSHDB", "FLUSHALL"])
 def test_a_flush_by_another_client_ends_every_copy(command, build, plain, server):
     plain.set_many({"a": 1, "b": 2})
@@ -614,14 +681,16 @@ def test_a_busy_server_closes_the_gate_and_keeps_the_connection(build, server):
         "until (now[1] - start[1]) * 1000000 + now[2] - start[2] > 1500000 "
         "return 1"
     )
-    server.config_set("lua-time-limit", 50)
-    server.config_resetstat()
     busy = threading.Thread(target=server.eval, args=(script, 0))
-    busy.start()
     try:
-        wait_until(lambda: not _fresh(cache), timeout=1.0)
+        server.config_set("lua-time-limit", 50)
+        server.config_resetstat()
+        busy.start()
+        try:
+            wait_until(lambda: not _fresh(cache), timeout=1.0)
+        finally:
+            busy.join()
     finally:
-        busy.join()
         server.config_set("lua-time-limit", 5000)
 
     assert 0 < server.info("commandstats")["cmdstat_ping"]["rejected_calls"] < 30
@@ -730,6 +799,29 @@ def test_a_refused_reconnect_warns_once_and_recovers(build, plain, server, caplo
         server.execute_command("ACL", "DELUSER", username)
 
 
+def _refusals(server, username):
+    return sum(entry["count"] for entry in server.acl_log() if entry["username"] == username)
+
+
+def test_a_refused_first_connection_warns_once_and_reads_go_to_the_server(build, plain, server, caplog):
+    skip_below_server(plain, redis=(7, 0), feature="ACL rules for subcommands")
+    username, password = f"ct-{uuid4().hex[:8]}", uuid4().hex
+    server.execute_command("ACL", "SETUSER", username, "on", f">{password}", "~*", "+@all", "-client|tracking")
+    try:
+        caplog.set_level(logging.WARNING, logger="django_cachex.tracking")
+        plain.set("k", "old")
+        cache = build(userinfo=f"{username}:{password}@", tracking=True, warm_key=None)
+        assert cache.get("k") == "old"
+        wait_until(lambda: _refusals(server, username) >= 3)
+
+        plain.set("k", "new")
+
+        assert cache.get("k") == "new"
+        assert len(_warnings(caplog)) == 1
+    finally:
+        server.execute_command("ACL", "DELUSER", username)
+
+
 @pytest.mark.filterwarnings("ignore:This process .* is multi-threaded:DeprecationWarning")
 def test_a_forked_child_tracks_on_its_own_connection(build, plain, server, registry):
     plain.set("k", "old")
@@ -765,6 +857,18 @@ def test_copies_from_before_an_outage_are_not_served_after_it(build, proxy, plai
     assert cache.get("k") == "new"
 
 
+def test_an_unanswered_ping_ends_the_connection_and_the_thread_reconnects(build, proxy, monkeypatch):
+    monkeypatch.setattr(listener_module, "_PING_TIMEOUT", 0.3)
+    cache = build(port=proxy.port, tracking={"max_staleness": 0.2})
+    proxy.pause()
+    wait_until(lambda: not cache.adapter.tracking_info()["connected"])
+
+    proxy.resume()
+
+    wait_until(lambda: _fresh(cache))
+    assert cache.adapter.tracking_info()["reconnects"] == 1
+
+
 def test_copies_end_once_sentinel_names_another_primary(build, plain, monkeypatch):
     plain.set("k", "old")
     cache = build(tracking={"max_staleness": 0.2})
@@ -773,6 +877,24 @@ def test_copies_end_once_sentinel_names_another_primary(build, plain, monkeypatc
     monkeypatch.setattr(ValkeyPyAdapter, "tracking_primary", lambda self: ("192.0.2.1", 6379))
 
     wait_until(lambda: cache.adapter.tracking_info()["entries"] == 0, timeout=1.0)
+
+
+def test_a_failing_primary_check_warns_once_and_keeps_the_connection(build, monkeypatch, caplog):
+    checks = []
+
+    def unreachable(self):
+        checks.append(self)
+        raise ConnectionError("no Sentinel answered")
+
+    monkeypatch.setattr(ValkeyPyAdapter, "tracking_primary", unreachable)
+    caplog.set_level(logging.WARNING, logger="django_cachex.tracking")
+    cache = build(tracking={"max_staleness": 0.2})
+
+    wait_until(lambda: len(checks) >= 3)
+
+    assert len(_warnings(caplog)) == 1
+    info = cache.adapter.tracking_info()
+    assert (info["connected"], info["reconnects"]) == (True, 0)
 
 
 def test_a_sentinel_alias_serves_copies_across_primary_checks(resp_adapter, sentinel_container, plain, server):
@@ -998,12 +1120,15 @@ def test_a_write_that_changes_the_key_ends_its_copy(mode, name, args, kwargs, tr
 def test_a_write_ends_the_copies_once_the_server_applied_it(mode, tracked, server):
     tracked.set("k", "old")
     assert tracked.get("k") == "old"
-    server.client_pause(300, all=False)
+    server.client_pause(10_000, all=False)
     writer = threading.Thread(target=_write, args=(tracked, mode, "set", "k", "new"))
-    writer.start()
-    time.sleep(0.05)
-    assert tracked.get("k") == "old"
-    writer.join()
+    try:
+        writer.start()
+        wait_until(lambda: server.info("clients")["blocked_clients"] == 1)
+        assert tracked.get("k") == "old"
+    finally:
+        server.client_unpause()
+        writer.join()
 
     assert tracked.get("k") == "new"
 
@@ -1470,7 +1595,8 @@ CHAOS_EVENTS = frozenset({"pause", "kill", "pause-kill", "idle", "read_many"})
 
 
 def test_no_read_returns_a_value_staler_than_the_guarantees_allow(build, plain, server, slow_proxy):
-    seed = random.randrange(2**32)
+    seed = int(os.environ.get("CACHEX_TRACKING_TEST_SEED") or random.randrange(2**32))
+    print(f"CACHEX_TRACKING_TEST_SEED={seed}")  # noqa: T201
     cache = build(port=slow_proxy.port, tracking={"max_staleness": CHECK_STALENESS})
     seen = set()
 

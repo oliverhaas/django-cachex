@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import pytest
 from django.core.cache import caches
 from django.test import override_settings
+from redis import Redis
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -100,3 +101,32 @@ async def test_async_operations_with_sentinel(sentinel_cache: RespCache):
 
     await sentinel_cache.adelete("async_sentinel_test")
     assert await sentinel_cache.aget("async_sentinel_test") is None
+
+
+def test_sentinel_finds_a_master_name_with_upper_case_letters(
+    sentinel_container: SentinelContainerInfo,
+    resp_images: tuple[str, str],
+):
+    _image, client_library = resp_images
+    scheme, backend = (
+        ("valkey", "ValkeySentinelCache") if client_library == "valkey" else ("redis", "RedisSentinelCache")
+    )
+    sentinels = [(sentinel_container.host, sentinel_container.port)]
+    caches_config = {
+        "default": {
+            "BACKEND": f"django_cachex.cache.{backend}",
+            "LOCATION": f"{scheme}://CaseMaster/0",
+            "OPTIONS": {"sentinels": sentinels},
+        },
+    }
+    sentinel = Redis(sentinel_container.host, sentinel_container.port)
+    host, port = sentinel.execute_command("SENTINEL", "GET-MASTER-ADDR-BY-NAME", "mymaster")
+    sentinel.execute_command("SENTINEL", "MONITOR", "CaseMaster", host, port, 1)
+    try:
+        with override_settings(CACHES=caches_config):
+            caches["default"].set("upper_case_master", "value", timeout=60)
+            assert caches["default"].get("upper_case_master") == "value"
+            caches["default"].delete("upper_case_master")
+    finally:
+        sentinel.execute_command("SENTINEL", "REMOVE", "CaseMaster")
+        sentinel.close()

@@ -15,6 +15,7 @@ from django.db.models.functions import Random
 from django.test import override_settings
 
 from django_cachex.orm.api import invalidate
+from django_cachex.orm.apps import check_cache
 from django_cachex.orm.settings import DEFAULTS, SUPPORTED_ONLY, database_vendor, orm_settings, supported_databases
 from django_cachex.orm.utils import _get_tables
 from tests.orm.app.models import Test, TestChild, TestParent, UnmanagedModel
@@ -329,6 +330,12 @@ def test_keygen_that_is_not_a_callable(name, value):
         pass
 
 
+@pytest.mark.parametrize("value", ["3600", True, [60]])
+def test_timeout_that_is_not_a_number(value):
+    with pytest.raises(ImproperlyConfigured, match="TIMEOUT"), override_orm_settings(TIMEOUT=value):
+        pass
+
+
 def test_cache_checks():
     assert run_checks(tags=[Tags.caches]) == []
 
@@ -361,6 +368,15 @@ def test_cache_checks():
             ),
         ]
         assert_query_cached(Test.objects.all(), after=1)
+
+
+def test_cache_that_does_not_load_check():
+    removed = {"BACKEND": "django_cachex.cache.TrackingCache"}
+    with override_settings(CACHES={**settings.CACHES, "removed": removed}), override_orm_settings(CACHE="removed"):
+        errors = check_cache(None)
+    assert [error.id for error in errors] == ["cachex_orm.E005"]
+    assert "TrackingCache" in errors[0].msg
+    assert "CACHES['removed']" in errors[0].hint
 
 
 @pytest.mark.skipif(

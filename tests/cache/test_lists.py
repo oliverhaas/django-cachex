@@ -759,3 +759,14 @@ def test_blpop_does_not_stall_other_commands(cache: RespCache, client_class: str
         cache.rpush("blpop_no_stall", "v")
 
         assert waiter.result() == ("blpop_no_stall", "v")
+
+
+@pytest.mark.asyncio
+async def test_blocking_pops_return_an_undecodable_list_under_the_name_scan_returns(cache: RespCache):
+    name = "{blbad}\udcff"
+    cache.adapter.rpush(cache.make_key("{blbad}").encode() + b"\xff", *(cache.encode(v) for v in "abcd"))
+
+    assert cache.blpop(name, timeout=1) == (name, "a")
+    assert cache.brpop(name, timeout=1) == (name, "d")
+    assert await cache.ablpop(name, timeout=1) == (name, "b")
+    assert await cache.abrpop(name, timeout=1) == (name, "c")

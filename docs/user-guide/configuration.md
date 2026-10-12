@@ -125,12 +125,21 @@ database vendor. These methods and their `a*` twins raise `NotSupportedError`:
 - `semaphore()` on `DatabaseCache`. On `LocMemCache`, it returns the
   in-process `django_cachex.Semaphore`.
 
-Streams are not implemented.
+Streams are not implemented. `xlen()` raises `NotSupportedError`, and the
+other stream methods do not exist, so a call raises `AttributeError`.
 
 `incr_version()` and `decr_version()` move keys of every type and keep their
 TTL, like Redis `RENAME`. `DatabaseCache.incr()` and `decr()` update the row
 atomically and keep the key's TTL. Like Django, they raise `ValueError` on a
 missing key, where the Valkey/Redis backends create it.
+
+`incr()`, `decr()`, `hincrby()` and `hincrbyfloat()` fail where the server
+fails. They raise `ValueError` with the server's message, for example on a
+value that is not an integer or on a sum beyond 64 bits.
+
+`LocMemCache` keeps copies of list elements and hash values, as it does of
+plain values. Changing an object after `rpush()`, `hset()` or a read leaves the
+cache unchanged. Set and sorted set members are stored by reference.
 
 Members compare as Python values, where the Valkey/Redis backends compare
 their serialized bytes. `1`, `True` and `1.0` are one member of a set or a
@@ -340,11 +349,15 @@ keys expire logically at their timeout. A field of the wrong type raises
 
 The `stampede_prevention=` keyword overrides the option for one call. It takes
 `True`, `False`, a `StampedeConfig`, or `None`, the default, which keeps the
-`OPTIONS` setting. `get`, `set`, `add`, `touch`, `get_or_set`, `get_many`,
-`set_many`, `ttl`, `pttl`, `expire`, `expireat`, `pexpire`, `pexpireat`,
-`expiretime` and their `a*` twins take it. On `touch`, pass the value the
-original write used, because it decides whether the new TTL includes the
-buffer.
+`OPTIONS` setting. `get`, `set`, `add`, `has_key`, `touch`, `get_or_set`,
+`get_many`, `set_many`, `ttl`, `pttl`, `expire`, `expireat`, `pexpire`,
+`pexpireat`, `expiretime` and their `a*` twins take it. On `touch`, pass the
+value the original write used, because it decides whether the new TTL
+includes the buffer.
+
+A key inside the buffer is logically expired, so `get()` misses it and
+`has_key()` returns `False`. `touch()` leaves it alone and returns `False`.
+`add()` and `set()` with `nx`, `xx` or `get` treat it as absent.
 
 Counters and data structures get the buffer too. `expire()` and its relatives
 add it to any key, and `incr()` keeps counting on a key that `get()` already
@@ -486,8 +499,10 @@ CACHES = {
 `REVERSE_KEY_FUNCTION` takes the full internal key and returns the user key,
 the inverse of `KEY_FUNCTION`. It accepts a dotted path or a callable. Set it
 when a custom `KEY_FUNCTION` breaks the default `prefix:version:` stripping. It
-changes the keys that `keys()`, `iter_keys()`, `scan()`, `blpop()`, `brpop()`
-and their `a*` twins return, not the stored keys.
+changes the keys that `keys()`, `iter_keys()`, `scan()`, `largest_keys()`,
+`blpop()`, `brpop()` and their `a*` twins return, not the stored keys. Without
+it, these methods return the full internal key for a key the default stripping
+cannot parse.
 
 !!! warning "Valkey/Redis backends only"
     `LocMemCache` and `DatabaseCache` ignore `REVERSE_KEY_FUNCTION`.

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from django.apps import apps
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError, CommandParser
+from django.db import DatabaseError
 
 from django_cachex.orm.api import invalidate
 
@@ -67,6 +68,9 @@ class Command(BaseCommand):
         if verbosity > 0:
             self.stdout.write(" ".join(filter(bool, ["Invalidating", target, cache_str, db_str])) + "...")
 
-        invalidate(*models, cache_alias=cache_alias, db_alias=db_alias)
+        try:
+            invalidate(*models, cache_alias=cache_alias, db_alias=db_alias)
+        except DatabaseError as e:
+            raise CommandError(str(e)) from e
         if verbosity > 0:
             self.stdout.write("ORM cache invalidated.")

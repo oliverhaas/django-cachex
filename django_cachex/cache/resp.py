@@ -27,7 +27,7 @@ from django.utils.module_loading import import_string
 
 if TYPE_CHECKING:
     import builtins
-    from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
+    from collections.abc import AsyncIterator, Callable, Generator, Iterator, Mapping, Sequence
 
     from django_cachex.adapters.pipeline import AsyncPipeline, Pipeline
     from django_cachex.adapters.protocols import RespAdapterProtocol
@@ -45,6 +45,7 @@ from django_cachex.utils import (
     _validate_linsert_where,
     _validate_lpos_args,
     _validate_pop_count,
+    _validate_set_flags,
     _validate_zadd_flags,
     _validate_zrange_limit,
     _wire_key,
@@ -150,6 +151,19 @@ end
 return false
 """
 
+# KEYS[1]: key. ARGV: timeout (-1 persists), stampede buffer.
+# A key inside the buffer is logically expired, so ``touch()`` leaves it alone, as ``get()`` misses it.
+_STAMPEDE_TOUCH_LUA = """
+local ttl = redis.call('TTL', KEYS[1])
+if ttl ~= -1 and ttl <= tonumber(ARGV[2]) then
+    return 0
+end
+if tonumber(ARGV[1]) < 0 then
+    return redis.call('PERSIST', KEYS[1])
+end
+return redis.call('EXPIRE', KEYS[1], ARGV[1])
+"""
+
 
 def _validate_lock_lease(lease: float | None) -> None:
     """The drivers send ``PX int(lease * 1000)``; below 1 ms that is ``PX 0`` (or a bare ``PX`` on glide)."""
@@ -159,7 +173,7 @@ def _validate_lock_lease(lease: float | None) -> None:
 
 
 @contextmanager
-def _set_nx_get_translated(*, nx: bool, xx: bool, get: bool) -> Iterator[None]:
+def _set_nx_get_translated(*, nx: bool, xx: bool, get: bool) -> Generator[None]:
     """Re-raise the server's rejection of ``SET ... NX GET`` (Redis before 7.0) as :class:`NotSupportedError`."""
     try:
         yield
@@ -306,8 +320,8 @@ class RespCache(BaseCachex):
         Returns ``value`` unchanged when no compressors are configured or
         when every configured compressor fails: ``compress()`` stores
         payloads at or below ``min_length`` uncompressed, so those raw
-        bytes must fall through to the deserializer. Genuinely corrupt
-        data then surfaces as a ``SerializerError`` there.
+        bytes must fall through to the deserializer. Corrupt data then
+        surfaces as a ``SerializerError`` there.
         """
         for compressor in self._compressors:
             try:
@@ -486,10 +500,9 @@ class RespCache(BaseCachex):
     ) -> int | datetime:
         """Add the stampede buffer to an absolute ``EXPIREAT``/``PEXPIREAT`` deadline.
 
-        Deadlines already in the past delete the key and pass through
-        untouched, mirroring :meth:`_buffered_timeout`. Without that,
-        ``expireat(key, yesterday)`` kept the key alive for another
-        ``buffer`` seconds.
+        Deadlines already in the past pass through untouched, mirroring
+        :meth:`_buffered_timeout`, so ``expireat(key, yesterday)`` deletes the
+        key instead of keeping it for ``buffer`` seconds.
         """
         buffer_s = self._stampede_buffer(stampede_prevention)
         if not buffer_s:
@@ -663,15 +676,16 @@ class RespCache(BaseCachex):
         ``nx=True`` only sets if key doesn't exist, ``xx=True`` only sets
         if key exists, ``get=True`` returns the old value. With stampede
         prevention active, the flags count a key inside the buffer as absent,
-        as :meth:`aadd` does.
+        as :meth:`aadd` does. ``nx`` and ``xx`` together raise ``ValueError``.
         """
+        _validate_set_flags(nx=nx, xx=xx)
         buffer_s = self._stampede_buffer(stampede_prevention) if nx or xx or get else None
         if nx and not (xx or get) and buffer_s is not None:
             return await self.aadd(key, value, timeout, version, stampede_prevention=stampede_prevention)
         key = self.make_and_validate_key(key, version=version)
         if nx or xx or get:
             with _set_nx_get_translated(nx=nx, xx=xx, get=get):
-                if buffer_s is not None and not (nx and xx):
+                if buffer_s is not None:
                     argv = self._stampede_set_argv(value, timeout, buffer_s, stampede_prevention, nx=nx, xx=xx, get=get)
                     result = await self.adapter.aeval(_STAMPEDE_SET_LUA, 1, key, *argv)
                 else:
@@ -715,15 +729,17 @@ class RespCache(BaseCachex):
         if key exists, ``get=True`` returns the old value. Returns ``bool``
         when ``nx``/``xx`` is used, the old value when ``get=True``, ``None``
         otherwise. With stampede prevention active, the flags count a key
-        inside the buffer as absent, as :meth:`add` does.
+        inside the buffer as absent, as :meth:`add` does. ``nx`` and ``xx``
+        together raise ``ValueError``.
         """
+        _validate_set_flags(nx=nx, xx=xx)
         buffer_s = self._stampede_buffer(stampede_prevention) if nx or xx or get else None
         if nx and not (xx or get) and buffer_s is not None:
             return self.add(key, value, timeout, version, stampede_prevention=stampede_prevention)
         key = self.make_and_validate_key(key, version=version)
         if nx or xx or get:
             with _set_nx_get_translated(nx=nx, xx=xx, get=get):
-                if buffer_s is not None and not (nx and xx):
+                if buffer_s is not None:
                     argv = self._stampede_set_argv(value, timeout, buffer_s, stampede_prevention, nx=nx, xx=xx, get=get)
                     result = self.adapter.eval(_STAMPEDE_SET_LUA, 1, key, *argv)
                 else:
@@ -760,11 +776,16 @@ class RespCache(BaseCachex):
 
         With stampede prevention active, the stored TTL gets the same
         buffer that ``set()`` applies, keeping the logical remaining TTL
-        intact.
+        intact. A key inside the buffer is logically expired, so ``touch()``
+        leaves it alone and returns ``False``.
         """
         key = self.make_and_validate_key(key, version=version)
         timeout_s = self.adapter.get_timeout_with_buffer(self.get_backend_timeout(timeout), stampede_prevention)
-        return self.adapter.touch(key, timeout_s)
+        buffer_s = self._stampede_buffer(stampede_prevention)
+        if buffer_s is None:
+            return self.adapter.touch(key, timeout_s)
+        timeout_arg = -1 if timeout_s is None else timeout_s
+        return bool(self.adapter.eval(_STAMPEDE_TOUCH_LUA, 1, key, timeout_arg, buffer_s))
 
     @override
     async def atouch(
@@ -775,10 +796,14 @@ class RespCache(BaseCachex):
         *,
         stampede_prevention: bool | StampedeConfig | None = None,
     ) -> bool:
-        """Update the timeout on a key asynchronously."""
+        """Update the timeout on a key asynchronously. See :meth:`touch`."""
         key = self.make_and_validate_key(key, version=version)
         timeout_s = self.adapter.get_timeout_with_buffer(self.get_backend_timeout(timeout), stampede_prevention)
-        return await self.adapter.atouch(key, timeout_s)
+        buffer_s = self._stampede_buffer(stampede_prevention)
+        if buffer_s is None:
+            return await self.adapter.atouch(key, timeout_s)
+        timeout_arg = -1 if timeout_s is None else timeout_s
+        return bool(await self.adapter.aeval(_STAMPEDE_TOUCH_LUA, 1, key, timeout_arg, buffer_s))
 
     @override
     def delete(self, key: str, version: int | None = None) -> bool:
@@ -819,16 +844,32 @@ class RespCache(BaseCachex):
         return {key_map[k]: self.decode(v) for k, v in ret.items()}
 
     @override
-    def has_key(self, key: str, version: int | None = None) -> bool:
-        """Check if a key exists."""
+    def has_key(
+        self,
+        key: str,
+        version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
+    ) -> bool:
+        """Check if a key exists.
+
+        With stampede prevention active, a key inside the buffer is logically
+        expired, so ``has_key()`` returns ``False`` for it, as :meth:`get` misses it.
+        """
         key = self.make_and_validate_key(key, version=version)
-        return self.adapter.has_key(key)
+        return self.adapter.has_key(key, stampede_prevention=stampede_prevention)
 
     @override
-    async def ahas_key(self, key: str, version: int | None = None) -> bool:
-        """Check if a key exists asynchronously."""
+    async def ahas_key(
+        self,
+        key: str,
+        version: int | None = None,
+        *,
+        stampede_prevention: bool | StampedeConfig | None = None,
+    ) -> bool:
+        """Check if a key exists asynchronously. See :meth:`has_key`."""
         key = self.make_and_validate_key(key, version=version)
-        return await self.adapter.ahas_key(key)
+        return await self.adapter.ahas_key(key, stampede_prevention=stampede_prevention)
 
     @override
     def incr(self, key: str, delta: int = 1, version: int | None = None) -> int:
@@ -874,9 +915,7 @@ class RespCache(BaseCachex):
             if callable(default):
                 default = default()
             if self.adapter.resolve_stampede(stampede_prevention):
-                # Stampede can return "miss" for a key that still physically exists.
-                # Use set() (unconditional write) instead of add() (NX) so the
-                # recomputed value actually overwrites the stale key.
+                # A stampede miss can leave the stale key in place, so set() overwrites it where add() would not.
                 self.set(key, default, timeout=timeout, version=version, stampede_prevention=stampede_prevention)
             else:
                 self.add(key, default, timeout=timeout, version=version, stampede_prevention=stampede_prevention)
@@ -1107,15 +1146,10 @@ class RespCache(BaseCachex):
             elif size > heap[0][0]:
                 heapq.heapreplace(heap, (size, key))
 
-    async def _amemory_usage_batch(
-        self,
-        keys: tuple[str, ...],
-        version: int | None,
-        samples: int | None,
-    ) -> list[int | None]:
-        pipe = await self.apipeline(transaction=False)
+    async def _amemory_usage_batch(self, keys: tuple[str, ...], samples: int | None) -> list[int | None]:
+        pipe = await self.adapter.apipeline(transaction=False)
         for key in keys:
-            pipe.memory_usage(key, version=version, samples=samples)
+            pipe.memory_usage(_wire_key(key), samples=samples)
         return await pipe.execute()
 
     def largest_keys(
@@ -1134,6 +1168,8 @@ class RespCache(BaseCachex):
         ``count``. Keys come back without prefix or version, as
         :meth:`iter_keys` returns them; ``samples`` is passed through to
         :meth:`memory_usage`. ``count=0`` returns ``[]`` without scanning.
+        MEMORY USAGE runs on the scanned keys as they are, so a custom
+        ``KEY_FUNCTION`` without ``REVERSE_KEY_FUNCTION`` returns its made keys.
         """
         if count < 0:
             msg = f"count must not be negative, got {count}"
@@ -1141,13 +1177,14 @@ class RespCache(BaseCachex):
         if count == 0:
             return []
         heap: list[tuple[int, str]] = []
-        scan = self.iter_keys(pattern, version=version, itersize=itersize)
+        full_pattern = _wire_key(self.make_pattern(pattern, version=version))
+        scan = self.adapter.iter_keys(full_pattern, itersize=itersize)
         for keys in batched(scan, self._LARGEST_KEYS_BATCH, strict=False):
-            pipe = self.pipeline(transaction=False)
+            pipe = self.adapter.pipeline(transaction=False)
             for key in keys:
-                pipe.memory_usage(key, version=version, samples=samples)
+                pipe.memory_usage(_wire_key(key), samples=samples)
             self._largest_keys_heap(heap, keys, pipe.execute(), count)
-        return [(key, size) for size, key in sorted(heap, reverse=True)]
+        return [(self.reverse_key(key), size) for size, key in sorted(heap, reverse=True)]
 
     async def alargest_keys(
         self,
@@ -1166,16 +1203,17 @@ class RespCache(BaseCachex):
             return []
         heap: list[tuple[int, str]] = []
         batch: list[str] = []
-        async for key in self.aiter_keys(pattern, version=version, itersize=itersize):
+        full_pattern = _wire_key(self.make_pattern(pattern, version=version))
+        async for key in self.adapter.aiter_keys(full_pattern, itersize=itersize):
             batch.append(key)
             if len(batch) == self._LARGEST_KEYS_BATCH:
                 keys = tuple(batch)
                 batch.clear()
-                self._largest_keys_heap(heap, keys, await self._amemory_usage_batch(keys, version, samples), count)
+                self._largest_keys_heap(heap, keys, await self._amemory_usage_batch(keys, samples), count)
         if batch:
             keys = tuple(batch)
-            self._largest_keys_heap(heap, keys, await self._amemory_usage_batch(keys, version, samples), count)
-        return [(key, size) for size, key in sorted(heap, reverse=True)]
+            self._largest_keys_heap(heap, keys, await self._amemory_usage_batch(keys, samples), count)
+        return [(self.reverse_key(key), size) for size, key in sorted(heap, reverse=True)]
 
     def persist(self, key: str, version: int | None = None) -> bool:
         """Remove the expiry from a key, making it persistent."""
@@ -1603,16 +1641,19 @@ class RespCache(BaseCachex):
         """Delete all keys for this cache's prefix, across ALL versions.
 
         More destructive than ``clear()`` which only removes the current version.
-        Useful when rotating cache versions and cleaning up old keys.
+        Useful when rotating cache versions and cleaning up old keys. The
+        version segment must start with a digit or ``-``, so the keys of a
+        cache whose ``KEY_PREFIX`` extends this one (``app:sessions`` after
+        ``app``) survive.
         """
         escaped_prefix = _glob_escape(self.key_prefix)
-        full_pattern = self.key_func("*", escaped_prefix, "*")
+        full_pattern = self.key_func("*", escaped_prefix, "[-0-9]*")
         return self.adapter.delete_pattern(full_pattern, itersize=itersize)
 
     async def aclear_all_versions(self, itersize: int | None = None) -> int:
-        """Delete all keys for this cache's prefix across ALL versions (async)."""
+        """Delete all keys for this cache's prefix across ALL versions (async). See :meth:`clear_all_versions`."""
         escaped_prefix = _glob_escape(self.key_prefix)
-        full_pattern = self.key_func("*", escaped_prefix, "*")
+        full_pattern = self.key_func("*", escaped_prefix, "[-0-9]*")
         return await self.adapter.adelete_pattern(full_pattern, itersize=itersize)
 
     def flush_db(self) -> bool:
@@ -4260,12 +4301,11 @@ class RespClusterCache(RespCache):
     ) -> Pipeline:
         """Create a pipeline. Cluster pipelines never use transactions.
 
-        ``transaction=True`` raises :class:`NotSupportedError` rather than
-        silently downgrading. Cluster mode can't honour MULTI/EXEC across
-        slots.
+        ``transaction=True`` raises :class:`NotSupportedError`, because
+        cluster mode cannot run MULTI/EXEC across slots.
         """
         if transaction:
-            raise NotSupportedError("MULTI/EXEC pipelines", backend="cluster")
+            raise NotSupportedError("MULTI/EXEC pipelines", backend="cluster", detail="use pipeline(transaction=False)")
         return super().pipeline(transaction=False, version=version)
 
     @override
@@ -4277,12 +4317,11 @@ class RespClusterCache(RespCache):
     ) -> AsyncPipeline:
         """Create an async pipeline. Cluster pipelines never use transactions.
 
-        ``transaction=True`` raises :class:`NotSupportedError` rather than
-        silently downgrading. Cluster mode can't honour MULTI/EXEC across
-        slots.
+        ``transaction=True`` raises :class:`NotSupportedError`, because
+        cluster mode cannot run MULTI/EXEC across slots.
         """
         if transaction:
-            raise NotSupportedError("MULTI/EXEC pipelines", backend="cluster")
+            raise NotSupportedError("MULTI/EXEC pipelines", backend="cluster", detail="use pipeline(transaction=False)")
         return await super().apipeline(transaction=False, version=version)
 
     def _check_version_rename(self, key: str, delta: int, version: int | None) -> None:
@@ -4291,8 +4330,8 @@ class RespClusterCache(RespCache):
         ``KEY_PREFIX:V:key`` and ``KEY_PREFIX:V+delta:key`` only land in
         the same slot when both *made* keys carry the same hash tag
         (``{...}`` segment), which means one that excludes the version.
-        Without that the rename hits CROSSSLOT. Reject up front instead of
-        leaving users with a runtime cluster error and a half-renamed state.
+        Without it the RENAME fails with CROSSSLOT, so reject it before the
+        round trip.
 
         The made keys are what gets checked, not the raw one, so a
         ``KEY_PREFIX`` of ``"{app}"`` colocates every key it produces and
@@ -4343,7 +4382,7 @@ class RespClusterCache(RespCache):
         :meth:`semaphore` for cluster-safe mutual exclusion: it colocates its
         keys under a ``{name}`` hash tag.
         """
-        raise NotSupportedError("lock", backend="cluster")
+        raise NotSupportedError("lock", backend="cluster", detail="use semaphore(key, 1) with a hash-tagged key")
 
     @override
     async def alock(
@@ -4358,7 +4397,7 @@ class RespClusterCache(RespCache):
         thread_local: bool = True,
     ) -> Any:
         """Reject ``alock`` on cluster mode. See :meth:`lock`."""
-        raise NotSupportedError("alock", backend="cluster")
+        raise NotSupportedError("alock", backend="cluster", detail="use semaphore(key, 1) with a hash-tagged key")
 
 
 class RespSentinelCache(RespCache):

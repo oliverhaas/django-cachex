@@ -9,6 +9,7 @@ from django.shortcuts import redirect, render
 from django_cachex.admin.helpers import (
     CacheUnavailableError,
     creatable_types,
+    exists_on_server,
     get_cache,
     unknown_type_message,
     unreachable_message,
@@ -65,7 +66,7 @@ def key_add_view(
             messages.error(request, unknown_type_message(cache, key_type))
         else:
             try:
-                exists = cache.has_key(key_name)
+                exists = exists_on_server(cache, key_name)
             except Exception as exc:  # noqa: BLE001
                 messages.error(request, unreachable_message(cache_name, exc))
                 return cache_list_redirect(request)

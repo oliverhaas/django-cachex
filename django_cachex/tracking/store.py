@@ -1,21 +1,29 @@
 """Local copies of string values, the fetch tokens that guard them, and their byte-bounded LRU."""
 
 import threading
+import time
 from collections import OrderedDict
+from functools import partial
 from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
 # Bytes an entry counts on top of its key and value.
 ENTRY_OVERHEAD: Final = 100
+
+# The clock of every tracking time. CLOCK_MONOTONIC stops during a suspend, so copies would look fresh after it.
+# CLOCK_BOOTTIME, on Linux, keeps counting.
+clock: Final[Callable[[], float]] = (
+    partial(time.clock_gettime, time.CLOCK_BOOTTIME) if hasattr(time, "CLOCK_BOOTTIME") else time.monotonic
+)
 
 
 class Copy(NamedTuple):
     """A value read from the primary; ``value`` None marks a key the server did not have."""
 
     value: bytes | None
-    # time.monotonic() at which the key expires on the server at the earliest, None without a TTL.
+    # clock() at which the key expires on the server at the earliest, None without a TTL.
     deadline: float | None
     size: int
 
@@ -105,7 +113,7 @@ class LocalStore:
         """Store what a fetch read, unless a push or a write came since its token was issued.
 
         ``pttl`` is the PTTL reply read after the value, ``started`` the
-        monotonic time before the fetch was sent.
+        :data:`clock` time before the fetch was sent.
         """
         if token is None:
             return

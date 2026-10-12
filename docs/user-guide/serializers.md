@@ -75,6 +75,8 @@ comes back as that type, and the caller converts it on read. A cross means
 | `dataclass` instance | ✓ | ✗ | ✗ | ~ dict | ~ dict |
 | `Enum` | ✓ | ✗ | ✗ | ~ value | ~ value |
 
+Two primitives have limits. orjson stores a `float` NaN or infinity as `null`, so it comes back as `None`. An `int` below `-2**63` or above `2**64 - 1` makes `dumps` raise `SerializerError` on msgpack, orjson and ormsgpack.
+
 For Django model instances and types the table does not list, use `pickle` or
 a custom serializer. For JSON-compatible values, `orjson` and `ormsgpack` are
 the fastest encoders on batch writes, and `json` is the slowest. The encoder

@@ -7,11 +7,11 @@ import selectors
 import socket
 import ssl
 import threading
-import time
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, Final
 
 from django_cachex.tracking.resp3 import NEED_MORE, ErrorReply, Parser, ProtocolError, Push, SimpleString
+from django_cachex.tracking.store import clock
 
 if TYPE_CHECKING:
     from django_cachex.tracking.store import LocalStore
@@ -119,7 +119,7 @@ class Listener:
                 self._wake()
             if capped:
                 return False
-            return self._confirmed_at is not None and time.monotonic() - self._confirmed_at <= self._max_staleness
+            return self._confirmed_at is not None and clock() - self._confirmed_at <= self._max_staleness
 
     def status(self) -> tuple[bool, float | None]:
         """Whether the connection is up, and the time it was last confirmed."""
@@ -182,7 +182,12 @@ class Listener:
             self._wake_w.send(b"\0")
 
     def start(self) -> None:
-        self._thread.start()
+        """Start the thread; if it cannot start, close the wake sockets and the selector and raise."""
+        try:
+            self._thread.start()
+        except BaseException:
+            self.stop()
+            raise
 
     def stop(self, timeout: float = 10.0) -> None:
         """Stop the thread and close the connection."""
@@ -258,7 +263,7 @@ class Listener:
         try:
             sock = conn._sock
             parser = Parser()
-            sent_at = time.monotonic()
+            sent_at = clock()
             sock.sendall(self._tracking_command)
             # Read with this parser, so a push that shares a segment with the +OK cannot stay in the driver's.
             _expect_ok(sock, parser)
@@ -280,7 +285,7 @@ class Listener:
                 logger.debug("The tracking connection sent a bad frame.", exc_info=True)
                 self._mark_broken()
         self._address = (getattr(conn, "host", None), getattr(conn, "port", None))
-        self._next_primary_check = time.monotonic() + self._max_staleness
+        self._next_primary_check = clock() + self._max_staleness
         self._handshakes += 1
         if self._handshakes > 1:
             self.reconnects += 1
@@ -288,7 +293,7 @@ class Listener:
 
     def _step(self) -> None:
         """PING when due, check the primary when due, wait for the socket, and drain it."""
-        now = time.monotonic()
+        now = clock()
         with self._io_lock:
             if self._broken:
                 return
@@ -317,7 +322,7 @@ class Listener:
             self._next_primary_check = now + self._max_staleness
             self._check_primary()
         self._watch(sock, writing=writing)
-        timeout = max(0.0, min(due, self._next_primary_check) - time.monotonic())
+        timeout = max(0.0, min(due, self._next_primary_check) - clock())
         for key, _ in self._selector.select(timeout):
             if key.fileobj is self._wake_r:
                 self._clear_wake()

@@ -1,5 +1,6 @@
 """Tests for all compressor implementations."""
 
+import re
 import zlib
 from compression import zstd
 
@@ -143,3 +144,25 @@ def test_higher_level_compresses_smaller(cls, low, high):
 def test_bad_level_is_rejected_when_the_compressor_is_built(cls, level):
     with pytest.raises(ImproperlyConfigured, match=cls.__name__):
         cls(level=level)
+
+
+@pytest.mark.parametrize(
+    ("cls", "old_frame"),
+    [(Lz4Compressor, lz4_frame.compress), (ZstdCompressor, zstd.compress)],
+    ids=["Lz4Compressor", "ZstdCompressor"],
+)
+def test_frames_carry_a_checksum_and_older_frames_still_read(cls, old_frame):
+    data = bytes(range(256)) * 4
+    compressor = cls()
+    assert compressor.decompress(old_frame(data)) == data
+
+    frame = bytearray(compressor.compress(data))
+    frame[frame.index(bytes(range(100, 110))) + 3] ^= 1
+    with pytest.raises(CompressorError):
+        compressor.decompress(bytes(frame))
+
+
+@pytest.mark.parametrize("min_length", ["1024", -1, True, 1.5], ids=["str", "negative", "bool", "float"])
+def test_bad_min_length_is_rejected_when_the_compressor_is_built(min_length):
+    with pytest.raises(ImproperlyConfigured, match=re.escape(f"got {min_length!r}")):
+        ZlibCompressor(min_length=min_length)

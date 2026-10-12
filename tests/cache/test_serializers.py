@@ -1,4 +1,5 @@
 import pickle
+from datetime import UTC, datetime
 from enum import IntEnum
 
 import pytest
@@ -203,3 +204,9 @@ def test_int_subclass_value_roundtrips(serializer: str, member: int):
 def test_pickle_keeps_the_enum_type(member: int):
     cache = make_cache(serializer="django_cachex.serializers.pickle.PickleSerializer")
     assert cache.decode(cache.encode(member)) is member
+
+
+def test_ormsgpack_reads_its_own_value_whose_keys_collide_when_packed():
+    serializer = OrmsgpackSerializer()
+    payload = serializer.dumps({datetime(2024, 1, 1, tzinfo=UTC): 1, "2024-01-01T00:00:00+00:00": 2})
+    assert serializer.loads(payload) == {"2024-01-01T00:00:00+00:00": 2}

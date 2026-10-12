@@ -52,6 +52,9 @@ On the redis-py and valkey-py backends, sync and async calls use separate connec
 !!! warning "Short-lived event loops"
     Each `asyncio.run()` starts a new event loop, so it opens a new pool and a new TCP connection. Use the sync methods where loops are short-lived.
 
+!!! warning "valkey-glide needs one event loop per process"
+    valkey-glide 2.5.3 reads the replies of every async client in the process on the loop that created the first one. After that loop closes, async calls on other loops never return, and the request timeout does not fire. On the glide backends, call the async methods from one long-lived loop only, as an ASGI server does. Use the sync methods everywhere else, including async views under a WSGI server and threads that run `asyncio.run()`.
+
 | Context | Recommendation |
 |---------|----------------|
 | ASGI views (uvicorn, daphne) | Use async methods (`aget`, `aset`) |

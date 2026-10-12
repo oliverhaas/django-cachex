@@ -2,7 +2,7 @@
 
 ## Cache Methods
 
-A method that the backend or the connected server does not support raises `NotSupportedError`. [Local backends](../user-guide/configuration.md#local-backends) lists what `LocMemCache` and `DatabaseCache` lack.
+A method that the backend or the connected server does not support raises `NotSupportedError`. [Local backends](../user-guide/configuration.md#local-backends) lists what `LocMemCache` and `DatabaseCache` lack. Those two backends have no stream methods except `xlen()`, so the others raise `AttributeError`.
 
 ### Standard Django Cache Methods
 
@@ -15,9 +15,9 @@ A method that the backend or the connected server does not support raises `NotSu
 | `touch(key, timeout=DEFAULT)` | Update timeout on a key |
 | `get_many(keys)` | Get multiple values |
 | `set_many(data, timeout=DEFAULT)` | Set multiple values |
-| `delete_many(keys)` | Delete multiple keys |
+| `delete_many(keys)` | Delete multiple keys and return the number deleted |
 | `get_or_set(key, default, timeout=DEFAULT)` | Get value or set default |
-| `clear()` | Clear the cache, see [Clearing keys](#clearing-keys) |
+| `clear()` | Clear the cache and return `True`, see [Clearing keys](#clearing-keys) |
 | `has_key(key)` | Check if key exists |
 | `incr(key, delta=1)` | Increment a value |
 | `decr(key, delta=1)` | Decrement a value |
@@ -52,7 +52,7 @@ The Valkey/Redis backends and `LocMemCache` take all three flags. `DatabaseCache
 | `pexpireat(key, when)` | Set expiration at datetime (ms precision) |
 | `expiretime(key)` | Unix timestamp (seconds) when the key expires. Needs Redis 7.0+ (any supported Valkey) |
 | `persist(key)` | Remove expiration |
-| `type(key)` | Get the data type of a key |
+| `type(key)` | The key's type as a `django_cachex.KeyType`, such as `KeyType.HASH`, or `None` for a missing key. Module types, such as JSON, give `KeyType.UNKNOWN` |
 | `memory_usage(key, version=None, *, samples=None)` | Bytes the key and its value take on the server, or `None` for a missing key. `samples` sets the `MEMORY USAGE` sample count for containers (`0` = all) |
 | `largest_keys(pattern="*", count=10, version=None, *, samples=None, itersize=None)` | The `count` largest keys matching `pattern` as `(key, bytes)` pairs, largest first. Runs `MEMORY USAGE` on every matching key |
 | `info(section=None)` | Server statistics from `INFO` as a dict. On the Valkey/Redis backends, `section`, such as `"memory"`, returns one section |
@@ -63,6 +63,8 @@ The Valkey/Redis backends and `LocMemCache` take all three flags. `DatabaseCache
 | `iter_keys(pattern)` | Iterate keys matching pattern |
 | `scan(cursor=0, pattern="*", count=None, version=None, key_type=None)` | Single SCAN iteration. `key_type` keeps only keys of that type |
 | `delete_pattern(pattern)` | Delete keys matching pattern |
+| `make_pattern(pattern, version=None)` | The server-side pattern that `keys()` sends for `pattern`, with the escaped `KEY_PREFIX` and the version. Valkey/Redis backends only |
+| `reverse_key(key)` | The cache key of a full key name, without `KEY_PREFIX` and version, or `REVERSE_KEY_FUNCTION`'s result when set. Valkey/Redis backends only |
 | `rename(src, dst, version=None, version_src=None, version_dst=None)` | Rename a key; raises `KeyNotFoundError` when `src` does not exist. `version_src` and `version_dst` override `version` for one side |
 | `renamenx(src, dst, version=None, version_src=None, version_dst=None)` | Rename a key only if `dst` does not exist; `False` when `dst` exists or `src` does not |
 
@@ -412,7 +414,7 @@ A pipeline queues `get`, `set`, `delete`, `exists`, `incr`, `decr`, `type`, `ren
 
 The queueing methods take the parameters of the cache methods. Their flags decide what a step adds to the results:
 
-- `set()` adds `True`, or `False` when `nx` or `xx` blocks the write. With `get=True` it adds the previous value or `None` instead.
+- `set()` adds `True`, or `False` when `nx` or `xx` blocks the write. With `get=True` it adds the previous value or `None` instead. As with `cache.set()`, a key inside the stampede buffer counts as absent.
 - `zadd(key, mapping, *, ..., incr=False)` takes `incr=True` on the pipeline only. It sends `ZADD ... INCR` for the single pair in `mapping` and adds the new score, or `None` when `nx`, `xx`, `gt` or `lt` blocked it.
 - `zrange(key, start, end, *, withscores=False, desc=False)` takes `desc=True` on the pipeline only, which gives the result of `zrevrange`.
 - `xautoclaim(..., justid=True)` raises `NotSupportedError` when queued. Use `justid=False`, or call `cache.xautoclaim()`.

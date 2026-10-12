@@ -15,9 +15,8 @@ if TYPE_CHECKING:
 def _text(value: str | bytes) -> str:
     """Decode one field of an introspection reply.
 
-    ``xinfo_*`` and ``xpending`` hand the driver's reply back untouched, so
-    entry ids and consumer names arrive as bytes on redis-py and valkey-py and
-    as str on valkey-glide.
+    ``xinfo_*`` hands the driver's reply back untouched, so entry ids arrive
+    as bytes on redis-py and valkey-py and as str on valkey-glide.
     """
     return value.decode() if isinstance(value, bytes) else value
 
@@ -171,7 +170,7 @@ def test_xpending_summary(cache: RespCache):
 
     pending = cache.xpending("stream_pend", "pend_grp")
     assert pending["pending"] == 1
-    assert [_text(c["name"]) for c in pending["consumers"]] == ["consumer1"]
+    assert [c["name"] for c in pending["consumers"]] == ["consumer1"]
 
 
 def test_xgroup_setid(cache: RespCache):
@@ -423,7 +422,7 @@ async def test_axpending_summary(cache: RespCache):
 
     pending = await cache.axpending("astream_pend", "pend_grp")
     assert pending["pending"] == 1
-    assert [_text(c["name"]) for c in pending["consumers"]] == ["consumer1"]
+    assert [c["name"] for c in pending["consumers"]] == ["consumer1"]
 
 
 @pytest.mark.asyncio
@@ -592,3 +591,42 @@ async def test_xreadgroup_returns_an_undecodable_stream_under_the_name_scan_retu
     with cache.pipeline() as pipe:
         pipe.xreadgroup("readers", "first", {"{xgbad}\udcff": "0"})
         assert pipe.execute() == [expected]
+
+
+@pytest.mark.asyncio
+async def test_stream_reads_return_an_undecodable_field_name_surrogate_escaped(cache: RespCache):
+    entry_id = cache.xadd("stream_bad_field", {b"f\xff": "v"})
+    cache.xgroup_create("stream_bad_field", "readers", entry_id="0")
+    expected = [(entry_id, {"f\udcff": "v"})]
+
+    assert cache.xrange("stream_bad_field") == expected
+    assert await cache.axrange("stream_bad_field") == expected
+    assert cache.xread({"stream_bad_field": "0"}) == {"stream_bad_field": expected}
+    assert cache.xreadgroup("readers", "first", {"stream_bad_field": ">"}) == {"stream_bad_field": expected}
+    assert await cache.axreadgroup("readers", "first", {"stream_bad_field": "0"}) == {"stream_bad_field": expected}
+    with cache.pipeline() as pipe:
+        pipe.xrange("stream_bad_field")
+        pipe.xreadgroup("readers", "first", {"stream_bad_field": "0"})
+        assert pipe.execute() == [expected, {"stream_bad_field": expected}]
+
+
+@pytest.mark.asyncio
+async def test_xpending_returns_entry_ids_and_consumer_names_as_str(cache: RespCache):
+    entry_id = cache.xadd("stream_pend_str", {"msg": "test"})
+    cache.xgroup_create("stream_pend_str", "grp", entry_id="0")
+    cache.xreadgroup("grp", "c1", {"stream_pend_str": ">"})
+    summary = {"pending": 1, "min": entry_id, "max": entry_id, "consumers": [{"name": "c1", "pending": 1}]}
+    with cache.pipeline() as pipe:
+        pipe.xpending("stream_pend_str", "grp")
+        pipe.xpending("stream_pend_str", "grp", count=10)
+        pipe_results = pipe.execute()
+
+    rows = [
+        cache.xpending("stream_pend_str", "grp", count=10)[0],
+        (await cache.axpending("stream_pend_str", "grp", count=10))[0],
+        pipe_results[1][0],
+    ]
+    assert cache.xpending("stream_pend_str", "grp") == summary
+    assert await cache.axpending("stream_pend_str", "grp") == summary
+    assert pipe_results[0] == summary
+    assert [(row["message_id"], row["consumer"]) for row in rows] == [(entry_id, "c1")] * 3

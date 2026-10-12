@@ -104,4 +104,6 @@ def corrupt_entry(queryset: Any) -> None:
         return
     assert isinstance(store, RespStore)
     entry_key = store.cache.make_and_validate_key(_entry_key(queryset.db, query_key))
-    store.cache.adapter.get_client(write=True).set(entry_key, b"garbage")
+    pipe = store.cache.adapter.pipeline(transaction=False)
+    pipe.execute_command("SET", entry_key, b"garbage")
+    pipe.execute()

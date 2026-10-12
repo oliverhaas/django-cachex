@@ -342,37 +342,43 @@ class TrackedAdapter:
         self.__dict__[name] = wrapped
         return wrapped
 
-    def _get_tracker(self) -> _tracker.Tracker:
+    def _get_tracker(self) -> _tracker.Tracker | None:
+        """The tracker of this configuration; None when its thread cannot start, and reads go to the server."""
         return _tracker.get_tracker(self._registry_key, self._inner, self._config)
 
     def get(self, key: Any, *, stampede_prevention: Any = None) -> Any:
-        if not self._config.covers(key):
+        tracker = self._get_tracker() if self._config.covers(key) else None
+        if tracker is None:
             return self._inner.get(key, stampede_prevention=stampede_prevention)
-        return self._get_tracker().get(self._inner, key, self._inner.resolve_stampede(stampede_prevention))
+        return tracker.get(self._inner, key, self._inner.resolve_stampede(stampede_prevention))
 
     def get_many(self, keys: Any, *, stampede_prevention: Any = None) -> dict[Any, Any]:
         keys = list(keys)
         covered = [key for key in keys if self._config.covers(key)]
+        tracker = self._get_tracker() if covered else None
+        if tracker is None:
+            return self._inner.get_many(keys, stampede_prevention=stampede_prevention)
         if len(covered) < len(keys):
             others = [key for key in keys if not self._config.covers(key)]
             found = self._inner.get_many(others, stampede_prevention=stampede_prevention)
         else:
             found = {}
-        if covered:
-            stampede = self._inner.resolve_stampede(stampede_prevention)
-            found.update(self._get_tracker().get_many(self._inner, covered, stampede))
+        stampede = self._inner.resolve_stampede(stampede_prevention)
+        found.update(tracker.get_many(self._inner, covered, stampede))
         return found
 
-    def has_key(self, key: Any) -> bool:
-        if not self._config.covers(key):
-            return self._inner.has_key(key)
-        return self._get_tracker().has_key(self._inner, key)
+    def has_key(self, key: Any, *, stampede_prevention: Any = None) -> bool:
+        tracker = self._get_tracker() if self._config.covers(key) else None
+        if tracker is None:
+            return self._inner.has_key(key, stampede_prevention=stampede_prevention)
+        return tracker.has_key(self._inner, key, self._inner.resolve_stampede(stampede_prevention))
 
     def read_many(self, keys: Sequence[Any]) -> list[Any]:
         """Raw values of ``keys`` in order, from the copies where they are current; no stampede rule."""
-        if any(self._config.covers(key) for key in keys):
-            return self._get_tracker().read_many(self._inner, keys)
-        # No key can have a copy, so the read needs neither a tracker nor its connection.
+        tracker = self._get_tracker() if any(self._config.covers(key) for key in keys) else None
+        if tracker is not None:
+            return tracker.read_many(self._inner, keys)
+        # No key can have a copy, or the tracker cannot start: the read goes to the server.
         if not keys:
             return []
         pipe = self._inner.pipeline(transaction=False)

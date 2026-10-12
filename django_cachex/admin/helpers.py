@@ -102,6 +102,13 @@ def read_value(cache: Any, key: str) -> Any:
     return cache.get(key)
 
 
+def exists_on_server(cache: Any, key: str) -> bool:
+    """Whether the key exists on the server, counting a key past its logical expiry."""
+    if isinstance(cache, RespCache):
+        return cache.has_key(key, stampede_prevention=False)
+    return cache.has_key(key)
+
+
 def read_value_with_sha1(cache: Any, key: str) -> tuple[Any, str | None]:
     """Read a value for display together with its CAS fingerprint.
 
@@ -337,9 +344,7 @@ def parse_metadata(
     if not raw_info:
         return base_info
 
-    # Wrappers (LocMem/Database/Stream) return already-structured sections
-    # under the "server"/"memory"/"clients"/"stats" keys; pre-structured
-    # backends short-circuit the flat-INFO parse.
+    # LocMemCache and DatabaseCache return structured sections, which skip the flat INFO parse.
     def _section(name: str) -> Mapping[str, Any]:
         sub = raw_info.get(name)
         return sub if isinstance(sub, dict) else raw_info

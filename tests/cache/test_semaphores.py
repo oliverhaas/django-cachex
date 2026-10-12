@@ -1703,3 +1703,11 @@ def test_top_level_semaphore_exports():
     assert django_cachex.Semaphore is Semaphore
     assert django_cachex.SemaphoreError is SemaphoreError
     assert django_cachex.SemaphoreTimeoutError is SemaphoreTimeoutError
+
+
+def test_local_acquire_rejects_a_nan_timeout():
+    sem = Semaphore("local_nan_timeout", capacity=1)
+    with pytest.raises(ValueError, match="not NaN"):
+        sem.acquire(timeout=float("nan"))
+    with pytest.raises(ValueError, match="not NaN"):
+        asyncio.run(sem.aacquire(timeout=float("nan")))

@@ -275,6 +275,14 @@ jobs:
       - name: Check the glide client libraries import
         run: uv run --no-sync python -c "import glide, glide_sync"
 
+      # The lint job has no glide, so only here do the checkers see glide's types.
+      - name: Run mypy check with glide installed
+        run: uv run --no-sync mypy django_cachex/
+
+      # The ``ty: ignore[unresolved-import]`` on the glide imports serve the lint job.
+      - name: Run ty check with glide installed
+        run: uv run --no-sync ty check --ignore unused-ignore-comment django_cachex/
+
       - name: Run backend tests with the glide adapter
         run: uv run --no-sync pytest tests/cache/ -n auto
         env:

@@ -10,9 +10,11 @@ Notable design points:
 - Tagged RESP collections (``_List``/``_Set``/``_Hash``/``_ZSet``) live as
   long-lived Python objects in a dedicated ``self._collections`` map;
   mutations are in-place under the lock, so collection ops avoid the
-  per-call pickle round-trip Django's stock backend pays for opaque
-  ``cache.set()`` values. Ops on opaque (string-typed) values still go
-  through the normal pickled-bytes path in ``self._cache``.
+  whole-value pickle round-trip Django's stock backend pays for opaque
+  ``cache.set()`` values. A list element or hash value of a mutable type
+  is pickled on its own, so the caller never shares an object with the
+  cache. Ops on opaque (string-typed) values still go through the normal
+  pickled-bytes path in ``self._cache``.
 - Existing keys preserve their TTL automatically (``_expire_info`` is left
   untouched on in-place mutation), avoiding the read-ttl-then-set-with-ttl
   dance.
@@ -38,7 +40,14 @@ from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.cache.backends.locmem import LocMemCache as DjangoLocMemCache
 from sortedcontainers import SortedList  # type: ignore[import-untyped]
 
-from django_cachex.cache.base import BaseCachex, CachexSupportLevel
+from django_cachex.cache.base import (
+    _NOT_AN_INTEGER,
+    BaseCachex,
+    CachexSupportLevel,
+    _float_sum,
+    _int64_sum,
+    _is_int64,
+)
 from django_cachex.exceptions import WrongTypeError
 from django_cachex.semaphore import Semaphore, _SemaphoreRegistry
 from django_cachex.types import KeyType
@@ -55,6 +64,7 @@ from django_cachex.utils import (
     _validate_linsert_where,
     _validate_lpos_args,
     _validate_pop_count,
+    _validate_set_flags,
     _validate_zadd_flags,
 )
 
@@ -74,6 +84,39 @@ _OPAQUE = object()
 # annotations at runtime, but type checkers still resolve them in class scope).
 # Named ``_PySet`` to avoid colliding with ``LocMemCache._set`` (Django hook).
 _PySet = set
+
+# List elements and hash values of these types are stored as they are: the
+# caller cannot change them after the write. Any other type is pickled.
+_IMMUTABLE_TYPES = frozenset({str, bytes, int, float, bool, type(None)})
+
+
+class _Pickled(bytes):
+    """A list element or hash value stored as its pickle, as LocMemCache stores plain values.
+
+    Equal only to another ``_Pickled``, so a caller's ``bytes`` never matches it.
+    """
+
+    __slots__ = ()
+
+    def __eq__(self, other: object) -> bool:
+        return type(other) is _Pickled and bytes.__eq__(self, other)
+
+    def __ne__(self, other: object) -> bool:
+        return not self == other
+
+    __hash__ = bytes.__hash__
+
+
+def _pack(value: Any) -> Any:
+    """Return a list element or hash value in the form the cache stores it."""
+    if type(value) in _IMMUTABLE_TYPES:
+        return value
+    return _Pickled(pickle.dumps(value, pickle.HIGHEST_PROTOCOL))
+
+
+def _unpack(value: Any) -> Any:
+    """Undo :func:`_pack`, giving the caller a fresh copy of a pickled value."""
+    return pickle.loads(value) if type(value) is _Pickled else value  # noqa: S301
 
 
 class _List(list[Any]):
@@ -326,11 +369,13 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             self._expire_info.pop(key, None)
         return had_collection or had_pickled
 
-    def clear(self) -> None:
+    def clear(self) -> bool:  # type: ignore[override]
+        """Delete every key at this LOCATION. Returns ``True``, as ``RespCache.clear`` does."""
         with self._lock:
             self._cache.clear()
             self._expire_info.clear()
             self._collections.clear()
+        return True
 
     def has_key(self, key: str, version: int | None = None) -> bool:
         internal_key = self.make_and_validate_key(key, version=version)
@@ -349,6 +394,17 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 self._delete(internal_key)
                 return False
             return self._delete(internal_key)
+
+    def delete_many(self, keys: Iterable[str], version: int | None = None) -> int:  # type: ignore[override]
+        """Delete keys and return how many were live, like Redis ``DEL``. Expired keys are still evicted."""
+        internal_keys = [self.make_and_validate_key(key, version=version) for key in keys]
+        deleted = 0
+        with self._lock:
+            for internal_key in internal_keys:
+                expired = self._has_expired(internal_key)
+                if self._delete(internal_key) and not expired:
+                    deleted += 1
+        return deleted
 
     def validate_key(self, key: str) -> None:
         """Accept every key, as the Valkey and Redis backends do: memcached's key limits do not apply."""
@@ -394,8 +450,12 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         Django's inherited ``incr`` reads ``self._cache`` directly and would
         raise ``KeyError`` for a live key that holds a RESP collection; a
         missing key still raises ``ValueError`` per the Django cache contract.
-        Inlined for the same lock-atomicity reason as :meth:`get`.
+        Inlined for the same lock-atomicity reason as :meth:`get`. A value or
+        delta that is not a 64-bit integer raises ``ValueError``, as does a sum
+        past that range.
         """
+        if not _is_int64(delta):
+            raise ValueError(_NOT_AN_INTEGER)
         internal_key = self.make_and_validate_key(key, version=version)
         with self._lock:
             if self._has_expired(internal_key):
@@ -408,7 +468,10 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             if internal_key not in self._cache:
                 msg = f"Key '{key}' not found"
                 raise ValueError(msg)
-            new_value = pickle.loads(self._cache[internal_key]) + delta  # noqa: S301
+            current = pickle.loads(self._cache[internal_key])  # noqa: S301
+            if not _is_int64(current):
+                raise ValueError(_NOT_AN_INTEGER)
+            new_value = _int64_sum(current, delta)
             self._cache[internal_key] = pickle.dumps(new_value, self.pickle_protocol)
             self._cache.move_to_end(internal_key, last=False)
         return new_value
@@ -484,9 +547,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         """
         if not (nx or xx or get):
             return super().set(key, value, timeout, version)
-        if nx and xx:
-            msg = "nx and xx are mutually exclusive"
-            raise ValueError(msg)
+        _validate_set_flags(nx=nx, xx=xx)
         internal_key = self.make_and_validate_key(key, version=version)
         pickled = pickle.dumps(value, self.pickle_protocol)
         with self._lock:
@@ -735,15 +796,16 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         if not values:
             # An empty list here would be an immortal key no list op can reap.
             return 0
+        packed = [_pack(value) for value in reversed(values)]
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_list(internal_key, key)
             if current is None:
-                current = _List(reversed(values))
+                current = _List(packed)
                 self._native_write(internal_key, current)
             else:
                 # In-place prepend on the live list, no copy, no rewrite.
-                current[0:0] = reversed(values)
+                current[0:0] = packed
             return len(current)
 
     def rpush(self, key: str, *values: Any, version: int | None = None) -> int:
@@ -751,14 +813,15 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         if not values:
             # See :meth:`lpush`: no values, no write.
             return 0
+        packed = [_pack(value) for value in values]
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_list(internal_key, key)
             if current is None:
-                current = _List(values)
+                current = _List(packed)
                 self._native_write(internal_key, current)
             else:
-                current.extend(values)
+                current.extend(packed)
             return len(current)
 
     def lpop(self, key: str, count: int | None = None, version: int | None = None) -> Any | list[Any] | None:
@@ -776,7 +839,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             if not current:
                 return None
             pop_count = count if count is not None else 1
-            popped = list(current[:pop_count])
+            popped = [_unpack(value) for value in current[:pop_count]]
             del current[:pop_count]
             if not current:
                 self._delete(internal_key)
@@ -801,7 +864,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 # nothing and returns an empty array.
                 return []
             pop_count = count if count is not None else 1
-            popped = list(reversed(current[-pop_count:]))
+            popped = [_unpack(value) for value in reversed(current[-pop_count:])]
             del current[-pop_count:]
             if not current:
                 self._delete(internal_key)
@@ -821,7 +884,8 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 end = length + end
             if start >= length or end < start:
                 return []
-            return list(current[start : end + 1])
+            stored = current[start : end + 1]
+        return [_unpack(value) for value in stored]
 
     def llen(self, key: str, version: int | None = None) -> int:
         """Return the length of a list."""
@@ -832,6 +896,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def lrem(self, key: str, count: int, value: Any, version: int | None = None) -> int:
         """Remove occurrences of value from a list."""
+        value = _pack(value)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_list(internal_key, key)
@@ -886,12 +951,14 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             if not current:
                 return None
             try:
-                return current[index]
+                stored = current[index]
             except IndexError:
                 return None
+        return _unpack(stored)
 
     def lset(self, key: str, index: int, value: Any, version: int | None = None) -> bool:
         """Set element at index in list."""
+        value = _pack(value)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_list(internal_key, key)
@@ -908,6 +975,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     def linsert(self, key: str, where: str, pivot: Any, value: Any, version: int | None = None) -> int:
         """Insert value before or after pivot in list."""
         _validate_linsert_where(where)
+        pivot, value = _pack(pivot), _pack(value)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_list(internal_key, key)
@@ -939,7 +1007,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             if not current:
                 return [] if count is not None else None
             items = list(current)
-        positions = _lpos_positions(items, value, rank, maxlen)
+        positions = _lpos_positions(items, _pack(value), rank, maxlen)
         if count is not None:
             return positions if count == 0 else positions[:count]
         return positions[0] if positions else None
@@ -1120,7 +1188,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             raise WrongTypeError(msg)
         return value
 
-    def hset(  # noqa: C901
+    def hset(
         self,
         key: str,
         field: str | None = None,
@@ -1130,31 +1198,27 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         items: list[Any] | None = None,
     ) -> int:
         """Set hash field(s)."""
-        # Validate before touching the live hash: ``current`` is the stored
-        # object, so a write followed by a raise would stick.
+        # ``current`` is the stored object, so a write followed by a raise would
+        # stick: anything that can raise runs before the lock.
+        pairs: list[tuple[Any, Any]] = []
+        if field is not None:
+            pairs.append((field, value))
+        if mapping:
+            pairs.extend(mapping.items())
         if items:
             _validate_hset_items(items)
+            pairs.extend(zip(items[::2], items[1::2], strict=True))
+        packed = [(f, _pack(v)) for f, v in pairs]
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_hash(internal_key, key)
             if current is None:
                 current = _Hash()
             added = 0
-            if field is not None:
-                if field not in current:
+            for f, v in packed:
+                if f not in current:
                     added += 1
-                current[field] = value
-            if mapping:
-                for f, v in mapping.items():
-                    if f not in current:
-                        added += 1
-                    current[f] = v
-            if items:
-                for i in range(0, len(items), 2):
-                    f, v = items[i], items[i + 1]
-                    if f not in current:
-                        added += 1
-                    current[f] = v
+                current[f] = v
             if current:
                 self._native_write(internal_key, current)
             return added
@@ -1181,14 +1245,16 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_hash(internal_key, key)
-            return None if current is None else current.get(field)
+            stored = None if current is None else current.get(field)
+        return _unpack(stored)
 
     def hgetall(self, key: str, version: int | None = None) -> dict[str, Any]:
         """Get all fields and values in hash."""
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_hash(internal_key, key)
-            return {} if current is None else dict(current)
+            stored = {} if current is None else dict(current)
+        return {field: _unpack(value) for field, value in stored.items()}
 
     def hlen(self, key: str, version: int | None = None) -> int:
         """Get number of fields in hash."""
@@ -1209,7 +1275,8 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_hash(internal_key, key)
-            return [] if current is None else list(current.values())
+            stored = [] if current is None else list(current.values())
+        return [_unpack(value) for value in stored]
 
     def hexists(self, key: str, field: str, version: int | None = None) -> bool:
         """Check if field exists in hash."""
@@ -1225,10 +1292,12 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             current = self._typed_get_hash(internal_key, key)
             if current is None:
                 return [None] * len(fields)
-            return [current.get(f) for f in fields]
+            stored = [current.get(f) for f in fields]
+        return [_unpack(value) for value in stored]
 
     def hsetnx(self, key: str, field: str, value: Any, version: int | None = None) -> bool:
         """Set field in hash only if it doesn't exist."""
+        value = _pack(value)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_hash(internal_key, key)
@@ -1242,18 +1311,20 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def hincrby(self, key: str, field: str, amount: int = 1, version: int | None = None) -> int:
         """Increment integer value of field in hash."""
+        if not _is_int64(amount):
+            raise ValueError(_NOT_AN_INTEGER)
         internal_key = self._internal_key(key, version=version)
         with self._lock:
             current = self._typed_get_hash(internal_key, key)
             if current is None:
                 current = _Hash()
             value = current.get(field, 0)
-            if isinstance(value, bool) or not isinstance(value, int):
+            if not _is_int64(value):
                 msg = "hash value is not an integer"
                 # ValueError, not TypeError: mirrors Redis's HINCRBY error,
                 # matching the ValueError convention of ``lset``.
-                raise ValueError(msg)  # noqa: TRY004
-            current[field] = value + amount
+                raise ValueError(msg)
+            current[field] = _int64_sum(value, amount)
             self._native_write(internal_key, current)
             return current[field]
 
@@ -1268,7 +1339,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             if isinstance(value, bool) or not isinstance(value, int | float):
                 msg = "hash value is not a float"
                 raise ValueError(msg)  # noqa: TRY004
-            result = float(value) + amount
+            result = _float_sum(value, amount)
             # Redis stores 5200.0 as "5200", which HINCRBY and hget() take as an integer.
             current[field] = int(result) if result.is_integer() else result
             self._native_write(internal_key, current)
@@ -1724,11 +1795,11 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     ) -> list[Any]:
         return self.set_many(data, timeout=timeout, version=version)
 
-    async def adelete_many(self, keys: Iterable[str], version: int | None = None) -> None:
-        self.delete_many(keys, version=version)
+    async def adelete_many(self, keys: Iterable[str], version: int | None = None) -> int:  # type: ignore[override]
+        return self.delete_many(keys, version=version)
 
-    async def aclear(self) -> None:
-        self.clear()
+    async def aclear(self) -> bool:  # type: ignore[override]
+        return self.clear()
 
     async def aclose(self, **kwargs: Any) -> None:
         self.close(**kwargs)

@@ -11,6 +11,7 @@ Per-backend tests live next to the backends they cover:
 import pytest
 
 from django_cachex.cache.base import BaseCachex, _scan_hash
+from django_cachex.cache.locmem import LocMemCache
 from django_cachex.exceptions import NotSupportedError
 from django_cachex.types import KeyType
 
@@ -207,3 +208,16 @@ def test_scan_returns_remaining_keys_after_earlier_pages_are_deleted():
         del cache._data[key]
     rest = _scan_pages(cache, cursor)
     assert sorted(key for page in rest for key in page) == sorted(cache._data)
+
+
+def test_unsupported_operations_name_an_alternative(bare_cache: MockExtendedCache):
+    details = {}
+    for operation, args in [*UNSUPPORTED_OPERATIONS, ("pttl", ("key",)), ("lock", ("key",))]:
+        with pytest.raises(NotSupportedError) as exc_info:
+            getattr(bare_cache, operation)(*args)
+        details[operation] = exc_info.value.detail
+    assert all(details.values())
+    assert details["pttl"] == "use ttl()"
+    assert details["lock"] == "use a Valkey or Redis backend"
+    with pytest.raises(NotSupportedError, match=r"use semaphore\(key, 1\)$"):
+        LocMemCache("test-base", {}).lock("key")

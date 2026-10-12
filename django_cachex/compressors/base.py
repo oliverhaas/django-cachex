@@ -20,6 +20,9 @@ class BaseCompressor:
     def __init__(self, *, min_length: int | None = None) -> None:
         if min_length is not None:
             self.min_length = min_length
+        if not isinstance(self.min_length, int) or isinstance(self.min_length, bool) or self.min_length < 0:
+            msg = f"{type(self).__name__} min_length must be a non-negative int, got {self.min_length!r}"
+            raise ImproperlyConfigured(msg)
 
     def _check_level(self, level: object, lowest: int | None, highest: int) -> None:
         """Raise ``ImproperlyConfigured`` unless ``level`` is an int from ``lowest`` (``None``: open) to ``highest``.

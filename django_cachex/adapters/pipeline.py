@@ -26,6 +26,8 @@ if TYPE_CHECKING:
     from django_cachex.adapters.protocols import RespAsyncPipelineProtocol, RespPipelineProtocol
     from django_cachex.stampede import StampedeConfig
 
+from django_cachex.adapters.valkey_py import _decode_xpending
+from django_cachex.cache.resp import _STAMPEDE_ADD_LUA, _STAMPEDE_SET_LUA
 from django_cachex.exceptions import KeyNotFoundError, NotSupportedError, maybe_wrap_set_nx_get, translate_server_error
 from django_cachex.script import ScriptHelpers, reject_stray_encoded
 from django_cachex.types import KeyType
@@ -34,6 +36,7 @@ from django_cachex.utils import (
     _validate_linsert_where,
     _validate_lpos_args,
     _validate_pop_count,
+    _validate_set_flags,
     _validate_zadd_flags,
     _validate_zrange_limit,
     _wire_key,
@@ -218,11 +221,11 @@ class Pipeline:
 
     def _decode_hash_keys(self, value: list[bytes]) -> list[str]:
         """Decode hash field names (keys are not serialized, just bytes)."""
-        return [k.decode() for k in value]
+        return [k.decode(errors="surrogateescape") for k in value]
 
     def _decode_hash_dict(self, value: dict[bytes, bytes]) -> dict[str, Any]:
         """Decode a full hash (keys are strings, values are decoded)."""
-        return {k.decode(): self._cache.decode(v) for k, v in value.items()}
+        return {k.decode(errors="surrogateescape"): self._cache.decode(v) for k, v in value.items()}
 
     def _decode_zset_with_scores(self, value: list[tuple[bytes, float]]) -> list[tuple[Any, float]]:
         """Decode sorted set members with scores."""
@@ -283,7 +286,10 @@ class Pipeline:
         return [
             (
                 entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                {k.decode() if isinstance(k, bytes) else k: self._cache.decode(v) for k, v in (fields or {}).items()},
+                {
+                    k.decode(errors="surrogateescape") if isinstance(k, bytes) else k: self._cache.decode(v)
+                    for k, v in (fields or {}).items()
+                },
             )
             for entry_id, fields in results
         ]
@@ -368,16 +374,22 @@ class Pipeline:
         Decodes to ``True`` when the write ran and ``False`` on an ``nx`` /
         ``xx`` miss, like :meth:`RespCache.set` with those flags. With
         ``get=True`` it decodes to the previous value instead (``None`` when
-        the key was absent), again like :meth:`RespCache.set`.
+        the key was absent), again like :meth:`RespCache.set`. With stampede
+        prevention active, the flags count a key inside the buffer as absent,
+        and ``nx`` and ``xx`` together raise ``ValueError``, as there.
         """
+        _validate_set_flags(nx=nx, xx=xx)
         nkey = self._make_key(key, version)
+        buffer_s = self._cache._stampede_buffer(stampede_prevention) if nx or xx or get else None
+        if buffer_s is not None:
+            return self._set_with_buffer(nkey, value, timeout, buffer_s, stampede_prevention, nx=nx, xx=xx, get=get)
         nvalue = self._encode(value)
         # Normalize before buffering, same order as RespCache.set()/touch().
         backend_timeout = self._cache.get_backend_timeout(timeout)
         actual_timeout = self._adapter.get_timeout_with_buffer(backend_timeout, stampede_prevention)
 
         # Immediate expiry: queue the net effect of a SET-with-flags whose key expires on arrival.
-        if actual_timeout == 0 and not (nx and xx):
+        if actual_timeout == 0:
             if get:
                 # SET GET hands back the old value; the key is gone afterwards
                 # unless NX left an existing one untouched.
@@ -396,22 +408,43 @@ class Pipeline:
                 self._decoders.append(bool if xx else (lambda _result: True))
             return self
 
-        kwargs: dict[str, Any] = {}
-        # nx and xx together fall through so the driver raises its own error.
+        kwargs: dict[str, Any] = {flag: True for flag, on in (("nx", nx), ("xx", xx), ("get", get)) if on}
         if actual_timeout:
             kwargs["ex"] = actual_timeout
-        if nx:
-            kwargs["nx"] = True
-        if xx:
-            kwargs["xx"] = True
-        if get:
-            kwargs["get"] = True
 
         self._pipeline_adapter.set(nkey, nvalue, **kwargs)
-        if nx and get and not xx:
+        if nx and get:
             self._decoders.append(_ErrorAware(self._decode_set_nx_get))
         else:
             self._decoders.append(self._decode_single if get else bool)
+        return self
+
+    def _set_with_buffer(
+        self,
+        nkey: str,
+        value: Any,
+        timeout: float | None,
+        buffer_s: int,
+        stampede_prevention: bool | StampedeConfig | None,
+        *,
+        nx: bool,
+        xx: bool,
+        get: bool,
+    ) -> Self:
+        """Queue a flagged ``set()`` through the scripts :meth:`RespCache.set` runs, so a key inside the buffer counts as absent."""
+        if nx and not get:
+            timeout_s = self._adapter.get_timeout_with_buffer(
+                self._cache.get_backend_timeout(timeout),
+                stampede_prevention,
+            )
+            timeout_arg = -1 if timeout_s is None else timeout_s
+            nvalue = self._encode(value)
+            self._pipeline_adapter.execute_command("EVAL", _STAMPEDE_ADD_LUA, 1, nkey, nvalue, timeout_arg, buffer_s)
+            self._decoders.append(bool)
+            return self
+        argv = self._cache._stampede_set_argv(value, timeout, buffer_s, stampede_prevention, nx=nx, xx=xx, get=get)
+        self._pipeline_adapter.execute_command("EVAL", _STAMPEDE_SET_LUA, 1, nkey, *argv)
+        self._decoders.append(_ErrorAware(self._decode_set_nx_get) if nx else self._decode_single if get else bool)
         return self
 
     def get(self, key: str, default: Any = None, version: int | None = None) -> Self:
@@ -1957,7 +1990,7 @@ class Pipeline:
             )
         else:
             self._pipeline_adapter.xpending(nkey, group)
-        self._decoders.append(self._noop)
+        self._decoders.append(_decode_xpending)
         return self
 
     def xclaim(

@@ -507,3 +507,13 @@ async def test_ahdel_without_fields(cache: RespCache):
     await cache.ahset("aempty_hash", "a", 1)
     assert await cache.ahdel("aempty_hash") == 0
     assert await cache.ahgetall("aempty_hash") == {"a": 1}
+
+
+@pytest.mark.asyncio
+async def test_hash_reads_return_an_undecodable_field_name_surrogate_escaped(cache: RespCache):
+    cache.hset("hash_bad_field", b"f\xff", "v")
+
+    assert cache.hgetall("hash_bad_field") == {"f\udcff": "v"}
+    assert cache.hkeys("hash_bad_field") == ["f\udcff"]
+    assert await cache.ahgetall("hash_bad_field") == {"f\udcff": "v"}
+    assert await cache.ahkeys("hash_bad_field") == ["f\udcff"]

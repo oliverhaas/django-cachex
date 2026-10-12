@@ -712,7 +712,7 @@ class _XPendingClient:
 
     def xpending(self, key: str, group: str) -> Any:
         self.summary_calls += 1
-        return {"pending": 0}
+        return {"pending": 0, "min": None, "max": None, "consumers": []}
 
 
 class _AsyncXPendingClient(_XPendingClient):
@@ -722,7 +722,7 @@ class _AsyncXPendingClient(_XPendingClient):
 
     async def xpending(self, key: str, group: str) -> Any:
         self.summary_calls += 1
-        return {"pending": 0}
+        return {"pending": 0, "min": None, "max": None, "consumers": []}
 
 
 @pytest.mark.parametrize(
@@ -739,7 +739,7 @@ def test_summary_form_still_works():
     client = _XPendingClient()
     adapter = _pop_adapter(client)
 
-    assert adapter.xpending("stream", "group") == {"pending": 0}
+    assert adapter.xpending("stream", "group") == {"pending": 0, "min": None, "max": None, "consumers": []}
     assert client.summary_calls == 1
 
 
@@ -2057,3 +2057,8 @@ def test_empty_read_is_an_empty_dict(reply: Any):
 
     assert adapter.xread({"s": "$"}, block=1) == {}
     assert adapter.xreadgroup("g", "c", {"s": ">"}, block=1) == {}
+
+
+def test_unknown_command_from_a_script_is_not_translated():
+    original = _ResponseError("Unknown command called from script script: on @user_script:1.")
+    assert translate_server_error(original) is original

@@ -26,6 +26,8 @@ from glide_sync import (
     RequestError,
     ServerCredentials,
 )
+from glide_sync import ConnectionError as GlideConnectionError
+from glide_sync import TimeoutError as GlideTimeoutError
 
 from django_cachex.adapters import valkey_glide
 from django_cachex.adapters.protocols import (
@@ -48,7 +50,7 @@ from django_cachex.adapters.valkey_glide import (
     _parse_info,
     _WrongTypeClient,
 )
-from django_cachex.exceptions import CachexError, NotSupportedError
+from django_cachex.exceptions import CachexError, NotSupportedError, WrongTypeError
 from django_cachex.lock import LockError
 from django_cachex.script import script_sha
 from django_cachex.stampede import StampedeConfig
@@ -510,6 +512,15 @@ def test_slowlog_get_empty(mocker):
     adapter, client = _adapter(mocker)
     client.custom_command.return_value = None
     assert adapter.slowlog_get() == []
+
+
+def test_slowlog_get_replaces_a_pickled_argument_that_is_not_utf8(mocker):
+    adapter, client = _adapter(mocker)
+    client.custom_command.return_value = [[9, 1710000002, 30, [b"SET", b"k", b"\x80\x05K\x01."]]]
+
+    (entry,) = adapter.slowlog_get()
+
+    assert entry["command"] == ["SET", "k", "�\x05K\x01."]
 
 
 # ------------------------------------------------- WRONGTYPE proxy dunders
@@ -1767,16 +1778,9 @@ def test_config_kwargs_cluster_tolerates_a_database_mismatch():
     assert "database_id" not in kwargs
 
 
-def test_cluster_seed_urls_that_disagree_are_not_called_replicas(mocker):
-    import django_cachex.adapters.valkey_glide as vg
-
-    mocker.patch.dict(vg._GLIDE_SYNC_CLUSTER_CLIENTS, clear=True)
-    mocker.patch.dict(vg._GLIDE_SYNC_CLUSTER_CREATE_LOCKS, clear=True)
-    mocker.patch.object(vg, "GlideClusterClient")
-    adapter = ValkeyGlideClusterAdapter(["redis://a:7000", "rediss://b:7001"])
-
+def test_cluster_seed_urls_that_disagree_are_not_called_replicas():
     with pytest.raises(ImproperlyConfigured, match="TLS") as excinfo:
-        adapter.get_client()
+        ValkeyGlideClusterAdapter(["redis://a:7000", "rediss://b:7001"])
 
     assert "replica" not in str(excinfo.value)
 
@@ -2181,6 +2185,19 @@ def test_cluster_location_is_validated_too():
 
 
 @pytest.mark.parametrize(
+    ("servers", "options", "expected"),
+    [
+        (["redis://h:6379"], {"db": "one"}, "db.*'one'"),
+        (["redis://h:6379"], {"request_timeout": "fast"}, "request_timeout.*'fast'"),
+        (["redis://h:6379/1", "rediss://h2:6379/1"], {}, "TLS"),
+    ],
+)
+def test_bad_settings_are_rejected_when_the_adapter_is_built(servers, options, expected):
+    with pytest.raises(ImproperlyConfigured, match=expected):
+        ValkeyGlideAdapter(servers, **options)
+
+
+@pytest.mark.parametrize(
     ("raw", "expected"),
     [
         ("redis://h:6380/1", ("h", 6380)),
@@ -2339,17 +2356,31 @@ def test_blocking_calls_reuse_one_client_of_their_own(mocker):
     shared.custom_command.assert_not_called()
 
 
-def test_a_failed_blocking_call_closes_its_client(mocker):
+@pytest.mark.parametrize("error", [ClosingError("gone"), GlideTimeoutError("timed out"), GlideConnectionError("lost")])
+def test_a_blocking_call_that_loses_its_reply_closes_its_client(mocker, error):
     dedicated = mocker.MagicMock()
-    dedicated.custom_command.side_effect = ClosingError("gone")
+    dedicated.custom_command.side_effect = error
     adapter, _, create = _blocking_adapter(mocker, dedicated)
 
     for _ in range(2):
-        with pytest.raises(ClosingError):
+        with pytest.raises(type(error)):
             adapter.blpop("k", timeout=2)
 
     assert create.call_count == 2
     assert dedicated.close.call_count == 2
+
+
+def test_a_server_error_hands_the_blocking_client_back_for_reuse(mocker):
+    dedicated = mocker.MagicMock()
+    dedicated.custom_command.side_effect = [RequestError("WRONGTYPE Operation against a key"), [b"k", b"v"]]
+    adapter, _, create = _blocking_adapter(mocker, dedicated)
+
+    with pytest.raises(WrongTypeError):
+        adapter.blpop("k", timeout=2)
+    assert adapter.blpop("k", timeout=2) == ("k", b"v")
+
+    create.assert_called_once()
+    dedicated.close.assert_not_called()
 
 
 @pytest.mark.asyncio

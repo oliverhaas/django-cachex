@@ -413,6 +413,16 @@ def test_pipeline_hkeys_hvals(cache: RespCache):
     assert set(results[1]) == {"1", "2"}
 
 
+def test_pipeline_hash_reads_return_an_undecodable_field_name_surrogate_escaped(cache: RespCache):
+    cache.hset("pipe_hash_bad_field", b"f\xff", "v")
+
+    pipe = cache.pipeline()
+    pipe.hgetall("pipe_hash_bad_field")
+    pipe.hkeys("pipe_hash_bad_field")
+
+    assert pipe.execute() == [{"f\udcff": "v"}, ["f\udcff"]]
+
+
 def test_pipeline_hexists(cache: RespCache):
     cache.hset("pipe_hash6", "field", "value")
 
@@ -2023,3 +2033,10 @@ def test_pipeline_zpop_decodes_the_flat_resp3_reply(cache: RespCache, method: st
     assert decode([member, 1.0]) == [("a", 1.0)]
     assert decode([(member, 1.0), (member, 2.0)]) == [("a", 1.0), ("a", 2.0)]
     assert decode([]) == []
+
+
+def test_set_nx_and_xx_together_raise_value_error(cache: RespCache):
+    pipe = cache.pipeline()
+    with pytest.raises(ValueError, match="at most one of nx and xx"):
+        pipe.set("pipe_nx_xx", "v", nx=True, xx=True)
+    assert pipe.execute() == []

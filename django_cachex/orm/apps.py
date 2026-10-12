@@ -138,7 +138,13 @@ def check_cache(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:  # noqa:
     try:
         store = get_store(alias)
     except Exception as e:  # noqa: BLE001
-        errors.append(Error(f"The ORM cache could not load the cache {alias!r}: {e}", id="cachex_orm.E005"))
+        errors.append(
+            Error(
+                f"The ORM cache could not load the cache {alias!r}: {e}",
+                hint=f"Fix `CACHES[{alias!r}]`, or set `{SETTING_NAME}['CACHE']` to another alias.",
+                id="cachex_orm.E005",
+            ),
+        )
         return errors
     if store is None:
         errors.append(

@@ -8,7 +8,6 @@ import logging
 import pickle
 import secrets
 from dataclasses import dataclass
-from threading import Lock
 from typing import TYPE_CHECKING, Any, Protocol
 
 from django.core.cache import caches
@@ -202,7 +201,6 @@ class _LocMemState:
 # Keyed by the id of the cache's shared OrderedDict, which Django keeps alive
 # for the life of the process.
 _LOCMEM_STATES: dict[int, _LocMemState] = {}
-_LOCMEM_STATES_LOCK = Lock()
 
 
 class LocMemStore:
@@ -211,8 +209,7 @@ class LocMemStore:
     def __init__(self, cache: LocMemCache) -> None:
         self.cache = cache
         internals: Any = cache
-        with _LOCMEM_STATES_LOCK:
-            self.state = _LOCMEM_STATES.setdefault(id(internals._cache), _LocMemState())
+        self.state = _LOCMEM_STATES.setdefault(id(internals._cache), _LocMemState())
 
     def ttl(self, timeout: Any) -> float | None:
         return _ttl(self.cache, timeout)

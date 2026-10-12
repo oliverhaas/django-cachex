@@ -55,6 +55,7 @@ from django_cachex.stampede import (
     StampedeConfig,
     get_timeout_with_buffer,
     make_stampede_config,
+    outlives_buffer,
     resolve_stampede,
     should_recompute,
 )
@@ -63,7 +64,7 @@ from django_cachex.utils import _validate_zadd_flags, _validate_zrange_limit
 
 if TYPE_CHECKING:
     import datetime
-    from collections.abc import Iterable, Iterator, Mapping, Sequence
+    from collections.abc import Generator, Iterable, Iterator, Mapping, Sequence
 
 
 # valkey-glide is an optional install: the names below stay unbound without it,
@@ -98,6 +99,8 @@ try:
         Script,
         ServerCredentials,
     )
+    from glide_sync import ConnectionError as GlideConnectionError  # ty: ignore[unresolved-import]
+    from glide_sync import TimeoutError as GlideTimeoutError  # ty: ignore[unresolved-import]
     from glide_sync.glide_client import GlideClient  # ty: ignore[unresolved-import]
 except ImportError as _exc:
     _GLIDE_IMPORT_ERROR: ImportError | None = _exc
@@ -283,10 +286,21 @@ _TCP_SCHEMES = frozenset({"redis", "valkey", *_TLS_SCHEMES})
 _SOCKET_SCHEMES = frozenset({"unix", "redis+socket", "valkey+socket"})
 
 
+def _int_option(options: dict[str, Any], name: str) -> int | None:
+    """OPTIONS ``name`` as an int, or None when it is unset."""
+    if (value := options.get(name)) is None:
+        return None
+    try:
+        return int(value)
+    except TypeError, ValueError:
+        msg = f"OPTIONS[{name!r}] must be an int, not {value!r}."
+        raise ImproperlyConfigured(msg) from None
+
+
 def _parse_db(u: Any, options: dict[str, Any]) -> int | None:
     """Database index: OPTIONS ``db`` beats the URL query, which beats the URL path."""
-    if (db := options.get("db")) is not None:
-        return int(db)
+    if (db := _int_option(options, "db")) is not None:
+        return db
     query_db = parse_qs(u.query).get("db")
     if query_db and query_db[-1].isdigit():
         return int(query_db[-1])
@@ -405,8 +419,8 @@ def _glide_config_kwargs(
         # natively, falling back to the primary when none is reachable.
         kwargs["read_from"] = ReadFrom.PREFER_REPLICA
 
-    if (request_timeout := options.get("request_timeout")) is not None:
-        kwargs["request_timeout"] = int(request_timeout)
+    if (request_timeout := _int_option(options, "request_timeout")) is not None:
+        kwargs["request_timeout"] = request_timeout
     if (client_name := options.get("client_name")) is not None:
         kwargs["client_name"] = client_name
     return kwargs
@@ -613,8 +627,8 @@ def _normalize_ttl(result: int) -> int | None:
 
 
 def _dec_str(v: Any) -> str:
-    """Decode bytes to str; pass through anything else."""
-    return v.decode("utf-8") if isinstance(v, (bytes, bytearray)) else v
+    """Decode bytes to str, invalid UTF-8 with ``surrogateescape``; pass through anything else."""
+    return v.decode("utf-8", "surrogateescape") if isinstance(v, (bytes, bytearray)) else v
 
 
 def _dec_keys(values: Iterable[Any]) -> list[str]:
@@ -756,7 +770,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
 
     def __init__(
         self,
-        client: GlideClient,
+        client: Any,
         *,
         transaction: bool = False,
         batch_factory: Any = None,
@@ -1697,6 +1711,8 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     # glide multiplexes: one connection carries every command of a client.
     multiplexed: bool = True
 
+    _standalone: bool = True
+
     def __init__(self, servers: list[str], **options: Any) -> None:
         _check_installed()
         if not servers:
@@ -1707,6 +1723,8 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             )
             raise ImproperlyConfigured(msg)
         _hostports(servers)
+        # Build the config once, so a bad setting fails here and not at the first command.
+        _glide_config_kwargs(servers, options, credentials_cls=ServerCredentials, standalone=self._standalone)
         self._servers = servers
         self._options = options
         self._stampede_config: StampedeConfig | None = make_stampede_config(options.get("stampede_prevention"))
@@ -1842,7 +1860,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         return await client.custom_command(args)
 
     @contextlib.contextmanager
-    def _blocking_client(self, block_seconds: float) -> Iterator[Any]:
+    def _blocking_client(self, block_seconds: float) -> Generator[Any]:
         """Lend an idle client whose request timeout outlasts ``block_seconds``.
 
         Glide multiplexes each client over one connection, so a command that
@@ -1858,14 +1876,21 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
             client = idle.pop() if idle else None
         if client is None:
             client = _WrongTypeClient(self._create_client(request_timeout=timeout))
+        reusable = False
         try:
             yield client
-        except BaseException:
-            # The reply can still be on its way, so the connection can't be reused.
-            client.close()
+            reusable = True
+        except Exception as exc:
+            # A server error answers the request. After a timeout, a lost connection
+            # or an interrupt the reply can still be on its way.
+            reusable = not isinstance(exc, (GlideTimeoutError, GlideConnectionError, ClosingError))
             raise
-        with _GLIDE_SYNC_BLOCKING_LOCK:
-            _GLIDE_SYNC_BLOCKING_CLIENTS.setdefault(key, []).append(client)
+        finally:
+            if reusable:
+                with _GLIDE_SYNC_BLOCKING_LOCK:
+                    _GLIDE_SYNC_BLOCKING_CLIENTS.setdefault(key, []).append(client)
+            else:
+                client.close()
 
     def _blocking_cmd(self, args: list[Any], block_seconds: float) -> Any:
         with self._blocking_client(block_seconds) as client:
@@ -1895,7 +1920,10 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     ) -> bool:
         client = self._client()
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
-        kw = {"conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST, **_set_expiry(actual_timeout)}
+        kw: dict[str, Any] = {
+            "conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST,
+            **_set_expiry(actual_timeout),
+        }
         return _ok_to_bool(client.set(key, _enc(value), **kw))
 
     def get(self, key: str, *, stampede_prevention: bool | StampedeConfig | None = None) -> Any:
@@ -1985,8 +2013,11 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
         return found
 
-    def has_key(self, key: str) -> bool:
-        return bool(self._client().exists([key]))
+    def has_key(self, key: str, *, stampede_prevention: bool | StampedeConfig | None = None) -> bool:
+        config = self.resolve_stampede(stampede_prevention)
+        if config is None:
+            return bool(self._client().exists([key]))
+        return outlives_buffer(self._client().ttl(key), config)
 
     def type(self, key: str) -> KeyType | None:
         result: Any = self._client().type(key)
@@ -2109,8 +2140,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         if count is None:
             count = self._default_scan_itersize
         result = self._client().scan(_enc(cursor), match=match, count=count, type=_object_type(_type))
-        keys = [k.decode(errors="surrogateescape") if isinstance(k, bytes) else k for k in result[1]]
-        return int(_dec_str(result[0])), keys
+        return int(_dec_str(result[0])), _dec_keys(result[1])
 
     def iter_keys(self, pattern: str, itersize: int | None = None) -> Iterator[str]:
         for k in self._scan_keys(pattern, itersize):
@@ -2180,10 +2210,10 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     def hgetall(self, key: str) -> dict[str, Any]:
         result = self._client().hgetall(key)
-        return {k.decode() if isinstance(k, bytes) else k: v for k, v in result.items()}
+        return {_dec_str(k): v for k, v in result.items()}
 
     def hkeys(self, key: str) -> list[str]:
-        return [k.decode() if isinstance(k, bytes) else k for k in self._client().hkeys(key)]
+        return [_dec_str(k) for k in self._client().hkeys(key)]
 
     def hvals(self, key: str) -> list[Any]:
         return list(self._client().hvals(key))
@@ -2864,15 +2894,20 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     def slowlog_get(self, count: int = 10) -> list[dict[str, Any]]:
         raw = self._cmd([b"SLOWLOG", b"GET", str(count).encode()])
+
+        def decode(value: Any) -> Any:
+            # The arguments carry serialized values, as on valkey-py.
+            return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value
+
         # Reshape each row into the dict form the other adapters return.
         return [
             {
                 "id": entry[0],
                 "start_time": entry[1],
                 "duration": entry[2],
-                "command": [_dec_str(arg) for arg in (entry[3] or [])],
-                "client_address": _dec_str(entry[4]) if len(entry) > 4 else None,
-                "client_name": _dec_str(entry[5]) if len(entry) > 5 else None,
+                "command": [decode(arg) for arg in (entry[3] or [])],
+                "client_address": decode(entry[4]) if len(entry) > 4 else None,
+                "client_name": decode(entry[5]) if len(entry) > 5 else None,
             }
             for entry in (raw or [])
             if isinstance(entry, (list, tuple)) and len(entry) >= 4
@@ -2940,7 +2975,10 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     ) -> bool:
         client = await self.get_async_client()
         actual_timeout = self.get_timeout_with_buffer(timeout, stampede_prevention)
-        kw = {"conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST, **_set_expiry(actual_timeout)}
+        kw: dict[str, Any] = {
+            "conditional_set": ConditionalChange.ONLY_IF_DOES_NOT_EXIST,
+            **_set_expiry(actual_timeout),
+        }
         return _ok_to_bool(await client.set(key, _enc(value), **kw))
 
     async def aget(self, key: str, *, stampede_prevention: bool | StampedeConfig | None = None) -> Any:
@@ -3028,8 +3066,12 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
         return found
 
-    async def ahas_key(self, key: str) -> bool:
-        return bool(await (await self.get_async_client()).exists([key]))
+    async def ahas_key(self, key: str, *, stampede_prevention: bool | StampedeConfig | None = None) -> bool:
+        config = self.resolve_stampede(stampede_prevention)
+        client = await self.get_async_client()
+        if config is None:
+            return bool(await client.exists([key]))
+        return outlives_buffer(await client.ttl(key), config)
 
     async def atype(self, key: str) -> KeyType | None:
         result: Any = await (await self.get_async_client()).type(key)
@@ -3157,8 +3199,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
         if count is None:
             count = self._default_scan_itersize
         result = await client.scan(_enc(cursor), match=match, count=count, type=_object_type(_type))
-        keys = [k.decode(errors="surrogateescape") if isinstance(k, bytes) else k for k in result[1]]
-        return int(_dec_str(result[0])), keys
+        return int(_dec_str(result[0])), _dec_keys(result[1])
 
     async def aiter_keys(self, pattern: str, itersize: int | None = None):
         async for k in self._ascan_keys(pattern, itersize):
@@ -3235,10 +3276,10 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
 
     async def ahgetall(self, key: str) -> dict[str, Any]:
         result = await (await self.get_async_client()).hgetall(key)
-        return {k.decode() if isinstance(k, bytes) else k: v for k, v in result.items()}
+        return {_dec_str(k): v for k, v in result.items()}
 
     async def ahkeys(self, key: str) -> list[str]:
-        return [k.decode() if isinstance(k, bytes) else k for k in await (await self.get_async_client()).hkeys(key)]
+        return [_dec_str(k) for k in await (await self.get_async_client()).hkeys(key)]
 
     async def ahvals(self, key: str) -> list[Any]:
         return list(await (await self.get_async_client()).hvals(key))
@@ -3994,6 +4035,8 @@ class ValkeyGlideClusterAdapter(ValkeyGlideAdapter):
     (matches :class:`~django_cachex.cache.resp.RespClusterCache` semantics
     for the other drivers).
     """
+
+    _standalone = False
 
     def _batch_factory(self, *, atomic: bool = False) -> Any:
         return ClusterBatch(is_atomic=atomic)

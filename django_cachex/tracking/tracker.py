@@ -1,19 +1,21 @@
 """Trackers: the tracked reads, the eviction of own writes, the per-process registry and the fork hook."""
 
+import logging
 import os
 import threading
-import time
 from typing import TYPE_CHECKING, Any
 
 from django_cachex.stampede import should_recompute_remaining
 from django_cachex.tracking.listener import Listener
-from django_cachex.tracking.store import LocalStore
+from django_cachex.tracking.store import LocalStore, clock
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Iterable, Sequence
 
     from django_cachex.stampede import StampedeConfig
     from django_cachex.tracking.config import TrackingConfig
+
+logger = logging.getLogger("django_cachex.tracking")
 
 
 def store_key(key: str | bytes) -> str:
@@ -32,14 +34,14 @@ class Tracker:
     def get(self, inner: Any, key: str | bytes, stampede: StampedeConfig | None) -> bytes | None:
         skey = store_key(key)
         if self.listener.drain():
-            now = time.monotonic()
+            now = clock()
             copy = self.store.lookup(skey, now)
             if copy is not None:
                 if copy.value is not None and _recompute_hit(copy.deadline, now, stampede):
                     return None
                 return copy.value
         token = self.store.begin_fetch(skey)
-        started = time.monotonic()
+        started = clock()
         try:
             pipe = inner.pipeline(transaction=False)
             pipe.get(key)
@@ -57,7 +59,7 @@ class Tracker:
         found: dict[Any, bytes] = {}
         misses: list[str | bytes] = []
         if self.listener.drain():
-            now = time.monotonic()
+            now = clock()
             for key in keys:
                 copy = self.store.lookup(store_key(key), now)
                 if copy is None:
@@ -79,7 +81,7 @@ class Tracker:
         values: dict[int, bytes | None] = {}
         misses: list[int] = []
         if self.listener.drain():
-            now = time.monotonic()
+            now = clock()
             for index, key in enumerate(keys):
                 copy = self.store.lookup(store_key(key), now) if self.config.covers(key) else None
                 if copy is None:
@@ -94,15 +96,22 @@ class Tracker:
                 values[index] = value
         return [values[index] for index in range(len(keys))]
 
-    def has_key(self, inner: Any, key: str | bytes) -> bool:
+    def has_key(self, inner: Any, key: str | bytes, stampede: StampedeConfig | None) -> bool:
         if self.listener.drain():
-            copy = self.store.lookup(store_key(key), time.monotonic())
+            now = clock()
+            copy = self.store.lookup(store_key(key), now)
             if copy is not None:
-                return copy.value is not None
+                if stampede is None or copy.value is None or copy.deadline is None:
+                    return copy.value is not None
+                return copy.deadline - now > stampede.buffer
         self.store.note_miss()
         pipe = inner.pipeline(transaction=False)
-        pipe.exists(key)
-        return bool(pipe.execute()[0])
+        if stampede is None:
+            pipe.exists(key)
+            return bool(pipe.execute()[0])
+        pipe.pttl(key)
+        pttl = pipe.execute()[0]
+        return pttl == -1 or pttl > stampede.buffer * 1000
 
     def discard(self, strings: Iterable[str | bytes]) -> None:
         """Drop the copies of the keys among ``strings`` that this tracker covers."""
@@ -115,7 +124,7 @@ class Tracker:
 
     def info(self) -> dict[str, Any]:
         connected, confirmed_at = self.listener.status()
-        age = None if confirmed_at is None else time.monotonic() - confirmed_at
+        age = None if confirmed_at is None else clock() - confirmed_at
         return {
             "connected": connected,
             "fresh": connected and age is not None and age <= self.config.max_staleness,
@@ -133,7 +142,7 @@ class Tracker:
         """
         covered = [(index, store_key(key)) for index, key in enumerate(keys) if self.config.covers(key)]
         tokens = [self.store.begin_fetch(skey) for _, skey in covered]
-        started = time.monotonic()
+        started = clock()
         try:
             pipe = inner.pipeline(transaction=False)
             pipe.execute_command("MGET", *keys)
@@ -163,13 +172,19 @@ def _recompute_fetch(pttl: int | None, stampede: StampedeConfig | None) -> bool:
     return should_recompute_remaining(pttl / 1000 - stampede.buffer, stampede)
 
 
+# Seconds before a read tries again to start a tracking thread that could not start.
+START_RETRY = 5.0
+
+
 class _Registry:
-    __slots__ = ("lock", "pid", "trackers")
+    __slots__ = ("lock", "pid", "retry_at", "start_warned", "trackers")
 
     def __init__(self) -> None:
         self.pid = os.getpid()
         self.lock = threading.Lock()
         self.trackers: dict[Hashable, Tracker] = {}
+        self.retry_at: dict[Hashable, float] = {}
+        self.start_warned = False
 
 
 _registry = _Registry()
@@ -212,16 +227,29 @@ def registry_key(
     return (adapter_class, tuple(servers), repr(sorted(options.items())), config)
 
 
-def get_tracker(key: Hashable, adapter: Any, config: TrackingConfig) -> Tracker:
-    """Return this process's tracker for ``key``, creating it and starting its thread on first use."""
+def get_tracker(key: Hashable, adapter: Any, config: TrackingConfig) -> Tracker | None:
+    """Return this process's tracker for ``key``, creating it and starting its thread on first use.
+
+    None when the thread cannot start, as under a thread limit or in a subinterpreter. The first call after
+    ``START_RETRY`` seconds tries again.
+    """
     registry = _current()
     tracker = registry.trackers.get(key)
     if tracker is None:
+        if clock() < registry.retry_at.get(key, 0.0):
+            return None
         with registry.lock:
             tracker = registry.trackers.get(key)
             if tracker is None:
-                tracker = Tracker(adapter, config)
-                tracker.listener.start()
+                try:
+                    tracker = Tracker(adapter, config)
+                    tracker.listener.start()
+                except Exception as e:  # noqa: BLE001
+                    registry.retry_at[key] = clock() + START_RETRY
+                    if not registry.start_warned:
+                        logger.warning("Client tracking cannot start, reads go to the server: %s", e)
+                        registry.start_warned = True
+                    return None
                 # Replace, never change in place: trackers() iterates the dict without the lock.
                 registry.trackers = {**registry.trackers, key: tracker}
     return tracker

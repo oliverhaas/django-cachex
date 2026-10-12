@@ -86,9 +86,7 @@ class _LocalState:
 class _SemaphoreRegistry:
     """Per-LOCATION (or process-wide) registry of :class:`_LocalState` by name.
 
-    Replaces the old ``id(cache)``-keyed module-level dict, which could alias
-    between a GC'd cache instance and a newly-created one if Python reused
-    the address. Registries are keyed by cache LOCATION, so every
+    Registries are keyed by cache LOCATION, not by cache instance, so every
     :class:`~django_cachex.cache.LocMemCache` configured for the same
     LOCATION shares one; standalone :class:`Semaphore` instances share the
     module-level ``_DEFAULT_REGISTRY``.
@@ -315,6 +313,7 @@ class Semaphore:
         """
         state = self._state
         wait_timeout = self.timeout if isinstance(timeout, _DefaultTimeout) else timeout
+        _validate_timeout(wait_timeout)
         waiter: _Waiter | None = None
         deadline = None if wait_timeout is None else time.monotonic() + wait_timeout
 
@@ -331,7 +330,6 @@ class Semaphore:
                 head_ok = not state.waiters or next(iter(state.waiters)) is waiter
                 if head_ok and state.used + self.weight <= state.capacity:
                     if waiter is not None:
-                        # We were at the head of the queue; pop ourselves before admitting.
                         state.waiters.pop(waiter)
                     state.used += self.weight
                     self._held = True
@@ -390,6 +388,7 @@ class Semaphore:
         """Async mirror of :meth:`acquire`."""
         state = self._state
         wait_timeout = self.timeout if isinstance(timeout, _DefaultTimeout) else timeout
+        _validate_timeout(wait_timeout)
         loop = asyncio.get_running_loop()
         waiter: _Waiter | None = None
         deadline = None if wait_timeout is None else loop.time() + wait_timeout
@@ -409,9 +408,7 @@ class Semaphore:
                         state.waiters.pop(waiter)
                     state.used += self.weight
                     self._held = True
-                    # Cascade the wake: a single release can free room for more
-                    # than one waiter, so hand off to the next head now that we
-                    # have taken our share (see the sync ``acquire`` for why).
+                    # Wake the next head too, as the sync ``acquire`` explains.
                     _notify_next(state)
                     return True
                 if not blocking:
@@ -575,12 +572,7 @@ class RespSemaphore:
         return token
 
     def _held_token(self, verb: str) -> str:
-        """Snapshot the held token so the command can't act on a newer one.
-
-        Reading ``self._token`` again at the call site let a racing thread
-        install a fresh token in between, so the command ran against a claim
-        this instance no longer owned.
-        """
+        """Snapshot the held token under the lock, so a concurrent re-acquire cannot swap it before the command runs."""
         with self._claim_lock:
             token = self._token
             if token is None:

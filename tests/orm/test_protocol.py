@@ -111,9 +111,6 @@ def test_timeout(protocol):
     assert not protocol.lookup().hit
 
 
-# What a transaction wrote, across its savepoints.
-
-
 @pytest.fixture
 def conn():
     """A stand-in for a database connection, which the transaction state is kept on."""
@@ -151,9 +148,6 @@ def test_unknown_savepoint(conn):
     orm_transaction.savepoint_rolled_back(conn, "unknown")
     orm_transaction.savepoint_released(conn, "unknown")
     assert orm_transaction.written(conn) == {"a"}
-
-
-# Generation bumps around the writes of the ORM and raw SQL.
 
 
 def generation():
@@ -265,7 +259,6 @@ def test_failed_bump_after_the_write(mocker, caplog):
         t = Test.objects.create(name="test")
     assert len(bumps) == 2
     assert {record.name for record in caplog.records} == {"django_cachex.orm.monkey_patch"}
-    # The bump before the write already dropped the result cached before it.
     assert_query_cached(Test.objects.all(), [t])
 
 

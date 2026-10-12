@@ -59,7 +59,6 @@ def test_generations(store: RespStore):
 
 
 def test_generations_without_expiry(cache: RespCache, store: RespStore):
-    # volatile-* eviction takes only results: generation keys never expire.
     assert store.generations(DB, TABLES) is not None
     assert cache.ttl(GENERATION) is None
     store.bump(DB, TABLES)
@@ -81,7 +80,6 @@ def test_bump(store: RespStore):
 
 
 def test_result_of_an_older_version_is_replaced(cache: RespCache, store: RespStore):
-    # Earlier versions stored each result in a hash, which a lookup reads as missing.
     cache.hset(ENTRY, "g", "1:2")
     miss = store.lookup(DB, "query", TABLES)
     assert not miss.hit

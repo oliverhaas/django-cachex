@@ -194,16 +194,28 @@ def _validate_zadd_flags(*, nx: bool, xx: bool, gt: bool, lt: bool) -> None:
         raise ValueError(msg)
 
 
+def _validate_set_flags(*, nx: bool, xx: bool) -> None:
+    """Reject ``set(nx=True, xx=True)`` before any I/O, the same way on every backend."""
+    if nx and xx:
+        msg = "set() accepts at most one of nx and xx"
+        raise ValueError(msg)
+
+
 def _score_bound(value: float | str, backend: str) -> float:
     """Parse a ``ZRANGEBYSCORE``-style score bound.
 
     ``-inf``/``+inf`` parse natively. Redis's exclusive ``(`` prefix has no
     equivalent in the inclusive comparison the native backends do in Python,
-    so it is rejected rather than blowing up in ``float()``.
+    so it is rejected rather than blowing up in ``float()``. NaN is rejected
+    as Redis rejects it, since every comparison with NaN is false.
     """
     if isinstance(value, str) and value.lstrip().startswith("("):
-        raise NotSupportedError("exclusive score bounds ('(' prefix)", backend)
-    return float(value)
+        raise NotSupportedError("exclusive score bounds ('(' prefix)", backend, detail="use an inclusive bound")
+    bound = float(value)
+    if math.isnan(bound):
+        msg = "min or max is not a float"
+        raise ValueError(msg)
+    return bound
 
 
 def _validate_pop_count(count: int | None) -> None:

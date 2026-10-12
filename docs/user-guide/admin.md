@@ -78,7 +78,7 @@ Switch Django's stock `LocMemCache` or `DatabaseCache` to `django_cachex.cache.L
 
 ### Browsing a cluster alias
 
-`RedisClusterCache`, `ValkeyClusterCache` and `ValkeyGlideClusterCache` have the "cachex" badge. Their key browser stays empty. The key detail page (opened by key name), Add key, Flush and the danger zone work as usual.
+`RedisClusterCache`, `ValkeyClusterCache` and `ValkeyGlideClusterCache` have the "cachex" badge. Their key browser stays empty. The key detail page (opened by key name), Add key, Flush and the danger zone work as usual. The info page shows the figures of one node, not of the whole cluster. On `ValkeyGlideClusterCache`, the node can change on each reload.
 
 ## Views
 
@@ -98,7 +98,7 @@ The key browser pages through a cache's keys with their type, TTL and size. Sear
 
 ![The key browser with a wildcard search](../assets/screenshot-key-list.png)
 
-The Add key tool asks for a key name and a data type: string, list, set, hash, zset or stream. Its Continue button opens the key detail page without writing. The first value you add there creates the key.
+The Add key tool asks for a key name and a data type: string, list, set, hash, zset or stream. `LocMemCache` and `DatabaseCache` offer no stream. Its Continue button opens the key detail page without writing. The first value you add there creates the key.
 
 ### Key Detail
 

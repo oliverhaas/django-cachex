@@ -217,6 +217,29 @@ client = cache.get_client()
 client.publish("channel", "message")
 ```
 
+## Custom Adapters
+
+A backend class names its adapter in the `_adapter_class` attribute. The adapter runs the commands through one client library. To use your own adapter, subclass a backend and set `_adapter_class` to a class that follows `django_cachex.adapters.RespAdapterProtocol`. A subclass of a shipped adapter, such as `ValkeyPyAdapter`, keeps the methods it does not override. The protocol can change in a minor release, and the changelog lists each change.
+
+```python
+import logging
+
+from django_cachex.adapters import ValkeyPyAdapter
+from django_cachex.cache import ValkeyCache
+
+logger = logging.getLogger(__name__)
+
+
+class AuditedAdapter(ValkeyPyAdapter):
+    def delete(self, key):
+        logger.info("delete %r", key)
+        return super().delete(key)
+
+
+class AuditedValkeyCache(ValkeyCache):
+    _adapter_class = AuditedAdapter
+```
+
 ## Lua Scripts
 
 `eval_script()` runs a Lua script and sends its keys and args as given. A `pre_hook` transforms the keys and args before the script runs, and a `post_hook` transforms the result. `keys_only_pre`, for example, adds the cache's key prefix and version. With `post_hook=None`, the default, the result comes back unchanged. `aeval_script()` is the async twin. [Lua Script Methods](../reference/api.md#lua-script-methods) covers `EVALSHA` and the hook signatures.

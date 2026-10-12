@@ -53,6 +53,7 @@ from django_cachex.stampede import (
     StampedeConfig,
     get_timeout_with_buffer,
     make_stampede_config,
+    outlives_buffer,
     resolve_stampede,
     should_recompute,
 )
@@ -60,7 +61,7 @@ from django_cachex.types import KeyType
 
 if TYPE_CHECKING:
     import builtins
-    from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
+    from collections.abc import AsyncIterator, Generator, Iterable, Iterator, Mapping, Sequence
 
     from redis.connection import ConnectionPool
 
@@ -331,7 +332,7 @@ _TRANSLATION_INSTALLED_ATTR = "_django_cachex_error_translation_installed"
 
 
 @contextmanager
-def _errors_translated() -> Iterator[None]:
+def _errors_translated() -> Generator[None]:
     """Re-raise a driver error as the cachex exception it stands for."""
     try:
         yield
@@ -605,6 +606,18 @@ def _hgetex_args(key: str, fields: tuple[str, ...], *, ex: int | None, persist: 
 
 def _text(value: Any) -> str:
     return value.decode("utf-8", "surrogateescape") if isinstance(value, bytes) else str(value)
+
+
+def _decode_xpending(reply: Any) -> Any:
+    """Decode the entry ids and consumer names of the driver's XPENDING dicts to str, as glide returns them."""
+    if isinstance(reply, list):
+        return [{**row, "message_id": _text(row["message_id"]), "consumer": _text(row["consumer"])} for row in reply]
+    return {
+        **reply,
+        "min": None if reply["min"] is None else _text(reply["min"]),
+        "max": None if reply["max"] is None else _text(reply["max"]),
+        "consumers": [{**c, "name": _text(c["name"])} for c in reply["consumers"]],
+    }
 
 
 class ValkeyPyAdapter(RespAdapterProtocol):
@@ -1143,16 +1156,20 @@ class ValkeyPyAdapter(RespAdapterProtocol):
 
         return found
 
-    def has_key(self, key: str) -> bool:
-        """Check if a key exists."""
+    def has_key(self, key: str, *, stampede_prevention: bool | StampedeConfig | None = None) -> bool:
+        """Check if a key exists; a key inside the stampede buffer is logically expired."""
         client = self.get_client(key, write=False)
+        config = self.resolve_stampede(stampede_prevention)
+        if config is None:
+            return bool(client.exists(key))
+        return outlives_buffer(client.ttl(key), config)
 
-        return bool(client.exists(key))
-
-    async def ahas_key(self, key: str) -> bool:
+    async def ahas_key(self, key: str, *, stampede_prevention: bool | StampedeConfig | None = None) -> bool:
         client = await self.get_async_client(key, write=False)
-
-        return bool(await client.exists(key))
+        config = self.resolve_stampede(stampede_prevention)
+        if config is None:
+            return bool(await client.exists(key))
+        return outlives_buffer(await client.ttl(key), config)
 
     def type(self, key: str) -> KeyType | None:
         """Get the Redis data type of a key, or None if the key is missing.
@@ -1694,7 +1711,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         client = self.get_client(key, write=False)
 
         raw = client.hgetall(key)
-        return {(f.decode() if isinstance(f, bytes) else f): v for f, v in raw.items()}
+        return {_text(f): v for f, v in raw.items()}
 
     def hdel(self, key: str, *fields: str) -> int:
         """Delete hash fields."""
@@ -1719,7 +1736,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         client = self.get_client(key, write=False)
 
         fields = client.hkeys(key)
-        return [f.decode() if isinstance(f, bytes) else f for f in fields]
+        return [_text(f) for f in fields]
 
     def hvals(self, key: str) -> list[Any]:
         """Get all values in a hash."""
@@ -1910,7 +1927,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         client = await self.get_async_client(key, write=False)
 
         raw = await client.hgetall(key)
-        return {(f.decode() if isinstance(f, bytes) else f): v for f, v in raw.items()}
+        return {_text(f): v for f, v in raw.items()}
 
     async def ahdel(self, key: str, *fields: str) -> int:
         client = await self.get_async_client(key, write=True)
@@ -1931,7 +1948,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         client = await self.get_async_client(key, write=False)
 
         fields = await client.hkeys(key)
-        return [f.decode() if isinstance(f, bytes) else f for f in fields]
+        return [_text(f) for f in fields]
 
     async def ahvals(self, key: str) -> list[Any]:
         client = await self.get_async_client(key, write=False)
@@ -2196,7 +2213,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         if result is None:
             return None
         key_bytes, value_bytes = result
-        key_str = key_bytes.decode() if isinstance(key_bytes, bytes) else key_bytes
+        key_str = _text(key_bytes)
         return (key_str, value_bytes)
 
     def brpop(
@@ -2211,7 +2228,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         if result is None:
             return None
         key_bytes, value_bytes = result
-        key_str = key_bytes.decode() if isinstance(key_bytes, bytes) else key_bytes
+        key_str = _text(key_bytes)
         return (key_str, value_bytes)
 
     def blmove(
@@ -2343,7 +2360,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         if result is None:
             return None
         key_bytes, value_bytes = result
-        key_str = key_bytes.decode() if isinstance(key_bytes, bytes) else key_bytes
+        key_str = _text(key_bytes)
         return (key_str, value_bytes)
 
     async def abrpop(
@@ -2357,7 +2374,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         if result is None:
             return None
         key_bytes, value_bytes = result
-        key_str = key_bytes.decode() if isinstance(key_bytes, bytes) else key_bytes
+        key_str = _text(key_bytes)
         return (key_str, value_bytes)
 
     async def ablmove(
@@ -2983,7 +3000,7 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         return [
             (
                 entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
-                {k.decode() if isinstance(k, bytes) else k: v for k, v in (fields or {}).items()},
+                {_text(k): v for k, v in (fields or {}).items()},
             )
             for entry_id, fields in results
         ]
@@ -3171,16 +3188,18 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         client = self.get_client(key, write=False)
 
         if count is not None:
-            return client.xpending_range(
-                key,
-                group,
-                min="-" if start is None else start,
-                max="+" if end is None else end,
-                count=count,
-                consumername=consumer,
-                idle=idle,
+            return _decode_xpending(
+                client.xpending_range(
+                    key,
+                    group,
+                    min="-" if start is None else start,
+                    max="+" if end is None else end,
+                    count=count,
+                    consumername=consumer,
+                    idle=idle,
+                ),
             )
-        return client.xpending(key, group)
+        return _decode_xpending(client.xpending(key, group))
 
     def xclaim(
         self,
@@ -3440,16 +3459,18 @@ class ValkeyPyAdapter(RespAdapterProtocol):
         client = await self.get_async_client(key, write=False)
 
         if count is not None:
-            return await client.xpending_range(
-                key,
-                group,
-                min="-" if start is None else start,
-                max="+" if end is None else end,
-                count=count,
-                consumername=consumer,
-                idle=idle,
+            return _decode_xpending(
+                await client.xpending_range(
+                    key,
+                    group,
+                    min="-" if start is None else start,
+                    max="+" if end is None else end,
+                    count=count,
+                    consumername=consumer,
+                    idle=idle,
+                ),
             )
-        return await client.xpending(key, group)
+        return _decode_xpending(await client.xpending(key, group))
 
     async def axclaim(
         self,
@@ -3698,7 +3719,8 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         parsed = urlparse(url)
         query_params = parse_qs(parsed.query)
 
-        service_name = parsed.hostname
+        # Sentinel master names are case-sensitive, and ``parsed.hostname`` lowercases.
+        service_name = parsed.netloc.rpartition("@")[2].partition(":")[0]
         if not service_name:
             msg = f"Sentinel URL {url!r} has no hostname (service name)."
             raise ImproperlyConfigured(msg)

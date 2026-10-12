@@ -160,7 +160,7 @@ _COMMAND_REQUIREMENTS: dict[str, str] = {
 }
 
 _UNKNOWN_COMMAND_RE = re.compile(
-    r"unknown command [`']?(?P<server>[^`'\s,]+)[`']?"
+    r"unknown command [`'](?P<server>[^`']+)[`']"
     r"|(?P<driver>\S+) command doesn't exist in (?:redis|valkey) commands",
     re.IGNORECASE,
 )
@@ -173,6 +173,8 @@ def maybe_wrap_unknown_command(exc: BaseException) -> BaseException:
     (Redis 6 quotes with backticks, glide prefixes its own text) and the
     redis-py / valkey-py cluster client's ``HEXPIRE command doesn't exist in
     Redis commands``, raised while it looks the command up for routing.
+    The quotes are required: a script's ``Unknown command called from
+    script`` names no command and stays as it is.
     The original error is kept as ``__cause__``.
     """
     if isinstance(exc, NotSupportedError):

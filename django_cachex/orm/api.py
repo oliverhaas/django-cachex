@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from asgiref.local import Local
 from django.apps import apps
 from django.conf import settings
-from django.db import DEFAULT_DB_ALIAS, connections
+from django.db import DEFAULT_DB_ALIAS, DatabaseError, connections
 
 from django_cachex.orm import transaction
 from django_cachex.orm.exceptions import InvalidationError
@@ -19,7 +19,7 @@ from django_cachex.orm.store import get_store
 from django_cachex.orm.utils import are_all_cachable, filter_cachable, known_tables
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Generator, Iterable, Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,19 @@ def _table_keys(db_alias: str, tables: Iterable[str]) -> list[str]:
     return sorted({_table_key(db_alias, table) for table in tables})
 
 
+def _all_tables(db_alias: str) -> set[str]:
+    try:
+        return known_tables().union(connections[db_alias].introspection.table_names())
+    except DatabaseError:
+        # An unreachable database must not keep the other aliases from being invalidated.
+        logger.warning(
+            "Could not list the tables of database %r; invalidating its model tables only.",
+            db_alias,
+            exc_info=True,
+        )
+        return known_tables()
+
+
 def _invalidation_failed(error: Exception, message: str) -> None:
     if orm_settings.ENABLED:
         raise InvalidationError(message) from error
@@ -73,7 +86,7 @@ def invalidate(
     failed_dbs: dict[str, list[str]] = {}
     error: Exception | None = None
     for db in db_aliases:
-        db_tables = filter_cachable(tables or known_tables().union(connections[db].introspection.table_names()))
+        db_tables = filter_cachable(tables or _all_tables(db))
         if not db_tables:
             continue
         table_keys = _table_keys(db, db_tables)
@@ -132,7 +145,7 @@ def table_generations(*tables_or_models: Any, db_alias: str = DEFAULT_DB_ALIAS) 
 
 
 @contextmanager
-def orm_cache_disabled() -> Iterator[None]:
+def orm_cache_disabled() -> Generator[None]:
     """Run the queries of the block against the database; its writes still invalidate the cache."""
     was_enabled = getattr(LOCAL_STORAGE, "orm_cache_enabled", True)
     LOCAL_STORAGE.orm_cache_enabled = False

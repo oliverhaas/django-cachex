@@ -218,6 +218,9 @@ Read the generations before computing the value, and name every table the comput
 
 - When the ORM cache is disabled or would not cache a query of these tables.
 - Inside a transaction that has written one of the tables.
+- When the generations cannot be read from the cache. A warning is logged.
+
+Called without a table or model, it raises `TypeError`.
 
 ### Management command
 
@@ -246,11 +249,12 @@ python manage.py invalidate_orm_cache shop.Order --cache default --db default
 
 ## Limits
 
-- The ORM cache does not see writes by other applications and database clients, triggers and rules, `COPY`, or stored procedures run with `callproc()`. Call `invalidate()` or `invalidate_orm_cache` after them. Deletes follow the foreign keys that Django declares with a database-level `on_delete` (`DB_CASCADE`, `DB_SET_NULL`, `DB_SET_DEFAULT`). `TRUNCATE ... CASCADE` follows every table that references a truncated one.
+- The ORM cache does not see writes by other applications and database clients, triggers and rules, or `COPY`. It does not see writes by stored procedures and functions either, whether run with `callproc()` or with `CALL` or `SELECT f()` through `execute()`. SQLite's `executescript()` bypasses it too. Call `invalidate()` or `invalidate_orm_cache` after them. Deletes follow the foreign keys that Django declares with a database-level `on_delete` (`DB_CASCADE`, `DB_SET_NULL`, `DB_SET_DEFAULT`). `TRUNCATE ... CASCADE` follows every table that references a truncated one.
 - Raw SQL writes are recognized by keyword (`INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `ALTER`, `CREATE`, `DROP`, `REFRESH`, `REPLACE INTO`, `MERGE INTO`) and their tables by name. Tables without a model are found only when listed in `ADDITIONAL_TABLES`. Transactions opened with a raw `BEGIN` are not seen, so use `atomic()`.
 - Results read from a view are cached under the view's name, so writes to the tables behind it do not invalidate them. List views in `UNCACHABLE_TABLES`, or `invalidate()` them after such writes. `REFRESH MATERIALIZED VIEW` invalidates the view it names.
 - A result is keyed by the database alias, SQL and parameters. If the same SQL returns other rows depending on session state, such as django-tenants' per-tenant `search_path` or a row-level security policy reading a session setting, one tenant is served another's rows. Add that state to the query key (see [Cache keys](#cache-keys)).
 - Leave replicas out of `DATABASES`. Writes to the primary do not invalidate what was cached from a replica's alias.
+- Generations belong to a database alias. Two aliases of the same database, such as a pooled and a direct connection, do not invalidate each other. List only one of them in `DATABASES`.
 - A failover of the cache server can lose the latest generation changes, which makes stale results current again. Run `invalidate_orm_cache` after a failover.
 - Writes made while the app was uninstalled, a database was left out of `DATABASES` or `CACHE` named another alias did not invalidate the cache. Run `invalidate_orm_cache` before switching back.
-- `migrate` invalidates every model after applying a migration, and so does `flush`. Migrations change generations like any write, so they need the cache too, or `ENABLED` off followed by `invalidate_orm_cache`.
+- `migrate` invalidates every model of the database alias it migrates after applying a migration, and so does `flush`. After `migrate --database=direct`, run `invalidate_orm_cache --db <alias>` for a cached alias of the same database. Migrations change generations like any write, so they need the cache too, or `ENABLED` off followed by `invalidate_orm_cache`.

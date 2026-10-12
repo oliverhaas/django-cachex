@@ -1,10 +1,14 @@
 """Tests for miscellaneous cache operations: scan, decr_version, clear_all_versions, flush_db."""
 
 import asyncio
+import copy
 import time
 from typing import TYPE_CHECKING
 
 import pytest
+from django.conf import settings
+from django.core.cache import caches
+from django.test import override_settings
 
 from django_cachex.exceptions import NotSupportedError
 
@@ -412,3 +416,17 @@ async def test_aflush_db_follows_lazyfree_lazy_user_flush(cache: RespCache):
     assert await cache.aflush_db() is True
     assert cache.get_many(["alazy_a", "alazy_b", "alazy_c"]) == {}
     assert _lazyfreed_objects(cache, at_least=before + 3) >= before + 3
+
+
+def test_clear_all_versions_spares_a_cache_whose_prefix_extends_this_one(cache: RespCache):
+    config = copy.deepcopy(settings.CACHES)
+    config["app"] = {**config["default"], "KEY_PREFIX": "cavapp"}
+    config["sessions"] = {**config["default"], "KEY_PREFIX": "cavapp:sessions"}
+    with override_settings(CACHES=config):
+        app, sessions = caches["app"], caches["sessions"]
+        app.set("cav_ext", "v1", version=1)
+        app.set("cav_ext", "v-1", version=-1)
+        sessions.set("cav_ext", "session")
+
+        assert app.clear_all_versions() == 2
+        assert sessions.get("cav_ext") == "session"

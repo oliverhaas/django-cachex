@@ -100,7 +100,16 @@ def _import_keygen(name: str, value: Any) -> Callable[..., str]:
     return keygen
 
 
+def _convert_timeout(value: Any) -> Any:
+    # Raised like the keygen errors: a value of another type fails every cached query.
+    if value is DEFAULT_TIMEOUT or value is None or (isinstance(value, int | float) and not isinstance(value, bool)):
+        return value
+    msg = f"`{SETTING_NAME}['TIMEOUT']` must be a number of seconds or None, not {value!r}."
+    raise ImproperlyConfigured(msg)
+
+
 CONVERTERS: dict[str, Callable[[Any], Any]] = {
+    "TIMEOUT": _convert_timeout,
     "DATABASES": _convert_databases,
     "ONLY_CACHABLE_TABLES": lambda value: frozenset(_items(value)),
     "UNCACHABLE_TABLES": lambda value: frozenset(_items(value)) | ALWAYS_UNCACHABLE_TABLES,

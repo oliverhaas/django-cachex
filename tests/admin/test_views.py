@@ -3698,6 +3698,35 @@ def test_zadd_flagged_write_reported_as_success(admin_client: Client, test_cache
     assert test_cache.zscore("zadd:applied", "a") == 99.0
 
 
+def test_zadd_backend_error_is_not_reported_as_a_score_error(admin_client: Client, test_cache: RespCache):
+    test_cache.zadd("zadd:both", {"a": 1.0})
+
+    response = admin_client.post(
+        _key_detail_url("default", "zadd:both"),
+        {"action": "zadd", "member": "a", "score_value": "2.0", "zadd_nx": "on", "zadd_xx": "on"},
+        follow=True,
+    )
+
+    content = response.content.decode()
+    assert "Score must be a number" not in content
+    assert "Could not update the sorted set" in content
+    assert test_cache.zscore("zadd:both", "a") == 1.0
+
+
+def test_lset_backend_error_is_not_reported_as_an_index_error(admin_client: Client, test_cache: RespCache):
+    caches["local"].rpush("locmem:lset", "a")
+
+    response = admin_client.post(
+        _key_detail_url("local", "locmem:lset"),
+        {"action": "lset", "index": "5", "value": "b"},
+        follow=True,
+    )
+
+    content = response.content.decode()
+    assert "Index must be an integer" not in content
+    assert "Could not update the element" in content
+
+
 def test_zadd_unhashable_member_rejected(admin_client: Client, test_cache: RespCache):
     """ZADD passes members as dict keys, so a JSON array would raise a bare
     ``TypeError: unhashable type``.
@@ -4364,6 +4393,15 @@ def test_emptied_ttl_form_removes_the_expiry_of_a_key_in_the_stampede_buffer(adm
 
     assert response.status_code == 302
     assert cache.ttl("stampede:ttl", stampede_prevention=False) is None
+
+
+def test_add_form_reports_a_key_in_the_stampede_buffer_as_existing(admin_client: Client, buffered_key):
+    cache, _ = buffered_key
+
+    response = admin_client.post(_key_add_url("stampede"), {"key": "stampede:ttl", "type": "string"}, follow=True)
+
+    assert "already exists" in response.content.decode()
+    assert cache.get("stampede:ttl", stampede_prevention=False) == "value"
 
 
 # unknown is this package's label, not a server-side type name, so SCAN ... TYPE unknown matched nothing.

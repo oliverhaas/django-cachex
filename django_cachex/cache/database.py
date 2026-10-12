@@ -60,7 +60,16 @@ from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.cache.backends.db import DatabaseCache as DjangoDatabaseCache
 from django.db import IntegrityError, connections, models, router, transaction
 
-from django_cachex.cache.base import BaseCachex, CachexSupportLevel, _scan_page
+from django_cachex.cache.base import (
+    _NOT_AN_INTEGER,
+    _USE_RESP,
+    BaseCachex,
+    CachexSupportLevel,
+    _float_sum,
+    _int64_sum,
+    _is_int64,
+    _scan_page,
+)
 from django_cachex.exceptions import NotSupportedError, WrongTypeError
 from django_cachex.types import KeyType
 from django_cachex.utils import (
@@ -75,6 +84,7 @@ from django_cachex.utils import (
     _validate_linsert_where,
     _validate_lpos_args,
     _validate_pop_count,
+    _validate_set_flags,
     _validate_zadd_flags,
 )
 
@@ -394,8 +404,9 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         With ``nx=True``, returns ``True`` if the row was inserted, ``False``
         if a row already existed.
         """
+        _validate_set_flags(nx=nx, xx=xx)
         if xx or get:
-            raise NotSupportedError("set with xx/get", self.__class__.__name__)
+            raise NotSupportedError("set with xx/get", self.__class__.__name__, detail=_USE_RESP)
         if nx:
             internal_key = self.make_and_validate_key(key, version=version)
             # ``_base_set`` is Django's internal hook (private in stubs); accessed
@@ -415,8 +426,9 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         get: bool = False,
     ) -> Any:
         """Async: see :meth:`set`."""
+        _validate_set_flags(nx=nx, xx=xx)
         if xx or get:
-            raise NotSupportedError("aset with xx/get", self.__class__.__name__)
+            raise NotSupportedError("aset with xx/get", self.__class__.__name__, detail=_USE_RESP)
         if nx:
             return await sync_to_async(self.set, thread_sensitive=True)(
                 key,
@@ -456,6 +468,36 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         found = super().get_many(keys, version)
         return {k: v for k, v in found.items() if not isinstance(v, _TAGGED_COLLECTIONS)}
 
+    def delete(self, key: str, version: int | None = None) -> bool:
+        """Delete a key. Returns ``True`` only for a live key, like Redis ``DEL``."""
+        return self.delete_many([key], version=version) > 0
+
+    def delete_many(self, keys: Iterable[str], version: int | None = None) -> int:  # type: ignore[override]
+        """Delete keys and return how many were live, like Redis ``DEL``.
+
+        Django's version counts expired rows too and returns ``None``. Expired
+        rows are still removed, in a second statement when a key was not live.
+        """
+        internal_keys = [self.make_and_validate_key(key, version=version) for key in keys]
+        if not internal_keys:
+            return 0
+        conn = self._get_connection(write=True)
+        quote = conn.ops.quote_name
+        table = quote(self._get_table_name())
+        where = f"{quote('cache_key')} IN ({', '.join(['%s'] * len(internal_keys))}) AND {quote('expires')}"
+        params = [*internal_keys, _adapt_dt(conn, _now())]
+        with conn.cursor() as cursor:
+            cursor.execute(f"DELETE FROM {table} WHERE {where} > %s", params)  # noqa: S608
+            deleted = cursor.rowcount
+            if deleted < len(internal_keys):
+                cursor.execute(f"DELETE FROM {table} WHERE {where} <= %s", params)  # noqa: S608
+        return deleted
+
+    def clear(self) -> bool:  # type: ignore[override]
+        """Delete every row in the cache table. Returns ``True``, as ``RespCache.clear`` does."""
+        super().clear()
+        return True
+
     def incr(self, key: str, delta: int = 1, version: int | None = None) -> int:
         """Increment a value, mirroring Redis ``INCRBY`` on an existing key.
 
@@ -466,7 +508,11 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         ``expires``. A missing key still raises ``ValueError`` per the Django
         contract; ``aincr``/``decr``/``adecr`` dispatch here on both Django 6.0
         and 6.1 (6.0 would otherwise compose ``aincr`` from ``aget``/``aset``).
+        A value or delta that is not a 64-bit integer raises ``ValueError``,
+        as does a sum past that range.
         """
+        if not _is_int64(delta):
+            raise ValueError(_NOT_AN_INTEGER)
         internal_key = self.make_and_validate_key(key, version=version)
 
         def transform(current: Any) -> tuple[Any, int]:
@@ -476,7 +522,9 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             if isinstance(current, _TAGGED_COLLECTIONS):
                 msg = f"WRONGTYPE Key {key!r} does not hold a string value."
                 raise WrongTypeError(msg)
-            new_value = current + delta
+            if not _is_int64(current):
+                raise ValueError(_NOT_AN_INTEGER)
+            new_value = _int64_sum(current, delta)
             return new_value, new_value
 
         return cast("int", self._atomic_compound(internal_key, transform))
@@ -545,6 +593,28 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         if expires_dt.year >= datetime.max.year:  # noqa: DTZ901
             return None
         return int((expires_dt - now).total_seconds())
+
+    def touch(self, key: str, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
+        """Set a new timeout on a live key. Returns ``False`` for a missing or expired key.
+
+        Django's ``touch`` updates an expired row too, which revived its stale value.
+        """
+        backend_timeout = self.get_backend_timeout(timeout)
+        if backend_timeout is None:
+            new_expires = _no_expiry_dt()
+        else:
+            new_expires = datetime.fromtimestamp(backend_timeout, tz=UTC if settings.USE_TZ else None)
+        conn = self._get_connection(write=True)
+        quote = conn.ops.quote_name
+        table = quote(self._get_table_name())
+        internal_key = self.make_and_validate_key(key, version=version)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"UPDATE {table} SET {quote('expires')} = %s "  # noqa: S608
+                f"WHERE {quote('cache_key')} = %s AND {quote('expires')} > %s",
+                [_adapt_dt(conn, new_expires), internal_key, _adapt_dt(conn, _now())],
+            )
+            return cursor.rowcount > 0
 
     def expire(self, key: str, timeout: int | timedelta, version: int | None = None) -> bool:
         """Set the TTL of a key. Returns ``True`` if the key existed and was live."""
@@ -1264,15 +1334,18 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
         return cast("bool", self._atomic_compound(self._internal_key(key, version=version), transform))
 
     def hincrby(self, key: str, field: str, amount: int = 1, version: int | None = None) -> int:
+        if not _is_int64(amount):
+            raise ValueError(_NOT_AN_INTEGER)
+
         def transform(current: Any) -> tuple[Any, int]:
             existing = self._coerce_hash(key, current) or _Hash()
             value = existing.get(field, 0)
-            if isinstance(value, bool) or not isinstance(value, int):
+            if not _is_int64(value):
                 msg = "hash value is not an integer"
                 # ValueError, not TypeError: mirrors Redis's HINCRBY error,
                 # matching the ValueError convention of ``lset``.
-                raise ValueError(msg)  # noqa: TRY004
-            existing[field] = value + amount
+                raise ValueError(msg)
+            existing[field] = _int64_sum(value, amount)
             return existing, existing[field]
 
         return cast("int", self._atomic_compound(self._internal_key(key, version=version), transform))
@@ -1284,7 +1357,7 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
             if isinstance(value, bool) or not isinstance(value, int | float):
                 msg = "hash value is not a float"
                 raise ValueError(msg)  # noqa: TRY004
-            result = float(value) + amount
+            result = _float_sum(value, amount)
             # Redis stores 5200.0 as "5200", which HINCRBY and hget() take as an integer.
             existing[field] = int(result) if result.is_integer() else result
             return existing, result
@@ -1624,8 +1697,8 @@ class DatabaseCache(BaseCachex, DjangoDatabaseCache):
     async def aget_many(self, keys: Iterable[str], version: int | None = None) -> dict[str, Any]:
         return await sync_to_async(self.get_many, thread_sensitive=True)(keys, version=version)
 
-    async def adelete_many(self, keys: Iterable[str], version: int | None = None) -> None:
-        await sync_to_async(self.delete_many, thread_sensitive=True)(keys, version=version)
+    async def adelete_many(self, keys: Iterable[str], version: int | None = None) -> int:  # type: ignore[override]
+        return await sync_to_async(self.delete_many, thread_sensitive=True)(keys, version=version)
 
     async def aincr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
         return await sync_to_async(self.incr_version, thread_sensitive=True)(key, delta=delta, version=version)

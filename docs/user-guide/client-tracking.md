@@ -38,7 +38,7 @@ The default prefix covers every version of every key of the alias, so a per-depl
 
 - **Own writes.** After a write through the cache returns, every `get()`, `get_many()` and `has_key()` in the process, from any thread, returns its value or a newer one. This covers sync and async methods, pipelines at `execute()`, and the [ORM cache](orm-cache.md).
 - **Other processes' writes.** The server sends every process an invalidation for each write under the prefix, and each read first processes the invalidations that have arrived. Another process's write shows after about one network delay.
-- **At most `max_staleness` behind.** A read never returns a copy older than a write that completed more than `max_staleness` before the read started. The bound holds whatever failed in between: a connection that died without a FIN, a stalled thread or a paused server. A Sentinel failover, `SWAPDB` and the cases at the end of [Operation](#operation) are the exceptions.
+- **At most `max_staleness` behind.** A read never returns a copy older than a write that completed more than `max_staleness` before the read started. The bound holds whatever failed in between: a connection that died without a FIN, a stalled thread or a paused server. On Linux, it also holds across a system suspend. A Sentinel failover, `SWAPDB` and the cases at the end of [Operation](#operation) are the exceptions.
 - **TTLs.** A copy never outlives its key on the server.
 - **Failover.** After a Sentinel failover, the copies from the old primary are dropped when its connection closes, or at the latest at the next check of the primary, which runs every `max_staleness`.
 
@@ -61,13 +61,14 @@ These writes reach the writing process like another process's writes, after abou
 - About two `PING`s per `max_staleness` for each tracking connection.
 - One non-blocking socket read per tracked read, on top of the lookup.
 - `max_bytes` caps the counted size of the copies per process. Real memory is up to about twice that for values under a few hundred bytes.
-- A read without a copy sends `GET` and `PTTL` in one pipeline, and `get_many()` fetches all keys without copies in one pipeline. `has_key()` without a copy sends `EXISTS` and keeps no copy.
+- A read without a copy sends `GET` and `PTTL` in one pipeline, and `get_many()` fetches all keys without copies in one pipeline. `has_key()` without a copy sends `EXISTS`, or `PTTL` under stampede prevention, and keeps no copy.
 - A read without a copy goes to the primary. On a Sentinel alias, or with replicas in `LOCATION`, other reads go to the replicas.
 
 ## Operation
 
 - The first tracked read in a process starts the tracking thread, and the thread opens the connection. Writes do not. `close()`, which Django calls after each request, leaves both running.
 - Until the connection is up, and whenever it is down, reads go to the server. The thread reconnects with backoff from 0.1 s up to 5 s and logs one warning per outage to the `django_cachex.tracking` logger.
+- If the tracking thread cannot start, as under a thread limit or in a subinterpreter, reads go to the server, and one warning is logged. The first read after 5 s tries again.
 - A `PING` answered with an error, as while a script runs too long (`-BUSY`) or a server loads its data (`-LOADING`), confirms nothing, so reads go to the server after `max_staleness`.
 - `FLUSHDB` and `FLUSHALL` of any database on the server drop every copy.
 - A forked child, as under gunicorn `--preload` or Celery prefork, drops the parent's copies and opens its own tracking connection at its first tracked read.

@@ -1236,3 +1236,72 @@ def test_async_twin_cases_cover_every_async_method():
     }
     covered = {case[0] for case in _ASYNC_TWIN_CASES}
     assert {name for name, owner in owners.items() if owner is not BaseCachex} == covered
+
+
+def test_set_nx_and_xx_together_raise_value_error(db_cache: DatabaseCache):
+    with pytest.raises(ValueError, match="at most one of nx and xx"):
+        db_cache.set("k", "v", nx=True, xx=True)
+    assert db_cache.get("k") is None
+
+
+def _stored_keys(db_cache: DatabaseCache) -> list[str]:
+    conn = connections["default"]
+    quote = conn.ops.quote_name
+    with conn.cursor() as cursor:
+        cursor.execute(f"SELECT {quote('cache_key')} FROM {quote(db_cache._get_table_name())}")  # noqa: S608
+        return [row[0] for row in cursor.fetchall()]
+
+
+def test_touch_does_not_revive_an_expired_key(db_cache: DatabaseCache):
+    db_cache.set("gone", "v", timeout=-1)
+    db_cache.rpush("gone-list", "x")
+    db_cache.expire("gone-list", -1)
+    assert db_cache.touch("gone", 100) is False
+    assert db_cache.touch("gone-list", 100) is False
+    assert db_cache.get("gone") is None
+    assert db_cache.llen("gone-list") == 0
+    db_cache.set("live", "v", timeout=10)
+    assert db_cache.touch("live", None) is True
+    assert db_cache.ttl("live") is None
+
+
+def test_delete_reports_an_expired_key_as_missing(db_cache: DatabaseCache):
+    db_cache.set("gone", "v", timeout=-1)
+    db_cache.rpush("gone-list", "x")
+    db_cache.expire("gone-list", -1)
+    assert db_cache.delete("gone") is False
+    assert db_cache.delete("gone-list") is False
+    assert _stored_keys(db_cache) == []
+
+
+def test_delete_many_and_clear_return_what_resp_returns(db_cache: DatabaseCache):
+    db_cache.set_many({"a": 1, "b": 2})
+    db_cache.set("gone", "v", timeout=-1)
+    db_cache.rpush("l", "x")
+    assert db_cache.delete_many(["a", "l", "gone", "missing", "a"]) == 2
+    assert db_cache.delete_many([]) == 0
+    assert _stored_keys(db_cache) == [db_cache._internal_key("b")]
+    assert db_cache.clear() is True
+    assert _stored_keys(db_cache) == []
+
+
+def test_arithmetic_raises_where_redis_raises(db_cache: DatabaseCache):
+    db_cache.hincrbyfloat("h", "f", 0.1)
+    assert db_cache.hincrbyfloat("h", "f", 0.2) == 0.3
+    with pytest.raises(ValueError, match="NaN or Infinity"):
+        db_cache.hincrbyfloat("h", "f", float("inf"))
+    with pytest.raises(ValueError, match="not a valid float"):
+        db_cache.hincrbyfloat("h", "f", float("nan"))
+    db_cache.hset("h", "i", 2**63 - 1)
+    with pytest.raises(ValueError, match="would overflow"):
+        db_cache.hincrby("h", "i", 1)
+    with pytest.raises(ValueError, match="not an integer or out of range"):
+        db_cache.hincrby("h", "new", 2**63)
+    assert db_cache.hgetall("h") == {"f": 0.3, "i": 2**63 - 1}
+    db_cache.set_many({"max": 2**63 - 1, "float": 1.5, "str": "5", "int": 1})
+    with pytest.raises(ValueError, match="would overflow"):
+        db_cache.incr("max")
+    for key, delta in (("float", 1), ("str", 1), ("int", 0.5), ("int", True)):
+        with pytest.raises(ValueError, match="not an integer or out of range"):
+            db_cache.incr(key, delta)
+    assert db_cache.get_many(["max", "float", "str", "int"]) == {"max": 2**63 - 1, "float": 1.5, "str": "5", "int": 1}

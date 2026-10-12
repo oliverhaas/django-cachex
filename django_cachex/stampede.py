@@ -55,6 +55,11 @@ def should_recompute(ttl: int, config: StampedeConfig) -> bool:
     return should_recompute_remaining(ttl - config.buffer, config)
 
 
+def outlives_buffer(ttl: int, config: StampedeConfig) -> bool:
+    """Whether a key with the server's ``TTL`` reply counts as present: no expiry, or more than the buffer left."""
+    return ttl == -1 or ttl > config.buffer
+
+
 def should_recompute_remaining(remaining: float, config: StampedeConfig) -> bool:
     """Roll XFetch's dice on a buffer-stripped lifetime; ``remaining <= 0`` always recomputes."""
     if remaining <= 0:

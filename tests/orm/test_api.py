@@ -7,7 +7,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.core.cache import DEFAULT_CACHE_ALIAS
 from django.core.management import CommandError, call_command
-from django.db import DEFAULT_DB_ALIAS, connection, transaction
+from django.db import DEFAULT_DB_ALIAS, OperationalError, connection, connections, transaction
 
 from django_cachex.orm.api import invalidate, orm_cache_disabled, table_generations
 from tests.orm.app.models import Test
@@ -66,6 +66,25 @@ def test_invalidate_all():
 
     with assert_num_queries(1):
         Test.objects.get()
+
+
+def test_invalidate_all_with_an_unreachable_database(mocker, t1):
+    with assert_num_queries(1, using="second"):
+        assert list(Test.objects.using("second")) == []
+    with assert_num_queries(1):
+        assert list(Test.objects.all()) == [t1]
+    mocker.patch.object(
+        connections[DEFAULT_DB_ALIAS].introspection,
+        "table_names",
+        side_effect=OperationalError("unreachable"),
+    )
+
+    invalidate()
+
+    with assert_num_queries(1, using="second"):
+        assert list(Test.objects.using("second")) == []
+    with assert_num_queries(1):
+        assert list(Test.objects.all()) == [t1]
 
 
 def test_invalidate_all_in_atomic():
@@ -135,7 +154,6 @@ def test_table_generations_during_a_write():
     with connection.execute_wrapper(read_generations):
         Test.objects.create(name="test2")
 
-    # A value computed from the old rows during the write is cached under generations that change after it.
     [during_write] = during
     assert during_write != before
     assert table_generations(Test) != during_write
@@ -232,6 +250,12 @@ def test_invalidate_orm_cache_app_without_models(t1):
     assert out.getvalue() == "No models to invalidate.\n"
     with assert_num_queries(0):
         assert list(Test.objects.all()) == [t1]
+
+
+def test_invalidate_orm_cache_when_the_cache_fails(mocker):
+    mocker.patch("django_cachex.orm.api.get_store").return_value.bump.side_effect = ConnectionError("down")
+    with pytest.raises(CommandError, match="Could not invalidate"):
+        call_command("invalidate_orm_cache", verbosity=0)
 
 
 @pytest.mark.parametrize("label", ["unknown", "ormtest.unknown", "ormtest.test.name"])

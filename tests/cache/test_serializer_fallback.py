@@ -139,3 +139,17 @@ def test_dumps_error_names_the_serializer_and_the_cause():
     with pytest.raises(SerializerError, match="JsonSerializer could not serialize object") as excinfo:
         serializer.dumps(object())
     assert isinstance(excinfo.value.__cause__, TypeError)
+
+
+@pytest.mark.parametrize(
+    ("fallback", "dumps"),
+    [
+        ("django_cachex.serializers.pickle.PickleSerializer", pickle.dumps),
+        ("django_cachex.serializers.json.JsonSerializer", lambda value: json.dumps(value).encode()),
+    ],
+    ids=["pickle", "json"],
+)
+def test_ormsgpack_first_falls_through_to_the_serializer_that_wrote_the_value(fallback, dumps):
+    cache_obj = make_cache(serializer=["django_cachex.serializers.ormsgpack.OrmsgpackSerializer", fallback])
+    value = {"user": "alice", "visits": 3}
+    assert cache_obj.decode(dumps(value)) == value

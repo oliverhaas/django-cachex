@@ -724,3 +724,9 @@ async def test_aclose_and_reconnect(cache: RespCache):
     await cache.aset("areconnect_test2", "after")
     assert await cache.aget("areconnect_test2") == "after"
     assert await cache.aget("areconnect_test") == "before"
+
+
+def test_set_nx_and_xx_together_raise_value_error(cache: RespCache):
+    with pytest.raises(ValueError, match="at most one of nx and xx"):
+        cache.set("set_nx_xx", "v", nx=True, xx=True)
+    assert cache.get("set_nx_xx") is None

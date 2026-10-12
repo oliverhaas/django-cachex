@@ -1,8 +1,10 @@
 """Tests for MEMORY USAGE: ``memory_usage()``, its pipeline form and ``largest_keys()``."""
 
+import copy
 from typing import TYPE_CHECKING
 
 import pytest
+from django.conf import settings
 from django.core.cache import caches
 from django.test import override_settings
 
@@ -130,3 +132,17 @@ def test_locmem_raises_not_supported():
             caches["locmem"].memory_usage("k")
         with pytest.raises(NotSupportedError, match="largest_keys"):
             caches["locmem"].largest_keys()
+
+
+def _slash_key(key: str, key_prefix: str, version: int) -> str:
+    return f"{key_prefix}/{version}/{key}"
+
+
+def test_largest_keys_with_a_custom_key_function_and_no_reverse_returns_made_keys(cache: RespCache):
+    config = copy.deepcopy(settings.CACHES)
+    config["slashed"] = {**config["default"], "KEY_FUNCTION": _slash_key}
+    with override_settings(CACHES=config):
+        slashed = caches["slashed"]
+        slashed.set("lk_slash", "x" * 5000)
+
+        assert [key for key, _ in slashed.largest_keys("lk_slash")] == [slashed.make_key("lk_slash")]
