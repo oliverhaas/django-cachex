@@ -4,11 +4,7 @@ from django_cachex.compressors.base import BaseCompressor
 
 
 class ZstdCompressor(BaseCompressor):
-    """Zstandard compressor with configurable compression level.
-
-    Frames carry a content checksum, so a corrupted frame raises instead of
-    decoding to wrong bytes.
-    """
+    """Zstandard compressor with configurable compression level."""
 
     level: int = 3
 
@@ -17,13 +13,9 @@ class ZstdCompressor(BaseCompressor):
         if level is not None:
             self.level = level
         self._check_level(self.level, *zstd.CompressionParameter.compression_level.bounds())
-        self._options: dict[int, int] = {
-            zstd.CompressionParameter.compression_level: self.level,
-            zstd.CompressionParameter.checksum_flag: 1,
-        }
 
     def _compress(self, data: bytes) -> bytes:
-        return zstd.compress(data, options=self._options)
+        return zstd.compress(data, level=self.level)
 
     def _decompress(self, data: bytes) -> bytes:
         return zstd.decompress(data)

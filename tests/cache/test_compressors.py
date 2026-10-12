@@ -147,19 +147,22 @@ def test_bad_level_is_rejected_when_the_compressor_is_built(cls, level):
 
 
 @pytest.mark.parametrize(
-    ("cls", "old_frame"),
-    [(Lz4Compressor, lz4_frame.compress), (ZstdCompressor, zstd.compress)],
+    ("cls", "plain_frame", "checksum_frame"),
+    [
+        (Lz4Compressor, lz4_frame.compress, lambda data: lz4_frame.compress(data, content_checksum=True)),
+        (
+            ZstdCompressor,
+            zstd.compress,
+            lambda data: zstd.compress(data, options={zstd.CompressionParameter.checksum_flag: 1}),
+        ),
+    ],
     ids=["Lz4Compressor", "ZstdCompressor"],
 )
-def test_frames_carry_a_checksum_and_older_frames_still_read(cls, old_frame):
+def test_frames_keep_their_bytes_and_checksummed_frames_still_read(cls, plain_frame, checksum_frame):
     data = bytes(range(256)) * 4
     compressor = cls()
-    assert compressor.decompress(old_frame(data)) == data
-
-    frame = bytearray(compressor.compress(data))
-    frame[frame.index(bytes(range(100, 110))) + 3] ^= 1
-    with pytest.raises(CompressorError):
-        compressor.decompress(bytes(frame))
+    assert compressor.compress(data) == plain_frame(data)
+    assert compressor.decompress(checksum_frame(data)) == data
 
 
 @pytest.mark.parametrize("min_length", ["1024", -1, True, 1.5], ids=["str", "negative", "bool", "float"])

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- After the upgrade to 0.14.0, `srem()`, `sismember()`, `zscore()`, `lrem()` and similar calls missed members stored before it. `sadd()` and `zadd()` stored a second copy, and Lua scripts that compare encoded values stopped matching. This hit values longer than `min_length` on an alias with `Lz4Compressor` or `ZstdCompressor`. Coming from 0.13.2 or earlier, no action is needed. Members that 0.14.0 stored no longer match, so rebuild those keys. Values it wrote still read. 0.14.0 added a content checksum to these frames, which changed the stored bytes, and frames carry no checksum again.
+
 ## 0.14.0 (October 2026)
 
 ### Improvements

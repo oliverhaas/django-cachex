@@ -10,8 +10,7 @@ class Lz4Compressor(BaseCompressor):
     frame, ``level=0`` selects the default fast mode, not "no compression".
     Higher values trade CPU for ratio; the practical cap is around 12
     (``LZ4HC_CLEVEL_MAX``). To disable compression, do not configure this
-    compressor at all. Frames carry a content checksum, so a corrupted frame
-    raises instead of decoding to wrong bytes.
+    compressor at all.
     """
 
     level: int = 0
@@ -23,7 +22,7 @@ class Lz4Compressor(BaseCompressor):
         self._check_level(self.level, None, lz4_frame.COMPRESSIONLEVEL_MAX)
 
     def _compress(self, data: bytes) -> bytes:
-        return lz4_frame.compress(data, compression_level=self.level, content_checksum=True)
+        return lz4_frame.compress(data, compression_level=self.level)
 
     def _decompress(self, data: bytes) -> bytes:
         return lz4_frame.decompress(data)
