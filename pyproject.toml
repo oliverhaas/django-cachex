@@ -40,7 +40,7 @@ dependencies = ["Django>=6,<7", "sortedcontainers>=2.4"]
 
 [project.optional-dependencies]
 valkey-py = ["valkey>=6.1.0,<7"]
-libvalkey = ["valkey[libvalkey]>=6.1.0,<7"]
+libvalkey = ["valkey[libvalkey]<7,>=6.1.0"]
 redis-py = ["redis>=7.2,<9"]
 hiredis = ["redis[hiredis]<9,>=7.2"]
 # valkey-glide: Rust-cored Valkey client. Sync and async are separate distributions.
@@ -60,30 +60,30 @@ Changelog = "https://oliverhaas.github.io/django-cachex/latest/reference/changel
 
 [dependency-groups]
 dev = [
-  "valkey[libvalkey]==6.1.1",
+  "valkey[libvalkey]==6.2.0",
   "redis[hiredis]==8.1.0",
   "beautifulsoup4==4.15.0",
-  "django-stubs==6.1.1",
-  "djlint==1.46.4",
+  "django-stubs==6.1.2",
+  "djlint==1.49.9",
   "lz4==4.4.5",
-  "msgpack==1.2.3",
-  "ormsgpack==1.12.2",
-  "mypy==2.4.0",
-  "pre-commit==4.6.2",
+  "msgpack==1.2.4",
+  "ormsgpack==1.13.0",
+  "mypy==2.4.1",
+  "pre-commit==4.7.0",
   # ORM cache tests (tests/orm) on PostgreSQL. The pure-Python build loads the
   # system libpq, so it installs on the free-threaded interpreter as well.
-  "psycopg==3.3.6",
-  "pytest-asyncio==1.4.0",
+  "psycopg==3.3.8",
+  "pytest-asyncio==1.4.1.post1",
   "pytest-cov==7.1.0",
   "pytest-django==4.14.0",
   "pytest-flakefinder==1.1.0",
-  "pytest-mock==3.16.0",
+  "pytest-mock==3.17.0",
   "pytest-xdist==3.8.0",
-  "pytest==9.1.1",
-  "ruff==0.16.10",
+  "pytest==9.2.0",
+  "ruff==0.17.3",
   "testcontainers==4.15.0",
-  "ty==0.0.84",
-  "types-docker==7.2.0.20260923",
+  "ty==0.0.98",
+  "types-docker==7.2.0.20261102",
   # ASGI benchmark only: granian (real ASGI server) plus httpx (load gen).
   "granian>=2.6,<3",
   "httpx>=0.28,<0.29",
@@ -98,7 +98,7 @@ dev = [
 # `dev` so `uv sync` works on the cp314t interpreter; opt in via
 # `uv sync --extra valkey-glide` on a GIL build (cp312/cp313/cp314) when
 # working on the backend or running the glide test slice.
-docs = ["mkdocs==1.6.1", "mkdocs-material==9.7.7", "mike==2.2.0"]
+docs = ["mkdocs==1.6.1", "mkdocs-material==9.8.0", "mike==2.2.0"]
 
 [build-system]
 requires = ["hatchling"]
