@@ -36,6 +36,7 @@ CACHES = {
 - An opt-in [ORM cache](https://oliverhaas.github.io/django-cachex/latest/user-guide/orm-cache/), `django_cachex.orm`, that caches ORM query results per table and invalidates them on every write.
 - `LocMemCache` and `DatabaseCache` extensions with the hash, list, set and sorted set operations, `ttl()`/`expire()`/`persist()`, key patterns and admin support, but no streams, locks, pipelines or Lua.
 - Experimental `ValkeyGlideCache` and `ValkeyGlideClusterCache` backends on `valkey-glide`, Valkey's official client with a Rust core.
+- `S3Cache`, which stores large values in an S3 Express One Zone or S3 Standard bucket, with parallel `get_many()` and `set_many()`. See [S3 Cache](https://oliverhaas.github.io/django-cachex/latest/user-guide/s3/).
 
 ## Cache Admin
 
@@ -61,6 +62,7 @@ The admin lists every configured cache, finds keys by wildcard pattern and type,
 - valkey-py 6.1 to 6.x (`valkey>=6.1,<7`) or redis-py 7.2 to 8.x (`redis>=7.2,<9`)
 - Valkey 7.2+ or Redis 6.2+ on the server. [Installation](https://oliverhaas.github.io/django-cachex/latest/getting-started/installation/) lists the methods that need a newer server.
 - `valkey-glide` 2.5 to 2.x (the `valkey-glide` extra) for the glide backends. They need the cp314 GIL build and have no Sentinel variant.
+- `obstore` 0.12 (the `s3` extra) for `S3Cache`.
 
 ## Acknowledgments
 
