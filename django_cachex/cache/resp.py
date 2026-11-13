@@ -34,8 +34,9 @@ if TYPE_CHECKING:
     from django_cachex.stampede import StampedeConfig
     from django_cachex.types import KeyType
 
+from django_cachex.cache._codec import ValueCodec
 from django_cachex.cache.base import BaseCachex, CachexSupportLevel
-from django_cachex.exceptions import CompressorError, NotSupportedError, SerializerError, maybe_wrap_set_nx_get
+from django_cachex.exceptions import NotSupportedError, maybe_wrap_set_nx_get
 from django_cachex.script import ScriptHelpers, reject_stray_encoded
 from django_cachex.tracking.adapter import TrackedAdapter
 from django_cachex.tracking.config import parse_tracking
@@ -92,15 +93,6 @@ def _hash_tag(key: str) -> str | None:
     if close_idx <= open_idx + 1:
         return None
     return key[open_idx + 1 : close_idx]
-
-
-def _load_codec(config: str | type | Any) -> Any:
-    """Resolve a serializer/compressor config (dotted path, class or instance) to an instance."""
-    if isinstance(config, str):
-        config = import_string(config)
-    if callable(config):
-        return config()
-    return config
 
 
 # KEYS[1]: key. ARGV: value, timeout (-1 persists, 0 drops the key), stampede buffer.
@@ -189,7 +181,7 @@ def _set_nx_get_translated(*, nx: bool, xx: bool, get: bool) -> Generator[None]:
 # =============================================================================
 
 
-class RespCache(BaseCachex):
+class RespCache(ValueCodec, BaseCachex):
     """Django cache backend for Redis/Valkey with extended features.
 
     Base class for all django-cachex Redis/Valkey backends. Inherits the
@@ -260,9 +252,9 @@ class RespCache(BaseCachex):
             "serializer",
             "django_cachex.serializers.pickle.PickleSerializer",
         )
-        self._serializers: list[Any] = self._create_serializers(serializer_config)
+        self._serializers = self._create_serializers(serializer_config)
 
-        self._compressors: list[Any] = self._create_compressors(self._options.get("compressor"))
+        self._compressors = self._create_compressors(self._options.get("compressor"))
 
         # Opens no connection; a missing driver or bad OPTIONS entry
         # surfaces at ``caches[alias]``.
@@ -292,56 +284,6 @@ class RespCache(BaseCachex):
             return adapter
         key = registry_key(adapter_class, self._servers, self._options, self._tracking)
         return cast("RespAdapterProtocol", TrackedAdapter(adapter, self._tracking, key))
-
-    # =========================================================================
-    # Serializer / Compressor stack. Encoding lives at the cache layer
-    # =========================================================================
-
-    @staticmethod
-    def _create_serializers(config: Any) -> list[Any]:
-        if config is None:
-            config = "django_cachex.serializers.pickle.PickleSerializer"
-        items: list[Any] = list(config) if isinstance(config, (list, tuple)) else [config]
-        if not items:
-            msg = "OPTIONS['serializer'] must not be empty; configure at least one serializer or omit it"
-            raise ImproperlyConfigured(msg)
-        return [_load_codec(item) for item in items]
-
-    @staticmethod
-    def _create_compressors(config: Any) -> list[Any]:
-        if config is None:
-            return []
-        items: list[Any] = list(config) if isinstance(config, (list, tuple)) else [config]
-        return [_load_codec(item) for item in items]
-
-    def _decompress(self, value: bytes) -> bytes:
-        """Decompress with fallback support for multiple compressors.
-
-        Returns ``value`` unchanged when no compressors are configured or
-        when every configured compressor fails: ``compress()`` stores
-        payloads at or below ``min_length`` uncompressed, so those raw
-        bytes must fall through to the deserializer. Corrupt data then
-        surfaces as a ``SerializerError`` there.
-        """
-        for compressor in self._compressors:
-            try:
-                return compressor.decompress(value)
-            except CompressorError:
-                continue
-        return value
-
-    def _deserialize(self, value: bytes) -> Any:
-        """Deserialize with fallback support for multiple serializers."""
-        last_error: SerializerError | None = None
-        for serializer in self._serializers:
-            try:
-                return serializer.loads(value)
-            except SerializerError as e:
-                last_error = e
-                continue
-        if last_error is not None:
-            raise last_error
-        raise SerializerError("No serializers configured")
 
     def encode(self, value: Any) -> bytes | int:
         """Encode a value for storage (serialize + compress). Exact ints pass through unchanged.

@@ -68,6 +68,7 @@ nav:
       - Sentinel: user-guide/sentinel.md
       - Cluster: user-guide/cluster.md
       - Client Tracking: user-guide/client-tracking.md
+      - S3 Cache: user-guide/s3.md
       - ORM Cache: user-guide/orm-cache.md
   - Recipes: recipes.md
   - Migration: migration.md

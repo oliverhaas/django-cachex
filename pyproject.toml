@@ -45,6 +45,8 @@ redis-py = ["redis>=7.2,<9"]
 hiredis = ["redis[hiredis]<9,>=7.2"]
 # valkey-glide: Rust-cored Valkey client. Sync and async are separate distributions.
 valkey-glide = ["valkey-glide-sync>=2.5,<3", "valkey-glide>=2.5,<3"]
+# S3Cache: obstore, Rust object_store bindings with sync and async APIs.
+s3 = ["obstore>=0.12,<0.13"]
 # Compressors
 lz4 = ["lz4>=4.4.0"]
 # Serializers
@@ -69,6 +71,7 @@ dev = [
   "msgpack==1.2.3",
   "ormsgpack==1.12.2",
   "mypy==2.4.0",
+  "obstore==0.12.1",
   "pre-commit==4.6.2",
   # ORM cache tests (tests/orm) on PostgreSQL. The pure-Python build loads the
   # system libpq, so it installs on the free-threaded interpreter as well.

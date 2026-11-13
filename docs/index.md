@@ -22,6 +22,7 @@ A replacement for Django's built-in Redis cache that takes the same settings ([t
 - An opt-in [ORM cache](user-guide/orm-cache.md), `django_cachex.orm`, that caches ORM query results per table and invalidates them on every write.
 - `LocMemCache` and `DatabaseCache` extensions with the hash, list, set and sorted set operations, `ttl()`/`expire()`/`persist()`, key patterns and admin support, but no streams, locks, pipelines or Lua.
 - Experimental `ValkeyGlideCache` and `ValkeyGlideClusterCache` backends on `valkey-glide`, Valkey's official client with a Rust core.
+- `S3Cache`, which stores large values in an S3 Express One Zone or S3 Standard bucket, with parallel `get_many()` and `set_many()`. See [S3 Cache](user-guide/s3.md).
 - A Django [admin UI](user-guide/admin.md) to browse keys and inspect and edit values. Flushing caches is [opt-in](user-guide/admin.md#flushing-caches).
 
 ## Requirements

@@ -30,6 +30,7 @@ async def leaderboard(request):
 | valkey-glide backends | Run natively on glide's async `glide.GlideClient` |
 | `LocMemCache` | Call the sync twin directly, without a thread. It does no I/O, so awaiting it from an event loop is harmless |
 | `DatabaseCache` | Run the sync twin through `asgiref.sync.sync_to_async`, as Django's `BaseCache.aget()` does |
+| `S3Cache` | Run natively on obstore's async API |
 | Django's own backends | Django's methods only, without the django-cachex extensions |
 
 The native clients do not go through the asgiref thread pool. The Cluster and Sentinel variants run their async methods the same way.

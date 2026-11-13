@@ -7,7 +7,7 @@ import pytest
 
 
 def _drivers_loaded_by(code: str) -> str:
-    probe = f"{code}; import sys; print([m for m in ('redis', 'valkey', 'glide') if m in sys.modules])"
+    probe = f"{code}; import sys; print([m for m in ('redis', 'valkey', 'glide', 'obstore') if m in sys.modules])"
     proc = subprocess.run(  # noqa: S603 (args are sys.executable + a constant)
         [sys.executable, "-c", probe],
         capture_output=True,
@@ -27,6 +27,9 @@ def test_importing_django_cachex_cache_does_not_import_any_driver():
     assert _drivers_loaded_by("from django_cachex.cache import LocMemCache") == "[]"
 
 
-@pytest.mark.parametrize(("backend", "driver"), [("RedisCache", "redis"), ("ValkeyCache", "valkey")])
-def test_resolving_a_resp_backend_imports_its_driver(backend: str, driver: str):
+@pytest.mark.parametrize(
+    ("backend", "driver"),
+    [("RedisCache", "redis"), ("ValkeyCache", "valkey"), ("S3Cache", "obstore")],
+)
+def test_resolving_a_backend_imports_its_driver(backend: str, driver: str):
     assert f"'{driver}'" in _drivers_loaded_by(f"from django_cachex.cache import {backend}")

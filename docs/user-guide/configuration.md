@@ -167,6 +167,22 @@ compound operation or `incr()`, on SQLite the database's write lock, lasts
 until the outer transaction ends. Keep these calls out of long-running
 transactions.
 
+### S3
+
+`S3Cache` stores each key as one object in an S3 Express One Zone or S3
+Standard bucket, for large values. It has Django's cache API and no extension
+methods. See [S3 Cache](s3.md).
+
+```python
+CACHES = {
+    "items": {
+        "BACKEND": "django_cachex.cache.S3Cache",
+        "LOCATION": "s3://my-cache--euc1-az1--x-s3/items",
+        "OPTIONS": {"region": "eu-central-1"},
+    },
+}
+```
+
 ### Client tracking
 
 The standalone and Sentinel backends on valkey-py and redis-py take
