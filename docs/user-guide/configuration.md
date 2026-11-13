@@ -170,8 +170,9 @@ transactions.
 ### S3
 
 `S3Cache` stores each key as one object in an S3 Express One Zone or S3
-Standard bucket, for large values. It has Django's cache API and no extension
-methods. See [S3 Cache](s3.md).
+Standard bucket, for large values. It has the get, set and delete methods of
+Django's cache API, for one key and for many, and no extension methods. See
+[S3 Cache](s3.md).
 
 ```python
 CACHES = {

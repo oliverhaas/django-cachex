@@ -9,9 +9,7 @@ the encoded value and nothing else; three user metadata fields describe it:
 
 S3 has no per-key TTL, so an object past ``cachex-expires`` reads as a miss
 and stays in the bucket until a lifecycle rule or a later write removes it.
-``touch()`` rewrites the object with ``If-Match`` on its ETag, so it never
-brings back a value that another writer replaced. ``set()`` overwrites, and the
-last write wins.
+Every write is unconditional, so the last ``set()`` wins.
 """
 
 import asyncio
@@ -20,7 +18,6 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
-from functools import partial
 from typing import TYPE_CHECKING, Any, override
 from urllib.parse import urlsplit
 
@@ -33,7 +30,6 @@ from django_cachex.exceptions import CompressorError, NotSupportedError
 
 try:
     import obstore
-    from obstore.exceptions import AlreadyExistsError, PreconditionError
     from obstore.store import S3Store
 except ImportError as _exc:
     _OBSTORE_IMPORT_ERROR: ImportError | None = _exc
@@ -58,17 +54,12 @@ _ESCAPES = {c: f"%{c:02X}" for c in (*range(0x20), ord("%"), ord("/"), 0x7F)}
 
 _MISSING = object()
 
-_OPTION_DEFAULTS = {"serializer": None, "compressor": None, "max_concurrency": 32}
+_OPTION_DEFAULTS = {"serializer": None, "compressor": None, "max_concurrency": 64}
 
 # obstore's own defaults (30 s per request, 10 retries within 3 minutes) would
 # hold a web request for minutes while S3 is down. User entries win per key.
 _CLIENT_DEFAULTS = {"timeout": "5s", "connect_timeout": "1s"}
 _RETRY_DEFAULTS = {"max_retries": 2, "retry_timeout": timedelta(seconds=10)}
-
-# Each lost round of a conditional write means another writer won it, so the
-# loops end on S3. The cap stops a server that never accepts its own ETag.
-_CONDITIONAL_ATTEMPTS = 16
-
 
 # obstore's runtime does not survive fork(): after this process has sent a
 # request, every request in a forked child hangs, even on a new store.
@@ -86,10 +77,6 @@ def _check_fork() -> None:
             "in the child. Make no S3 cache calls before the fork (gunicorn --preload, Celery prefork)."
         )
         raise RuntimeError(msg)
-
-
-def _lost_every_round(path: str) -> RuntimeError:
-    return RuntimeError(f"S3Cache gave up on {path!r} after {_CONDITIONAL_ATTEMPTS} conditional writes failed")
 
 
 def _expired(expires: float | None) -> bool:
@@ -133,8 +120,8 @@ class S3Cache(ValueCodec, BaseCachex):
 
     ``LOCATION`` is ``s3://<bucket>/<prefix>``. ``OPTIONS`` takes
     ``serializer``, ``compressor`` and ``max_concurrency`` (the parallel
-    requests of one ``get_many()``, ``set_many()`` or ``delete_many()``);
-    every other entry goes to obstore's ``S3Store.from_url()``.
+    requests of one ``get_many()`` or ``set_many()``); every other entry goes
+    to obstore's ``S3Store.from_url()``.
     """
 
     def __init__(self, location: str, params: dict[str, Any]) -> None:
@@ -165,13 +152,9 @@ class S3Cache(ValueCodec, BaseCachex):
         _check_fork()
         return self._s3_store
 
-    @override
-    def validate_key(self, key: str) -> None:
-        """Accept every key whose object path fits S3's 1024-byte limit."""
-        self._checked_path(key)
-
-    def _checked_path(self, key: str) -> str:
+    def _path(self, key: str, version: int | None) -> str:
         """The object path for ``key``, with ``%``, ``/``, control characters and all-dot keys percent-escaped."""
+        key = self.make_key(key, version=version)
         path = key.replace(".", "%2E") if key.strip(".") == "" else key.translate(_ESCAPES)
         if not path:
             msg = "S3Cache cannot store an empty key"
@@ -180,9 +163,6 @@ class S3Cache(ValueCodec, BaseCachex):
             msg = f"S3Cache key {key[:50]!r}... is longer than the {self._max_path_bytes} bytes S3 allows here"
             raise ValueError(msg)
         return path
-
-    def _path(self, key: str, version: int | None) -> str:
-        return self._checked_path(self.make_key(key, version=version))
 
     def _encode(self, value: Any, expires: float | None) -> tuple[bytes, dict[str, str]]:
         attributes: dict[str, str] = {}
@@ -211,13 +191,13 @@ class S3Cache(ValueCodec, BaseCachex):
             return body
         return self._deserialize(body)
 
-    def _put(self, path: str, value: Any, expires: float | None, mode: Any = None) -> None:
+    def _put(self, path: str, value: Any, expires: float | None) -> None:
         body, attributes = self._encode(value, expires)
-        obstore.put(self._store, path, body, attributes=attributes, mode=mode, use_multipart=False)
+        obstore.put(self._store, path, body, attributes=attributes, use_multipart=False)
 
-    async def _aput(self, path: str, value: Any, expires: float | None, mode: Any = None) -> None:
+    async def _aput(self, path: str, value: Any, expires: float | None) -> None:
         body, attributes = self._encode(value, expires)
-        await obstore.put_async(self._store, path, body, attributes=attributes, mode=mode, use_multipart=False)
+        await obstore.put_async(self._store, path, body, attributes=attributes, use_multipart=False)
 
     def _read(self, path: str, *, head: bool = False) -> GetResult | None:
         try:
@@ -239,8 +219,6 @@ class S3Cache(ValueCodec, BaseCachex):
         return list(self._executor.map(fn, items))
 
     async def _amap[T, R](self, fn: Callable[[T], Awaitable[R]], items: list[T]) -> list[R]:
-        if len(items) <= 1:
-            return [await fn(item) for item in items]
         limit = asyncio.Semaphore(self._max_concurrency)
 
         async def limited(item: T) -> R:
@@ -320,81 +298,15 @@ class S3Cache(ValueCodec, BaseCachex):
             await self._aput(path, value, expires)
 
     @override
-    def touch(self, key: str, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
-        """Rewrite a live value with a new expiry; S3 cannot change metadata in place."""
-        path = self._path(key, version)
-        expires = self.get_backend_timeout(timeout)
-        for _ in range(_CONDITIONAL_ATTEMPTS):
-            current = self._read(path)
-            if current is None or not _live(current.attributes):
-                return False
-            if _expired(expires):
-                obstore.delete(self._store, path)
-                return True
-            attributes = {k: v for k, v in current.attributes.items() if k != _EXPIRES}
-            if expires is not None:
-                attributes[_EXPIRES] = f"{expires:.3f}"
-            try:
-                obstore.put(
-                    self._store,
-                    path,
-                    bytes(current.bytes()),
-                    attributes=attributes,
-                    mode={"e_tag": current.meta["e_tag"]},
-                    use_multipart=False,
-                )
-            except AlreadyExistsError, PreconditionError:
-                continue
-            return True
-        raise _lost_every_round(path)
-
-    @override
-    async def atouch(self, key: str, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
-        """Async :meth:`touch`."""
-        path = self._path(key, version)
-        expires = self.get_backend_timeout(timeout)
-        for _ in range(_CONDITIONAL_ATTEMPTS):
-            current = await self._aread(path)
-            if current is None or not _live(current.attributes):
-                return False
-            if _expired(expires):
-                await obstore.delete_async(self._store, path)
-                return True
-            attributes = {k: v for k, v in current.attributes.items() if k != _EXPIRES}
-            if expires is not None:
-                attributes[_EXPIRES] = f"{expires:.3f}"
-            try:
-                await obstore.put_async(
-                    self._store,
-                    path,
-                    bytes(await current.bytes_async()),
-                    attributes=attributes,
-                    mode={"e_tag": current.meta["e_tag"]},
-                    use_multipart=False,
-                )
-            except AlreadyExistsError, PreconditionError:
-                continue
-            return True
-        raise _lost_every_round(path)
-
-    @override
     def delete(self, key: str, version: int | None = None) -> bool:
-        """Delete ``key``; returns whether a live value was there."""
-        path = self._path(key, version)
-        current = self._read(path, head=True)
-        if current is None:
-            return False
-        obstore.delete(self._store, path)
-        return _live(current.attributes)
+        """Delete ``key``. Returns ``True`` also for a missing key: S3 does not say whether one was there."""
+        obstore.delete(self._store, self._path(key, version))
+        return True
 
     @override
     async def adelete(self, key: str, version: int | None = None) -> bool:
-        path = self._path(key, version)
-        current = await self._aread(path, head=True)
-        if current is None:
-            return False
-        await obstore.delete_async(self._store, path)
-        return _live(current.attributes)
+        await obstore.delete_async(self._store, self._path(key, version))
+        return True
 
     @override
     def has_key(self, key: str, version: int | None = None) -> bool:
@@ -451,23 +363,17 @@ class S3Cache(ValueCodec, BaseCachex):
         return []
 
     @override
-    def delete_many(self, keys: Iterable[str], version: int | None = None) -> int:  # type: ignore[override]
-        """Delete ``keys`` in one bulk request; returns how many held a live value."""
+    def delete_many(self, keys: Iterable[str], version: int | None = None) -> None:
+        """Delete ``keys`` in one bulk request per 1000 keys."""
         paths = list(dict.fromkeys(self._path(key, version) for key in keys))
-        current = self._map(partial(self._read, head=True), paths)
-        found = [path for path, result in zip(paths, current, strict=True) if result is not None]
-        if found:
-            obstore.delete(self._store, found)
-        return sum(1 for result in current if result is not None and _live(result.attributes))
+        if paths:
+            obstore.delete(self._store, paths)
 
     @override
-    async def adelete_many(self, keys: Iterable[str], version: int | None = None) -> int:  # type: ignore[override]
+    async def adelete_many(self, keys: Iterable[str], version: int | None = None) -> None:
         paths = list(dict.fromkeys(self._path(key, version) for key in keys))
-        current = await self._amap(partial(self._aread, head=True), paths)
-        found = [path for path, result in zip(paths, current, strict=True) if result is not None]
-        if found:
-            await obstore.delete_async(self._store, found)
-        return sum(1 for result in current if result is not None and _live(result.attributes))
+        if paths:
+            await obstore.delete_async(self._store, paths)
 
     @override
     def clear(self) -> bool:  # type: ignore[override]
@@ -533,3 +439,11 @@ class S3Cache(ValueCodec, BaseCachex):
         version: int | None = None,
     ) -> Any:
         raise NotSupportedError("aget_or_set", type(self).__name__, detail=_USE_RESP)
+
+    @override
+    def touch(self, key: str, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
+        raise NotSupportedError("touch", type(self).__name__, detail=_USE_RESP)
+
+    @override
+    async def atouch(self, key: str, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
+        raise NotSupportedError("atouch", type(self).__name__, detail=_USE_RESP)

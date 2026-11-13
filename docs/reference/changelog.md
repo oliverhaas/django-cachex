@@ -4,7 +4,7 @@
 
 ### Improvements
 
-- `S3Cache` stores each key as one object in an S3 Express One Zone or S3 Standard bucket, for values too large to keep in Valkey or Redis in bulk. It has `get()`, `set()`, `delete()`, `touch()`, `has_key()`, `get_many()`, `set_many()`, `delete_many()` and `clear()` with their async twins, and sends the requests of the many-key methods in parallel. A `bytes` value skips the serializer, so the object holds those bytes, compressed if a compressor is set. An expired object reads as a miss, and a lifecycle rule removes it. `add()`, `get_or_set()`, `incr()` and `decr()` raise `NotSupportedError`. A request times out after 5 seconds and is retried twice within 10 seconds unless `OPTIONS` says otherwise. Install the `s3` extra. See [S3 Cache](../user-guide/s3.md).
+- `S3Cache` stores each key as one object in an S3 Express One Zone or S3 Standard bucket, for values too large to keep in Valkey or Redis in bulk. It has `get()`, `set()`, `delete()`, `has_key()`, `get_many()`, `set_many()`, `delete_many()` and `clear()` with their async twins, and sends the requests of `get_many()` and `set_many()` in parallel. A `bytes` value skips the serializer, so the object holds those bytes, compressed if a compressor is set. An expired object reads as a miss, and a lifecycle rule removes it. `add()`, `get_or_set()`, `touch()`, `incr()` and `decr()` raise `NotSupportedError`. A request times out after 5 seconds and is retried twice within 10 seconds unless `OPTIONS` says otherwise. Install the `s3` extra. See [S3 Cache](../user-guide/s3.md).
 
 ## 0.14.1 (October 2026)
 

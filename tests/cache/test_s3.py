@@ -15,7 +15,6 @@ import pytest
 from django.core.cache import caches
 from django.core.exceptions import ImproperlyConfigured
 from django.test import override_settings
-from obstore.exceptions import AlreadyExistsError, PreconditionError
 from obstore.store import S3Store
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
@@ -42,6 +41,7 @@ def s3_endpoint() -> Iterator[str]:
         .with_env("ROOT_SECRET_KEY", SECRET_KEY)
         .with_env("VGW_BACKEND", "posix")
         .with_env("VGW_BACKEND_ARG", "/tmp")  # noqa: S108
+        .with_env("VGW_KEEP_ALIVE", "true")  # as S3 does; off, every request opens a connection
         .with_exposed_ports(7070)
         .waiting_for(LogMessageWaitStrategy("service listening"))
     )
@@ -146,8 +146,6 @@ def test_compressed_body_is_the_compressor_output(gzip_cache: S3Cache, raw_store
     assert stored.attributes["cachex-compressed"] == "1"
     assert gzip.decompress(bytes(stored.bytes())) == payload
     assert gzip_cache.get("big") == payload
-    assert gzip_cache.touch("big", None)
-    assert gzip_cache.get("big") == payload
 
 
 def test_compressed_value_without_its_compressor_raises(
@@ -195,73 +193,11 @@ def test_set_with_zero_timeout_deletes(s3_cache: S3Cache, raw_store: S3Store):
     assert _paths(raw_store) == []
 
 
-def test_touch(s3_cache: S3Cache, raw_store: S3Store):
-    s3_cache.set("k", b"body", timeout=100)
-
-    assert s3_cache.touch("k", None)
-    assert "cachex-expires" not in obstore.get(raw_store, ":1:k").attributes
-    assert s3_cache.get("k") == b"body"
-    assert s3_cache.has_key("k")
-    assert s3_cache.touch("k", 0.2)
-    time.sleep(0.3)
-    assert not s3_cache.has_key("k")
-    assert not s3_cache.touch("k")
-    assert not s3_cache.touch("missing")
-
-
-def test_touch_with_zero_timeout_deletes(s3_cache: S3Cache, raw_store: S3Store):
+def test_delete_removes_the_object_and_accepts_a_missing_key(s3_cache: S3Cache, raw_store: S3Store):
     s3_cache.set("k", 1)
 
-    assert s3_cache.touch("k", 0)
-    assert _paths(raw_store) == []
-
-
-@pytest.mark.parametrize("conflict", [AlreadyExistsError, PreconditionError])
-def test_touch_retries_a_write_that_lost_to_another_writer(
-    s3_cache: S3Cache,
-    monkeypatch: pytest.MonkeyPatch,
-    conflict: type[Exception],
-):
-    s3_cache.set("k", 1, timeout=100)
-    put = obstore.put
-    attempts: list[object] = []
-
-    def put_losing_once(*args: Any, **kwargs: Any) -> Any:
-        attempts.append(kwargs.get("mode"))
-        if len(attempts) == 1:
-            raise conflict("another writer won")
-        return put(*args, **kwargs)
-
-    monkeypatch.setattr(obstore, "put", put_losing_once)
-
-    assert s3_cache.touch("k", None)
-    assert len(attempts) == 2
-    assert s3_cache.get("k") == 1
-
-
-def test_touch_gives_up_when_every_write_fails_its_condition(
-    s3_cache: S3Cache,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    s3_cache.set("k", 1)
-
-    def put_never_matching(*args: Any, **kwargs: Any) -> None:
-        raise PreconditionError("stale ETag")
-
-    monkeypatch.setattr(obstore, "put", put_never_matching)
-
-    with pytest.raises(RuntimeError, match="gave up"):
-        s3_cache.touch("k", None)
-
-
-def test_delete_reports_a_live_value(s3_cache: S3Cache, raw_store: S3Store):
-    s3_cache.set("live", 1)
-    s3_cache.set("expired", 1, timeout=0.2)
-    time.sleep(0.3)
-
-    assert s3_cache.delete("live")
-    assert not s3_cache.delete("expired")
-    assert not s3_cache.delete("missing")
+    assert s3_cache.delete("k")
+    assert s3_cache.delete("missing")
     assert _paths(raw_store) == []
 
 
@@ -270,7 +206,8 @@ def test_many_key_operations(s3_cache: S3Cache, raw_store: S3Store):
 
     assert s3_cache.set_many(data) == []
     assert s3_cache.get_many([*data, "missing"]) == data
-    assert s3_cache.delete_many(["item:0", "item:1", "missing"]) == 2
+    s3_cache.delete_many(["item:0", "item:1", "missing"])
+    s3_cache.delete_many([])
     assert len(_paths(raw_store)) == 48
 
 
@@ -351,29 +288,26 @@ async def test_async_operations(s3_cache: S3Cache):
     await s3_cache.aset("k", b"raw")
     assert await s3_cache.aget("k") == b"raw"
     assert await s3_cache.ahas_key("k")
-    assert await s3_cache.atouch("k", None)
-    assert await s3_cache.aget("k") == b"raw"
-    assert not await s3_cache.atouch("missing")
     assert await s3_cache.adelete("k")
-    assert not await s3_cache.adelete("k")
+    assert await s3_cache.adelete("k")
+    assert await s3_cache.aget("k") is None
     assert await s3_cache.aset_many(data) == []
     assert await s3_cache.aget_many([*data, "missing"]) == data
-    assert await s3_cache.adelete_many(["item:0", "missing"]) == 1
+    await s3_cache.adelete_many(["item:0", "missing"])
+    assert await s3_cache.aget_many(["item:0", "item:1"]) == {"item:1": 1}
     assert await s3_cache.aclear()
     assert await s3_cache.aget_many(list(data)) == {}
 
 
 @pytest.mark.asyncio
 async def test_async_expiry(s3_cache: S3Cache, raw_store: S3Store):
-    await s3_cache.aset("old", "v")
-    await s3_cache.aset("k", b"body")
+    await s3_cache.aset("k", b"body", timeout=0.2)
     await s3_cache.aset("gone", 1)
     await s3_cache.aset_many({"a": 1, "b": 2})
 
-    assert await s3_cache.atouch("k", 0.2)
     await asyncio.sleep(0.3)
     assert not await s3_cache.ahas_key("k")
-    assert await s3_cache.atouch("old", 0)
+    assert await s3_cache.aget("k") is None
     await s3_cache.aset("gone", 1, timeout=0)
     await s3_cache.aset_many({"a": 1, "b": 2}, timeout=0)
     with pytest.raises(NotSupportedError):
@@ -448,6 +382,7 @@ async def test_methods_s3_cannot_back_are_not_supported(s3_cache: S3Cache):
         (s3_cache.decr, ("k",)),
         (s3_cache.add, ("k", 2)),
         (s3_cache.get_or_set, ("k", 2)),
+        (s3_cache.touch, ("k",)),
     ]:
         with pytest.raises(NotSupportedError):
             operation(*args)
@@ -456,6 +391,7 @@ async def test_methods_s3_cannot_back_are_not_supported(s3_cache: S3Cache):
         (s3_cache.adecr, ("k",)),
         (s3_cache.aadd, ("k", 2)),
         (s3_cache.aget_or_set, ("k", 2)),
+        (s3_cache.atouch, ("k",)),
     ]:
         with pytest.raises(NotSupportedError):
             await async_operation(*args)
