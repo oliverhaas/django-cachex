@@ -816,6 +816,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../s3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    S3 Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../orm-cache/" class="md-nav__link">
         
   
@@ -1188,6 +1216,10 @@
 <tr>
 <td><code>DatabaseCache</code></td>
 <td>Run the sync twin through <code>asgiref.sync.sync_to_async</code>, as Django's <code>BaseCache.aget()</code> does</td>
+</tr>
+<tr>
+<td><code>S3Cache</code></td>
+<td>Run natively on obstore's async API</td>
 </tr>
 <tr>
 <td>Django's own backends</td>

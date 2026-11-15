@@ -900,6 +900,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../s3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    S3 Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../orm-cache/" class="md-nav__link">
         
   
@@ -1364,7 +1392,7 @@
 </span></code></pre></div>
 <p>They still need the <code>change_cache</code> permission and the <a href="#permissions">permission of the cache</a>, or that of every cache where they empty a whole database or server. While they are off, the admin hides them and refuses their requests.</p>
 <h2 id="support-levels">Support Levels<a class="headerlink" href="#support-levels" title="Permanent link">&para;</a></h2>
-<p>The cache list badges each cache "cachex" or "limited". The Valkey and Redis backends, <code>LocMemCache</code> and <code>DatabaseCache</code> are "cachex" and get the features in <a href="#backend-abilities">Backend Abilities</a>. Stock Django backends (<code>django.core.cache.backends.*</code>) and custom backends are "limited", with no key browsing.</p>
+<p>The cache list badges each cache "cachex" or "limited". The Valkey and Redis backends, <code>LocMemCache</code> and <code>DatabaseCache</code> are "cachex" and get the features in <a href="#backend-abilities">Backend Abilities</a>. <code>S3Cache</code>, stock Django backends (<code>django.core.cache.backends.*</code>) and custom backends are "limited", with no key browsing.</p>
 <p>Switch Django's stock <code>LocMemCache</code> or <code>DatabaseCache</code> to <code>django_cachex.cache.LocMemCache</code> or <code>django_cachex.cache.DatabaseCache</code>, their drop-in replacements, for full support. To replace Django's stock Redis backend with <code>ValkeyCache</code> or <code>RedisCache</code>, follow the <a href="../../migration/">migration guide</a>.</p>
 <h3 id="browsing-a-cluster-alias">Browsing a cluster alias<a class="headerlink" href="#browsing-a-cluster-alias" title="Permanent link">&para;</a></h3>
 <p><code>RedisClusterCache</code>, <code>ValkeyClusterCache</code> and <code>ValkeyGlideClusterCache</code> have the "cachex" badge. Their key browser stays empty. The key detail page (opened by key name), Add key, Flush and the danger zone work as usual. The info page shows the figures of one node, not of the whole cluster. On <code>ValkeyGlideClusterCache</code>, the node can change on each reload.</p>
