@@ -72,7 +72,7 @@ They still need the `change_cache` permission and the [permission of the cache](
 
 ## Support Levels
 
-The cache list badges each cache "cachex" or "limited". The Valkey and Redis backends, `LocMemCache` and `DatabaseCache` are "cachex" and get the features in [Backend Abilities](#backend-abilities). Stock Django backends (`django.core.cache.backends.*`) and custom backends are "limited", with no key browsing.
+The cache list badges each cache "cachex" or "limited". The Valkey and Redis backends, `LocMemCache` and `DatabaseCache` are "cachex" and get the features in [Backend Abilities](#backend-abilities). `S3Cache`, stock Django backends (`django.core.cache.backends.*`) and custom backends are "limited", with no key browsing.
 
 Switch Django's stock `LocMemCache` or `DatabaseCache` to `django_cachex.cache.LocMemCache` or `django_cachex.cache.DatabaseCache`, their drop-in replacements, for full support. To replace Django's stock Redis backend with `ValkeyCache` or `RedisCache`, follow the [migration guide](../migration.md).
 
