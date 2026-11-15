@@ -2,12 +2,14 @@
 
 import asyncio
 import gzip
+import json
 import os
 import pickle
 import signal
 import threading
 import time
 import uuid
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 import obstore
@@ -72,12 +74,13 @@ def _caches(endpoint: str, prefix: str, **options: Any) -> dict[str, Any]:
 
 
 @pytest.fixture(autouse=True)
-def stores(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
-    """A store registry of the test's own, whose thread pools stop after it."""
-    registry: dict[str, Any] = {}
-    monkeypatch.setattr(s3_module, "_stores", registry)
-    yield registry
-    for _, executor in registry.values():
+def stores_and_pools(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """A store registry and thread pools of the test's own. The pools of the test's thread stop after it."""
+    pools = s3_module._Pools()
+    monkeypatch.setattr(s3_module, "_stores", {})
+    monkeypatch.setattr(s3_module, "_pools", pools)
+    yield
+    for executor in pools.by_size.values():
         executor.shutdown()
 
 
@@ -118,12 +121,29 @@ def _paths(store: S3Store) -> list[str]:
     return sorted(meta["path"] for batch in obstore.list(store) for meta in batch)
 
 
+class _RecordingJsonSerializer:
+    """A JSON serializer that records the threads it runs on."""
+
+    def __init__(self) -> None:
+        self.threads: set[str] = set()
+
+    def dumps(self, value: Any) -> bytes:
+        self.threads.add(threading.current_thread().name)
+        return json.dumps(value).encode()
+
+    def loads(self, data: bytes) -> Any:
+        self.threads.add(threading.current_thread().name)
+        return json.loads(data)
+
+
 def test_values_round_trip(s3_cache: S3Cache):
     values = {"str": "text", "int": 42, "none": None, "dict": {"a": [1, 2.5]}, "bytes": b"\x00\xff"}
     for key, value in values.items():
         s3_cache.set(key, value)
     assert {key: s3_cache.get(key) for key in values} == values
     assert s3_cache.get("missing", "fallback") == "fallback"
+    assert s3_cache.has_key("str")
+    assert not s3_cache.has_key("missing")
 
 
 def test_bytes_are_stored_as_is_and_other_values_serialized(s3_cache: S3Cache, raw_store: S3Store):
@@ -175,6 +195,7 @@ def test_expiry_is_stored_as_metadata(s3_cache: S3Cache, raw_store: S3Store):
     expires = float(obstore.get(raw_store, ":1:ttl").attributes["cachex-expires"])
     assert expires == pytest.approx(time.time() + 100, abs=5)
     assert "cachex-expires" not in obstore.get(raw_store, ":1:forever").attributes
+    assert s3_cache.get("forever") == 1
 
 
 def test_expired_object_reads_as_a_miss(s3_cache: S3Cache):
@@ -209,6 +230,22 @@ def test_many_key_operations(s3_cache: S3Cache, raw_store: S3Store):
     s3_cache.delete_many(["item:0", "item:1", "missing"])
     s3_cache.delete_many([])
     assert len(_paths(raw_store)) == 48
+
+
+def test_many_key_calls_run_the_configured_serializer_on_the_calling_thread(
+    s3_endpoint: str,
+    prefix: str,
+    raw_store: S3Store,
+):
+    serializer = _RecordingJsonSerializer()
+    data = {"a": {"id": 1}, "b": {"id": 2}, "c": {"id": 3}}
+
+    with override_settings(CACHES=_caches(s3_endpoint, prefix, serializer=serializer)):
+        caches["default"].set_many(data)
+        assert caches["default"].get_many(data) == data
+
+    assert bytes(obstore.get(raw_store, ":1:a").bytes()) == b'{"id": 1}'
+    assert serializer.threads == {threading.current_thread().name}
 
 
 def test_set_many_with_zero_timeout_deletes(s3_cache: S3Cache, raw_store: S3Store):
@@ -354,6 +391,30 @@ async def test_many_key_calls_keep_to_max_concurrency(monkeypatch: pytest.Monkey
     assert max(peaks) == 2
 
 
+def test_many_key_call_does_not_wait_for_another_threads_call(monkeypatch: pytest.MonkeyPatch):
+    cache = S3Cache("s3://bucket/p", {"OPTIONS": {"region": "us-east-1", "max_concurrency": 2}})
+    stalled = threading.Event()
+    release = threading.Event()
+    answered: list[str] = []
+
+    def get(store: S3Store, path: str, options: object = None) -> None:
+        if "slow" in path:
+            stalled.set()
+            release.wait(5)
+            answered.append(path)
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr(obstore, "get", get)
+    stalled_call = threading.Thread(target=cache.get_many, args=([f"slow{n}" for n in range(4)],))
+    stalled_call.start()
+    assert stalled.wait(5)
+
+    assert cache.get_many(["a", "b"]) == {}
+    assert answered == []
+    release.set()
+    stalled_call.join()
+
+
 @pytest.mark.asyncio
 async def test_failed_async_many_key_call_cancels_its_other_requests(monkeypatch: pytest.MonkeyPatch):
     cache = S3Cache("s3://bucket/p", {"OPTIONS": {"region": "us-east-1"}})
@@ -384,7 +445,7 @@ async def test_methods_s3_cannot_back_are_not_supported(s3_cache: S3Cache):
         (s3_cache.get_or_set, ("k", 2)),
         (s3_cache.touch, ("k",)),
     ]:
-        with pytest.raises(NotSupportedError):
+        with pytest.raises(NotSupportedError, match=f"'{operation.__name__}'"):
             operation(*args)
     for async_operation, args in [
         (s3_cache.aincr, ("k",)),
@@ -393,7 +454,7 @@ async def test_methods_s3_cannot_back_are_not_supported(s3_cache: S3Cache):
         (s3_cache.aget_or_set, ("k", 2)),
         (s3_cache.atouch, ("k",)),
     ]:
-        with pytest.raises(NotSupportedError):
+        with pytest.raises(NotSupportedError, match=f"'{async_operation.__name__}'"):
             await async_operation(*args)
     assert s3_cache.get("k") == 1
 
@@ -435,7 +496,7 @@ def test_requests_get_short_timeouts_unless_configured(mocker: Any):
 
     default, own = (call.kwargs for call in from_url.call_args_list)
     assert default["client_options"] == {"timeout": "5s", "connect_timeout": "1s", "allow_http": True}
-    assert default["retry_config"]["max_retries"] == 2
+    assert default["retry_config"] == {"max_retries": 2, "retry_timeout": timedelta(seconds=10)}
     assert own["client_options"]["timeout"] == "30s"
     assert own["retry_config"]["max_retries"] == 5
 

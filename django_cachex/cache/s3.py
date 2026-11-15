@@ -52,8 +52,6 @@ _MAX_KEY_BYTES = 1024
 # characters. Escaping "%" first keeps the mapping from cache keys injective.
 _ESCAPES = {c: f"%{c:02X}" for c in (*range(0x20), ord("%"), ord("/"), 0x7F)}
 
-_MISSING = object()
-
 _OPTION_DEFAULTS = {"serializer": None, "compressor": None, "max_concurrency": 64}
 
 # obstore's own defaults (30 s per request, 10 retries within 3 minutes) would
@@ -88,17 +86,27 @@ def _live(attributes: Mapping[str, Any]) -> bool:
     return expires is None or float(expires) > time.time()
 
 
-# One store and thread pool per configuration, shared by the per-thread
-# instances Django creates, so connections and threads are reused.
-_stores: dict[str, tuple[S3Store, ThreadPoolExecutor]] = {}
+# One store per configuration, shared by the per-thread instances Django
+# creates, so connections are reused.
+_stores: dict[str, S3Store] = {}
 _stores_lock = threading.Lock()
 
 
-def _shared_store(location: str, options: dict[str, Any], max_concurrency: int) -> tuple[S3Store, ThreadPoolExecutor]:
-    registry_key = repr((location, sorted(options.items()), max_concurrency))
+# One pool per calling thread and size. In a pool that threads share, a
+# many-key call waits for the requests of every call before it while S3 stalls.
+class _Pools(threading.local):
+    def __init__(self) -> None:
+        self.by_size: dict[int, ThreadPoolExecutor] = {}
+
+
+_pools = _Pools()
+
+
+def _shared_store(location: str, options: dict[str, Any]) -> S3Store:
+    registry_key = repr((location, sorted(options.items())))
     with _stores_lock:
-        entry = _stores.get(registry_key)
-        if entry is None:
+        store = _stores.get(registry_key)
+        if store is None:
             if "s3_express" not in options and urlsplit(location).netloc.endswith("--x-s3"):
                 options = {**options, "s3_express": True}
             try:
@@ -110,9 +118,8 @@ def _shared_store(location: str, options: dict[str, Any], max_concurrency: int) 
                     raise
                 msg = f"S3Cache could not create a store for LOCATION {location!r}: {e}"
                 raise ImproperlyConfigured(msg) from e
-            executor = ThreadPoolExecutor(max_workers=max_concurrency, thread_name_prefix="cachex-s3")
-            entry = _stores[registry_key] = (store, executor)
-        return entry
+            _stores[registry_key] = store
+        return store
 
 
 class S3Cache(ValueCodec, BaseCachex):
@@ -143,7 +150,7 @@ class S3Cache(ValueCodec, BaseCachex):
         self._compressors = self._create_compressors(codec["compressor"])
         options["client_options"] = {**_CLIENT_DEFAULTS, **options.get("client_options", {})}
         options["retry_config"] = {**_RETRY_DEFAULTS, **options.get("retry_config", {})}
-        self._s3_store, self._executor = _shared_store(location, options, max_concurrency)
+        self._s3_store = _shared_store(location, options)
         prefix = self._s3_store.prefix
         self._max_path_bytes = _MAX_KEY_BYTES - (len(prefix.encode()) + 1 if prefix else 0)
 
@@ -164,39 +171,44 @@ class S3Cache(ValueCodec, BaseCachex):
             raise ValueError(msg)
         return path
 
+    # The serializer runs on the calling thread only (_encode, _decode): pickling a lazy
+    # value such as a QuerySet queries the database. The compressor runs with the request
+    # (_put, _fetch), on a pool thread in a many-key call.
     def _encode(self, value: Any, expires: float | None) -> tuple[bytes, dict[str, str]]:
+        """The serialized value and its attributes, not yet compressed."""
         attributes: dict[str, str] = {}
         if expires is not None:
             attributes[_EXPIRES] = f"{expires:.3f}"
         if type(value) is bytes:
-            payload = value
             attributes[_RAW] = "1"
-        else:
-            payload = self._serializers[0].dumps(value)
+            return value, attributes
+        return self._serializers[0].dumps(value), attributes
+
+    def _decode(self, body: bytes, attributes: Mapping[str, Any]) -> Any:
+        return body if _RAW in attributes else self._deserialize(body)
+
+    def _compressed(self, payload: bytes, attributes: dict[str, str]) -> tuple[bytes, dict[str, str]]:
         if self._compressors:
             compressed = self._compressors[0].compress(payload)
             if compressed is not payload:
-                payload = compressed
-                attributes[_COMPRESSED] = "1"
+                return compressed, {**attributes, _COMPRESSED: "1"}
         return payload, attributes
 
-    def _decode(self, body: bytes, attributes: Mapping[str, Any]) -> Any:
-        if _COMPRESSED in attributes:
-            decompressed = self._decompress(body)
-            if decompressed is body:
-                msg = f"No configured compressor could decompress the {len(body)}-byte value"
-                raise CompressorError(msg)
-            body = decompressed
-        if _RAW in attributes:
+    def _decompressed(self, body: bytes, attributes: Mapping[str, Any]) -> bytes:
+        if _COMPRESSED not in attributes:
             return body
-        return self._deserialize(body)
+        decompressed = self._decompress(body)
+        if decompressed is body:
+            msg = f"No configured compressor could decompress the {len(body)}-byte value"
+            raise CompressorError(msg)
+        return decompressed
 
-    def _put(self, path: str, value: Any, expires: float | None) -> None:
-        body, attributes = self._encode(value, expires)
+    def _put(self, path: str, payload: bytes, attributes: dict[str, str]) -> None:
+        body, attributes = self._compressed(payload, attributes)
         obstore.put(self._store, path, body, attributes=attributes, use_multipart=False)
 
-    async def _aput(self, path: str, value: Any, expires: float | None) -> None:
-        body, attributes = self._encode(value, expires)
+    async def _aput(self, path: str, payload: bytes, attributes: dict[str, str]) -> None:
+        body, attributes = self._compressed(payload, attributes)
         await obstore.put_async(self._store, path, body, attributes=attributes, use_multipart=False)
 
     def _read(self, path: str, *, head: bool = False) -> GetResult | None:
@@ -216,7 +228,10 @@ class S3Cache(ValueCodec, BaseCachex):
         _check_fork()
         if len(items) <= 1:
             return [fn(item) for item in items]
-        return list(self._executor.map(fn, items))
+        pools = _pools.by_size
+        if self._max_concurrency not in pools:
+            pools[self._max_concurrency] = ThreadPoolExecutor(self._max_concurrency, thread_name_prefix="cachex-s3")
+        return list(pools[self._max_concurrency].map(fn, items))
 
     async def _amap[T, R](self, fn: Callable[[T], Awaitable[R]], items: list[T]) -> list[R]:
         limit = asyncio.Semaphore(self._max_concurrency)
@@ -235,25 +250,26 @@ class S3Cache(ValueCodec, BaseCachex):
 
     @override
     def get(self, key: str, default: Any = None, version: int | None = None) -> Any:
-        value = self._get_path(self._path(key, version))
-        return default if value is _MISSING else value
+        found = self._fetch(self._path(key, version))
+        return default if found is None else self._decode(*found)
 
-    def _get_path(self, path: str) -> Any:
+    def _fetch(self, path: str) -> tuple[bytes, Mapping[str, Any]] | None:
+        """The decompressed body and the attributes of the live object at ``path``, or ``None``."""
         result = self._read(path)
         if result is None or not _live(result.attributes):
-            return _MISSING
-        return self._decode(bytes(result.bytes()), result.attributes)
+            return None
+        return self._decompressed(bytes(result.bytes()), result.attributes), result.attributes
 
     @override
     async def aget(self, key: str, default: Any = None, version: int | None = None) -> Any:
-        value = await self._aget_path(self._path(key, version))
-        return default if value is _MISSING else value
+        found = await self._afetch(self._path(key, version))
+        return default if found is None else self._decode(*found)
 
-    async def _aget_path(self, path: str) -> Any:
+    async def _afetch(self, path: str) -> tuple[bytes, Mapping[str, Any]] | None:
         result = await self._aread(path)
         if result is None or not _live(result.attributes):
-            return _MISSING
-        return self._decode(bytes(await result.bytes_async()), result.attributes)
+            return None
+        return self._decompressed(bytes(await result.bytes_async()), result.attributes), result.attributes
 
     @override
     def set(
@@ -274,7 +290,7 @@ class S3Cache(ValueCodec, BaseCachex):
         if _expired(expires):
             obstore.delete(self._store, path)
         else:
-            self._put(path, value, expires)
+            self._put(path, *self._encode(value, expires))
 
     @override
     async def aset(
@@ -295,7 +311,7 @@ class S3Cache(ValueCodec, BaseCachex):
         if _expired(expires):
             await obstore.delete_async(self._store, path)
         else:
-            await self._aput(path, value, expires)
+            await self._aput(path, *self._encode(value, expires))
 
     @override
     def delete(self, key: str, version: int | None = None) -> bool:
@@ -321,14 +337,14 @@ class S3Cache(ValueCodec, BaseCachex):
     @override
     def get_many(self, keys: Iterable[str], version: int | None = None) -> dict[str, Any]:
         paths = {self._path(key, version): key for key in keys}
-        values = self._map(self._get_path, list(paths))
-        return {key: value for key, value in zip(paths.values(), values, strict=True) if value is not _MISSING}
+        found = self._map(self._fetch, list(paths))
+        return {key: self._decode(*hit) for key, hit in zip(paths.values(), found, strict=True) if hit is not None}
 
     @override
     async def aget_many(self, keys: Iterable[str], version: int | None = None) -> dict[str, Any]:
         paths = {self._path(key, version): key for key in keys}
-        values = await self._amap(self._aget_path, list(paths))
-        return {key: value for key, value in zip(paths.values(), values, strict=True) if value is not _MISSING}
+        found = await self._amap(self._afetch, list(paths))
+        return {key: self._decode(*hit) for key, hit in zip(paths.values(), found, strict=True) if hit is not None}
 
     @override
     def set_many(
@@ -343,7 +359,8 @@ class S3Cache(ValueCodec, BaseCachex):
             if items:
                 obstore.delete(self._store, list(items))
         else:
-            self._map(lambda item: self._put(item[0], item[1], expires), list(items.items()))
+            puts = [(path, *self._encode(value, expires)) for path, value in items.items()]
+            self._map(lambda put: self._put(*put), puts)
         return []
 
     @override
@@ -359,7 +376,8 @@ class S3Cache(ValueCodec, BaseCachex):
             if items:
                 await obstore.delete_async(self._store, list(items))
         else:
-            await self._amap(lambda item: self._aput(item[0], item[1], expires), list(items.items()))
+            puts = [(path, *self._encode(value, expires)) for path, value in items.items()]
+            await self._amap(lambda put: self._aput(*put), puts)
         return []
 
     @override
