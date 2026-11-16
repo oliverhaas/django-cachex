@@ -21,7 +21,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
     
     
       
@@ -29,10 +29,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
       
       
 
@@ -999,15 +999,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#unreleased" class="md-nav__link">
+  <a href="#0150-november-2026" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Unreleased
+        0.15.0 (November 2026)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Unreleased">
+    <nav class="md-nav" aria-label="0.15.0 (November 2026)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2237,15 +2237,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#unreleased" class="md-nav__link">
+  <a href="#0150-november-2026" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Unreleased
+        0.15.0 (November 2026)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Unreleased">
+    <nav class="md-nav" aria-label="0.15.0 (November 2026)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -3453,7 +3453,7 @@
 
 
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
-<h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h2 id="0150-november-2026">0.15.0 (November 2026)<a class="headerlink" href="#0150-november-2026" title="Permanent link">&para;</a></h2>
 <h3 id="improvements">Improvements<a class="headerlink" href="#improvements" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>S3Cache</code> stores each key as one object in an S3 Express One Zone or S3 Standard bucket, for values too large to keep in Valkey or Redis in bulk. It has <code>get()</code>, <code>set()</code>, <code>delete()</code>, <code>has_key()</code>, <code>get_many()</code>, <code>set_many()</code>, <code>delete_many()</code> and <code>clear()</code> with their async twins, and sends the requests of <code>get_many()</code> and <code>set_many()</code> in parallel. A <code>bytes</code> value skips the serializer, so the object holds those bytes, compressed if a compressor is set. An expired object reads as a miss, and a lifecycle rule removes it. <code>add()</code>, <code>get_or_set()</code>, <code>touch()</code>, <code>incr()</code> and <code>decr()</code> raise <code>NotSupportedError</code>. A request times out after 5 seconds and is retried twice within 10 seconds unless <code>OPTIONS</code> says otherwise. Install the <code>s3</code> extra. See <a href="../../user-guide/s3/">S3 Cache</a>.</li>
@@ -4372,10 +4372,10 @@ wheels, so the cibuildwheel and cp314t wheel entries are outdated.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.sections", "navigation.expand", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tracking", "navigation.sections", "navigation.expand", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
       
     
   </body>
