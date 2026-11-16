@@ -4,7 +4,7 @@
 # Bertrand Bordage); see the LICENSE file in this directory.
 
 import copyreg
-import datetime
+import datetime as dt
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -39,10 +39,10 @@ _SAMPLE_RESULT = [
             True,
             None,
             b"bytes",
-            datetime.datetime(2026, 1, 1, 12, 0, tzinfo=datetime.UTC),
-            datetime.date(2026, 1, 1),
-            datetime.time(12, 0),
-            datetime.timedelta(seconds=1),
+            dt.datetime(2026, 1, 1, 12, 0, tzinfo=dt.UTC),
+            dt.date(2026, 1, 1),
+            dt.time(12, 0),
+            dt.timedelta(seconds=1),
             UUID(int=1),
         ),
     ],

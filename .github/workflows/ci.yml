@@ -279,7 +279,7 @@ jobs:
       - name: Run mypy check with glide installed
         run: uv run --no-sync mypy django_cachex/
 
-      # The ``ty: ignore[unresolved-import]`` on the glide imports serve the lint job.
+      # The ``ty: ignore[import-not-found]`` on the glide imports serve the lint job.
       - name: Run ty check with glide installed
         run: uv run --no-sync ty check --ignore unused-ignore-comment django_cachex/
 

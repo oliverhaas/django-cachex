@@ -1,6 +1,6 @@
 """Tests for timeout and TTL operations."""
 
-import datetime
+import datetime as dt
 import time
 from datetime import timedelta
 from typing import TYPE_CHECKING
@@ -224,7 +224,7 @@ def test_pexpire_on_missing_key_returns_false(cache: RespCache):
 )
 def test_expireat_sets_ttl(cache: RespCache, kind: str, hours: int):
     cache.set("exp_at", "data", timeout=None)
-    future = datetime.datetime.now() + timedelta(hours=hours)
+    future = dt.datetime.now() + timedelta(hours=hours)
     when = future if kind == "datetime" else int(future.timestamp())
     assert cache.expireat("exp_at", when) is True
     assert cache.ttl("exp_at") == pytest.approx(timedelta(hours=hours).total_seconds(), abs=5)
@@ -232,13 +232,13 @@ def test_expireat_sets_ttl(cache: RespCache, kind: str, hours: int):
 
 def test_expireat_past_time_deletes_key(cache: RespCache):
     cache.set("exp_at_past", "data", timeout=None)
-    past = datetime.datetime.now() - timedelta(hours=2)
+    past = dt.datetime.now() - timedelta(hours=2)
     assert cache.expireat("exp_at_past", past) is True
     assert cache.get("exp_at_past") is None
 
 
 def test_expireat_missing_key_returns_false(cache: RespCache):
-    future = datetime.datetime.now() + timedelta(hours=2)
+    future = dt.datetime.now() + timedelta(hours=2)
     assert cache.expireat("exp_at_ghost", future) is False
 
 
@@ -248,7 +248,7 @@ def test_expireat_missing_key_returns_false(cache: RespCache):
 )
 def test_pexpireat_sets_pttl(cache: RespCache, kind: str, hours: int):
     cache.set("pexp_at", "data", timeout=None)
-    future = datetime.datetime.now() + timedelta(hours=hours)
+    future = dt.datetime.now() + timedelta(hours=hours)
     when = future if kind == "datetime" else int(future.timestamp() * 1000)
     assert cache.pexpireat("pexp_at", when) is True
     assert cache.pttl("pexp_at") == pytest.approx(timedelta(hours=hours).total_seconds() * 1000, abs=5000)
@@ -256,13 +256,13 @@ def test_pexpireat_sets_pttl(cache: RespCache, kind: str, hours: int):
 
 def test_pexpireat_past_time_deletes_key(cache: RespCache):
     cache.set("pexp_at_past", "data", timeout=None)
-    past = datetime.datetime.now() - timedelta(hours=2)
+    past = dt.datetime.now() - timedelta(hours=2)
     assert cache.pexpireat("pexp_at_past", past) is True
     assert cache.get("pexp_at_past") is None
 
 
 def test_pexpireat_missing_key_returns_false(cache: RespCache):
-    future = datetime.datetime.now() + timedelta(hours=2)
+    future = dt.datetime.now() + timedelta(hours=2)
     assert cache.pexpireat("pexp_at_ghost", future) is False
 
 
@@ -510,7 +510,7 @@ async def test_apexpire_on_missing_key_returns_false(cache: RespCache):
 )
 async def test_aexpireat_sets_ttl(cache: RespCache, kind: str, hours: int):
     cache.set("aexpireat", "data", timeout=None)
-    future = datetime.datetime.now() + timedelta(hours=hours)
+    future = dt.datetime.now() + timedelta(hours=hours)
     when = future if kind == "datetime" else int(future.timestamp())
     assert await cache.aexpireat("aexpireat", when) is True
     assert cache.ttl("aexpireat") == pytest.approx(timedelta(hours=hours).total_seconds(), abs=5)
@@ -519,14 +519,14 @@ async def test_aexpireat_sets_ttl(cache: RespCache, kind: str, hours: int):
 @pytest.mark.asyncio
 async def test_aexpireat_past_time_deletes_key(cache: RespCache):
     await cache.aset("aexp_at_past", "data", timeout=None)
-    past = datetime.datetime.now() - timedelta(hours=2)
+    past = dt.datetime.now() - timedelta(hours=2)
     assert await cache.aexpireat("aexp_at_past", past) is True
     assert await cache.aget("aexp_at_past") is None
 
 
 @pytest.mark.asyncio
 async def test_aexpireat_missing_key_returns_false(cache: RespCache):
-    future = datetime.datetime.now() + timedelta(hours=1)
+    future = dt.datetime.now() + timedelta(hours=1)
     assert await cache.aexpireat("aexpireat_ghost", future) is False
 
 
@@ -537,7 +537,7 @@ async def test_aexpireat_missing_key_returns_false(cache: RespCache):
 )
 async def test_apexpireat_sets_pttl(cache: RespCache, kind: str, hours: int):
     cache.set("apexpireat", "data", timeout=None)
-    future = datetime.datetime.now() + timedelta(hours=hours)
+    future = dt.datetime.now() + timedelta(hours=hours)
     when = future if kind == "datetime" else int(future.timestamp() * 1000)
     assert await cache.apexpireat("apexpireat", when) is True
     assert cache.pttl("apexpireat") == pytest.approx(timedelta(hours=hours).total_seconds() * 1000, abs=5000)
@@ -546,14 +546,14 @@ async def test_apexpireat_sets_pttl(cache: RespCache, kind: str, hours: int):
 @pytest.mark.asyncio
 async def test_apexpireat_past_time_deletes_key(cache: RespCache):
     await cache.aset("apexp_at_past", "data", timeout=None)
-    past = datetime.datetime.now() - timedelta(hours=2)
+    past = dt.datetime.now() - timedelta(hours=2)
     assert await cache.apexpireat("apexp_at_past", past) is True
     assert await cache.aget("apexp_at_past") is None
 
 
 @pytest.mark.asyncio
 async def test_apexpireat_missing_key_returns_false(cache: RespCache):
-    future = datetime.datetime.now() + timedelta(hours=2)
+    future = dt.datetime.now() + timedelta(hours=2)
     assert await cache.apexpireat("apexpireat_ghost", future) is False
 
 

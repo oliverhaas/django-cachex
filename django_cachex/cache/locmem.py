@@ -338,7 +338,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         # enforce MAX_ENTRIES over both stores here.
         if len(self._cache) + len(self._collections) >= self._max_entries:
             self._cull()
-        super()._set(key, value, timeout)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        super()._set(key, value, timeout)  # type: ignore[misc]  # ty: ignore[missing-attribute]
 
     def _cull(self) -> None:
         # Django's ``_cull`` extended to ``_collections``; ``_cache`` evicts
@@ -361,7 +361,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def _delete(self, key: str) -> bool:
         had_collection = self._collections.pop(key, None) is not None
-        had_pickled: bool = super()._delete(key)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        had_pickled: bool = super()._delete(key)  # type: ignore[misc]  # ty: ignore[missing-attribute]
         if had_collection and not had_pickled:
             # Django's ``_delete`` only touches ``_expire_info`` when the
             # key is in ``_cache``; clean up the collection's TTL entry

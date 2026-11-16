@@ -6,7 +6,7 @@ The exceptions bypass the ORM: ``Model.objects.raw`` and ``cursor.execute``.
 # Derived from django-cachalot 2.9.1 (BSD-3-Clause, Copyright (c) 2014-2016
 # Bertrand Bordage); see django_cachex/orm/LICENSE.
 
-import datetime
+import datetime as dt
 import logging
 import re
 from types import SimpleNamespace
@@ -153,11 +153,11 @@ def test_filter(rows):
     assert_tables(qs, Test)
     assert_query_cached(qs, [rows.t2])
 
-    qs = Test.objects.filter(date__gt=datetime.date(1900, 1, 1))
+    qs = Test.objects.filter(date__gt=dt.date(1900, 1, 1))
     assert_tables(qs, Test)
     assert_query_cached(qs, [rows.t2])
 
-    qs = Test.objects.filter(datetime__lt=datetime.datetime(1900, 1, 1))
+    qs = Test.objects.filter(datetime__lt=dt.datetime(1900, 1, 1))
     assert_tables(qs, Test)
     assert_query_cached(qs, [rows.t1])
 
@@ -348,14 +348,14 @@ def test_latest(rows):
 def test_dates():
     qs = Test.objects.dates("date", "year")
     assert_tables(qs, Test)
-    assert_query_cached(qs, [datetime.date(1789, 1, 1), datetime.date(1944, 1, 1)])
+    assert_query_cached(qs, [dt.date(1789, 1, 1), dt.date(1944, 1, 1)])
 
 
 @pytest.mark.usefixtures("final_sql_check")
 def test_datetimes():
     qs = Test.objects.datetimes("datetime", "hour")
     assert_tables(qs, Test)
-    assert_query_cached(qs, [datetime.datetime(1789, 7, 14, 16), datetime.datetime(1944, 6, 6, 6)])
+    assert_query_cached(qs, [dt.datetime(1789, 7, 14, 16), dt.datetime(1944, 6, 6, 6)])
 
 
 @pytest.mark.usefixtures("final_sql_check")
@@ -366,8 +366,8 @@ def test_datetimes_with_time_zones():
     assert_query_cached(
         qs,
         [
-            datetime.datetime(1789, 7, 14, 16, tzinfo=datetime.UTC),
-            datetime.datetime(1944, 6, 6, 6, tzinfo=datetime.UTC),
+            dt.datetime(1789, 7, 14, 16, tzinfo=dt.UTC),
+            dt.datetime(1944, 6, 6, 6, tzinfo=dt.UTC),
         ],
     )
 
@@ -1123,9 +1123,9 @@ def test_now_annotate():
 @pytest.mark.parametrize(
     "make_queryset",
     [
-        pytest.param(lambda: Test.objects.filter(datetime__gte=Now() - datetime.timedelta(days=1)), id="filter"),
+        pytest.param(lambda: Test.objects.filter(datetime__gte=Now() - dt.timedelta(days=1)), id="filter"),
         pytest.param(
-            lambda: Test.objects.filter(datetime__range=(Now() - datetime.timedelta(days=1), Now())),
+            lambda: Test.objects.filter(datetime__range=(Now() - dt.timedelta(days=1), Now())),
             id="range",
         ),
         pytest.param(lambda: Test.objects.annotate(age=Now() - F("datetime")), id="annotate"),
@@ -1135,7 +1135,7 @@ def test_now_annotate():
             id="subquery",
         ),
         pytest.param(
-            lambda: Test.objects.filter(Exists(Test.objects.filter(datetime__lte=Now() - datetime.timedelta(days=1)))),
+            lambda: Test.objects.filter(Exists(Test.objects.filter(datetime__lte=Now() - dt.timedelta(days=1)))),
             id="exists",
         ),
         pytest.param(

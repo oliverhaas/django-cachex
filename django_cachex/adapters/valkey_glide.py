@@ -63,24 +63,24 @@ from django_cachex.types import KeyType
 from django_cachex.utils import _validate_zadd_flags, _validate_zrange_limit
 
 if TYPE_CHECKING:
-    import datetime
+    import datetime as dt
     from collections.abc import Generator, Iterable, Iterator, Mapping, Sequence
 
 
 # valkey-glide is an optional install: the names below stay unbound without it,
 # and ``_check_installed`` turns that into an actionable error at construction.
 try:
-    from glide import ClusterScanCursor as AsyncClusterScanCursor  # ty: ignore[unresolved-import]
-    from glide import GlideClient as AsyncGlideClient  # ty: ignore[unresolved-import]
-    from glide import GlideClientConfiguration as AsyncGlideClientConfiguration  # ty: ignore[unresolved-import]
-    from glide import GlideClusterClient as AsyncGlideClusterClient  # ty: ignore[unresolved-import]
-    from glide import (  # ty: ignore[unresolved-import]
+    from glide import ClusterScanCursor as AsyncClusterScanCursor  # ty: ignore[import-not-found]
+    from glide import GlideClient as AsyncGlideClient  # ty: ignore[import-not-found]
+    from glide import GlideClientConfiguration as AsyncGlideClientConfiguration  # ty: ignore[import-not-found]
+    from glide import GlideClusterClient as AsyncGlideClusterClient  # ty: ignore[import-not-found]
+    from glide import (  # ty: ignore[import-not-found]
         GlideClusterClientConfiguration as AsyncGlideClusterClientConfiguration,
     )
-    from glide import NodeAddress as AsyncNodeAddress  # ty: ignore[unresolved-import]
-    from glide import Script as AsyncScript  # ty: ignore[unresolved-import]
-    from glide import ServerCredentials as AsyncServerCredentials  # ty: ignore[unresolved-import]
-    from glide_sync import (  # ty: ignore[unresolved-import]
+    from glide import NodeAddress as AsyncNodeAddress  # ty: ignore[import-not-found]
+    from glide import Script as AsyncScript  # ty: ignore[import-not-found]
+    from glide import ServerCredentials as AsyncServerCredentials  # ty: ignore[import-not-found]
+    from glide_sync import (  # ty: ignore[import-not-found]
         Batch,
         ClosingError,
         ClusterBatch,
@@ -99,9 +99,9 @@ try:
         Script,
         ServerCredentials,
     )
-    from glide_sync import ConnectionError as GlideConnectionError  # ty: ignore[unresolved-import]
-    from glide_sync import TimeoutError as GlideTimeoutError  # ty: ignore[unresolved-import]
-    from glide_sync.glide_client import GlideClient  # ty: ignore[unresolved-import]
+    from glide_sync import ConnectionError as GlideConnectionError  # ty: ignore[import-not-found]
+    from glide_sync import TimeoutError as GlideTimeoutError  # ty: ignore[import-not-found]
+    from glide_sync.glide_client import GlideClient  # ty: ignore[import-not-found]
 except ImportError as _exc:
     _GLIDE_IMPORT_ERROR: ImportError | None = _exc
 else:
@@ -799,12 +799,12 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         key: Any,
         value: Any,
         *,
-        ex: int | datetime.timedelta | None = None,
-        px: int | datetime.timedelta | None = None,
+        ex: int | dt.timedelta | None = None,
+        px: int | dt.timedelta | None = None,
         nx: bool = False,
         xx: bool = False,
-        exat: int | datetime.datetime | None = None,
-        pxat: int | datetime.datetime | None = None,
+        exat: int | dt.datetime | None = None,
+        pxat: int | dt.datetime | None = None,
         keepttl: bool = False,
         get: bool = False,
     ) -> Self:
@@ -852,19 +852,19 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
         self._batch.exists(_enc_list(keys))
         return self
 
-    def expire(self, key: Any, seconds: int | datetime.timedelta) -> Self:
+    def expire(self, key: Any, seconds: int | dt.timedelta) -> Self:
         self._batch.expire(key, _expire_arg(seconds))
         return self
 
-    def pexpire(self, key: Any, milliseconds: int | datetime.timedelta) -> Self:
+    def pexpire(self, key: Any, milliseconds: int | dt.timedelta) -> Self:
         self._batch.pexpire(key, _expire_arg(milliseconds, milliseconds=True))
         return self
 
-    def expireat(self, key: Any, when: int | datetime.datetime) -> Self:
+    def expireat(self, key: Any, when: int | dt.datetime) -> Self:
         self._batch.expireat(key, _to_unix(when))
         return self
 
-    def pexpireat(self, key: Any, when: int | datetime.datetime) -> Self:
+    def pexpireat(self, key: Any, when: int | dt.datetime) -> Self:
         self._batch.pexpireat(key, _to_unix(when, milliseconds=True))
         return self
 
@@ -979,7 +979,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
     def hexpire(
         self,
         key: Any,
-        timeout: int | datetime.timedelta,
+        timeout: int | dt.timedelta,
         *fields: Any,
         nx: bool = False,
         xx: bool = False,
@@ -993,7 +993,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
     def hpexpire(
         self,
         key: Any,
-        timeout: int | datetime.timedelta,
+        timeout: int | dt.timedelta,
         *fields: Any,
         nx: bool = False,
         xx: bool = False,
@@ -1008,7 +1008,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
     def hexpireat(
         self,
         key: Any,
-        when: int | datetime.datetime,
+        when: int | dt.datetime,
         *fields: Any,
         nx: bool = False,
         xx: bool = False,
@@ -1022,7 +1022,7 @@ class ValkeyGlidePipelineAdapter(RespPipelineProtocol):
     def hpexpireat(
         self,
         key: Any,
-        when: int | datetime.datetime,
+        when: int | dt.datetime,
         *fields: Any,
         nx: bool = False,
         xx: bool = False,
@@ -2094,16 +2094,16 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def persist(self, key: str) -> bool:
         return bool(self._client().persist(key))
 
-    def expire(self, key: str, timeout: int | datetime.timedelta) -> bool:
+    def expire(self, key: str, timeout: int | dt.timedelta) -> bool:
         return bool(self._client().expire(key, _expire_arg(timeout)))
 
-    def pexpire(self, key: str, timeout: int | datetime.timedelta) -> bool:
+    def pexpire(self, key: str, timeout: int | dt.timedelta) -> bool:
         return bool(self._client().pexpire(key, _expire_arg(timeout, milliseconds=True)))
 
-    def expireat(self, key: str, when: int | datetime.datetime) -> bool:
+    def expireat(self, key: str, when: int | dt.datetime) -> bool:
         return bool(self._client().expireat(key, _to_unix(when)))
 
-    def pexpireat(self, key: str, when: int | datetime.datetime) -> bool:
+    def pexpireat(self, key: str, when: int | dt.datetime) -> bool:
         return bool(self._client().pexpireat(key, _to_unix(when, milliseconds=True)))
 
     def expiretime(self, key: str) -> int | None:
@@ -2240,7 +2240,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def hexpire(
         self,
         key: str,
-        timeout: int | datetime.timedelta,
+        timeout: int | dt.timedelta,
         *fields: str,
         nx: bool = False,
         xx: bool = False,
@@ -2253,7 +2253,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def hpexpire(
         self,
         key: str,
-        timeout: int | datetime.timedelta,
+        timeout: int | dt.timedelta,
         *fields: str,
         nx: bool = False,
         xx: bool = False,
@@ -2267,7 +2267,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def hexpireat(
         self,
         key: str,
-        when: int | datetime.datetime,
+        when: int | dt.datetime,
         *fields: str,
         nx: bool = False,
         xx: bool = False,
@@ -2280,7 +2280,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     def hpexpireat(
         self,
         key: str,
-        when: int | datetime.datetime,
+        when: int | dt.datetime,
         *fields: str,
         nx: bool = False,
         xx: bool = False,
@@ -3152,16 +3152,16 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def apersist(self, key: str) -> bool:
         return bool(await (await self.get_async_client()).persist(key))
 
-    async def aexpire(self, key: str, timeout: int | datetime.timedelta) -> bool:
+    async def aexpire(self, key: str, timeout: int | dt.timedelta) -> bool:
         return bool(await (await self.get_async_client()).expire(key, _expire_arg(timeout)))
 
-    async def apexpire(self, key: str, timeout: int | datetime.timedelta) -> bool:
+    async def apexpire(self, key: str, timeout: int | dt.timedelta) -> bool:
         return bool(await (await self.get_async_client()).pexpire(key, _expire_arg(timeout, milliseconds=True)))
 
-    async def aexpireat(self, key: str, when: int | datetime.datetime) -> bool:
+    async def aexpireat(self, key: str, when: int | dt.datetime) -> bool:
         return bool(await (await self.get_async_client()).expireat(key, _to_unix(when)))
 
-    async def apexpireat(self, key: str, when: int | datetime.datetime) -> bool:
+    async def apexpireat(self, key: str, when: int | dt.datetime) -> bool:
         return bool(await (await self.get_async_client()).pexpireat(key, _to_unix(when, milliseconds=True)))
 
     async def aexpiretime(self, key: str) -> int | None:
@@ -3306,7 +3306,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def ahexpire(
         self,
         key: str,
-        timeout: int | datetime.timedelta,
+        timeout: int | dt.timedelta,
         *fields: str,
         nx: bool = False,
         xx: bool = False,
@@ -3319,7 +3319,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def ahpexpire(
         self,
         key: str,
-        timeout: int | datetime.timedelta,
+        timeout: int | dt.timedelta,
         *fields: str,
         nx: bool = False,
         xx: bool = False,
@@ -3333,7 +3333,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def ahexpireat(
         self,
         key: str,
-        when: int | datetime.datetime,
+        when: int | dt.datetime,
         *fields: str,
         nx: bool = False,
         xx: bool = False,
@@ -3346,7 +3346,7 @@ class ValkeyGlideAdapter(RespAdapterProtocol):
     async def ahpexpireat(
         self,
         key: str,
-        when: int | datetime.datetime,
+        when: int | dt.datetime,
         *fields: str,
         nx: bool = False,
         xx: bool = False,

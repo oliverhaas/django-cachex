@@ -838,13 +838,13 @@ def _check_post_permission(request: HttpRequest, action: str | None, cache: Any,
     """
     user = request.user
     if action == "delete":
-        if not user.has_perm("django_cachex.delete_key"):  # ty: ignore[unresolved-attribute]
+        if not user.has_perm("django_cachex.delete_key"):  # ty: ignore[missing-union-attribute]
             raise PermissionDenied
         return
     if not action:
         return
-    may_change = user.has_perm("django_cachex.change_key")  # ty: ignore[unresolved-attribute]
-    may_add = action in _CREATE_ACTIONS and user.has_perm("django_cachex.add_key")  # ty: ignore[unresolved-attribute]
+    may_change = user.has_perm("django_cachex.change_key")  # ty: ignore[missing-union-attribute]
+    may_add = action in _CREATE_ACTIONS and user.has_perm("django_cachex.add_key")  # ty: ignore[missing-union-attribute]
     if not (may_change or may_add):
         raise PermissionDenied
     # With only one of the two, the key's existence decides. ``has_key`` only
@@ -877,7 +877,7 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     except ValueError, TypeError:
         page = 1
 
-    may_view = request.user.has_perm("django_cachex.view_key") or request.user.has_perm("django_cachex.change_key")  # ty: ignore[unresolved-attribute]
+    may_view = request.user.has_perm("django_cachex.view_key") or request.user.has_perm("django_cachex.change_key")  # ty: ignore[missing-union-attribute]
 
     if request.method == "POST":
         action = request.POST.get("action")
@@ -938,7 +938,7 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     # interpolated into the help key, yielding an undefined-state page.
     create_type = requested_type if requested_type in {t.value for t in creatable_types(cache)} else ""
     # Materializing a key is an add, so create mode needs ``add_key``.
-    may_create = not key_exists and create_type and request.user.has_perm("django_cachex.add_key")  # ty: ignore[unresolved-attribute]
+    may_create = not key_exists and create_type and request.user.has_perm("django_cachex.add_key")  # ty: ignore[missing-union-attribute]
     if not (may_create or may_view):
         raise PermissionDenied
     if not key_exists:
@@ -1055,9 +1055,9 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     user = request.user
     # ``_check_post_permission`` rejects the same submissions; hiding the
     # controls keeps a view-only user from filling in a form that only 403s.
-    can_change = (key_exists or create_mode) and user.has_perm("django_cachex.change_key")  # ty: ignore[unresolved-attribute]
+    can_change = (key_exists or create_mode) and user.has_perm("django_cachex.change_key")  # ty: ignore[missing-union-attribute]
     can_mutate = can_change or create_mode
-    can_delete = key_exists and user.has_perm("django_cachex.delete_key")  # ty: ignore[unresolved-attribute]
+    can_delete = key_exists and user.has_perm("django_cachex.delete_key")  # ty: ignore[missing-union-attribute]
     can_edit_ttl = can_change and supports_ttl_edit(cache)
 
     context = admin.site.each_context(request)

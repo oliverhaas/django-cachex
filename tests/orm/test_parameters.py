@@ -1,7 +1,7 @@
 # Derived from django-cachalot 2.9.1 (BSD-3-Clause, Copyright (c) 2014-2016
 # Bertrand Bordage); see django_cachex/orm/LICENSE.
 
-import datetime
+import datetime as dt
 import json
 from decimal import Decimal
 from uuid import UUID
@@ -155,18 +155,18 @@ def test_ip_address(low, high):
 @pytest.mark.usefixtures("final_sql_check")
 def test_duration():
     with assert_num_queries(1):
-        Test.objects.create(name="test1", duration=datetime.timedelta(30))
+        Test.objects.create(name="test1", duration=dt.timedelta(30))
     with assert_num_queries(1):
-        Test.objects.create(name="test2", duration=datetime.timedelta(60))
+        Test.objects.create(name="test2", duration=dt.timedelta(60))
 
     qs = Test.objects.values_list("duration", flat=True).filter(duration__isnull=False).order_by("duration")
     assert_tables(qs, Test)
-    assert_query_cached(qs, [datetime.timedelta(30), datetime.timedelta(60)])
+    assert_query_cached(qs, [dt.timedelta(30), dt.timedelta(60)])
 
     with assert_num_queries(1):
-        Test.objects.get(duration=datetime.timedelta(30))
+        Test.objects.get(duration=dt.timedelta(30))
     with assert_num_queries(0):
-        Test.objects.get(duration=datetime.timedelta(30))
+        Test.objects.get(duration=dt.timedelta(30))
 
 
 @pytest.mark.django_db(transaction=True)
@@ -202,7 +202,7 @@ def test_now_is_not_cached():
 
 def test_param_key_tells_types_and_values_apart():
     values = [1, "1", 1.0, True, b"1", bytearray(b"1"), Decimal(1), Decimal("1.0"), None, "None", [1], (1,)]
-    values += [{"a": 1}, {"a": "1"}, datetime.date(2026, 1, 1), datetime.datetime(2026, 1, 1)]
+    values += [{"a": 1}, {"a": "1"}, dt.date(2026, 1, 1), dt.datetime(2026, 1, 1)]
     keys = [_param_key(value) for value in values]
     assert len(set(keys)) == len(keys), keys
 

@@ -1,6 +1,6 @@
 """Tests for basic cache operations: set, get, add, delete, get_many, set_many."""
 
-import datetime
+import datetime as dt
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -122,7 +122,7 @@ def test_accented_string(cache: RespCache):
 
 
 def test_dictionary_with_datetime(cache: RespCache):
-    timestamp = datetime.datetime.now()
+    timestamp = dt.datetime.now()
     data = {"user_id": 42, "created": timestamp, "label": "Test"}
     cache.set("dict_data", data)
     result = cache.get("dict_data")
@@ -681,7 +681,7 @@ async def test_aaccented_string(cache: RespCache):
 
 @pytest.mark.asyncio
 async def test_adictionary_with_datetime(cache: RespCache):
-    timestamp = datetime.datetime.now()
+    timestamp = dt.datetime.now()
     data = {"user_id": 42, "created": timestamp, "label": "Test"}
     await cache.aset("adict_data", data)
     result = await cache.aget("adict_data")

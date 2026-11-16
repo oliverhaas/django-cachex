@@ -86,7 +86,7 @@ def evict_generation(db_alias: str, table: str) -> None:
     store = orm_store()
     [table_key] = _table_keys(db_alias, [table])
     if isinstance(store, LocMemStore):
-        with store.cache._lock:  # ty: ignore[unresolved-attribute]
+        with store.cache._lock:  # ty: ignore[missing-attribute]
             store.state.generations.pop((db_alias, table_key), None)
     else:
         store.cache.delete(_generation_key(db_alias, table_key))
@@ -99,8 +99,8 @@ def corrupt_entry(queryset: Any) -> None:
     store = orm_store()
     if isinstance(store, LocMemStore):
         entry_key = store._entry_key(queryset.db, query_key)
-        with store.cache._lock:  # ty: ignore[unresolved-attribute]
-            store.cache._cache[entry_key] = b"garbage"  # ty: ignore[unresolved-attribute]
+        with store.cache._lock:  # ty: ignore[missing-attribute]
+            store.cache._cache[entry_key] = b"garbage"  # ty: ignore[missing-attribute]
         return
     assert isinstance(store, RespStore)
     entry_key = store.cache.make_and_validate_key(_entry_key(queryset.db, query_key))
