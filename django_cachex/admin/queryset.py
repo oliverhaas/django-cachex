@@ -235,7 +235,7 @@ class CacheAdminMixin:
             request.GET = request.GET.copy()  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
             del request.GET["help"]  # type: ignore[misc]
             extra_context["help_active"] = True
-        return super().changelist_view(request, extra_context)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        return super().changelist_view(request, extra_context)  # type: ignore[misc]  # ty: ignore[missing-attribute]
 
     # ------------------------------------------------------------------
     # Admin action
@@ -495,10 +495,10 @@ class TypeFilter(admin.SimpleListFilter):
 
 def _key_row(cache_name: str, user_key: str, ttl: int | None, key_type: KeyType | None) -> Key:
     key_obj = Key.from_cache_key(cache_name, user_key)
-    key_obj.ttl = ttl  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    key_obj.ttl = ttl  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
     if ttl is not None and ttl >= 0:
-        key_obj.ttl_expires_at = timezone.now() + timedelta(seconds=ttl)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-    key_obj.key_type = key_type  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        key_obj.ttl_expires_at = timezone.now() + timedelta(seconds=ttl)  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
+    key_obj.key_type = key_type  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
     return key_obj
 
 
@@ -529,26 +529,26 @@ def _pipelined_sizes(cache: Any, rows: list[Key]) -> None:
     since the ``Pipeline`` wrapper has no ``strlen``; a driver without one
     (glide batches differently) keeps the per-key STRLEN.
     """
-    collections = [(row, _SIZE_COMMANDS[row.key_type]) for row in rows if row.key_type in _SIZE_COMMANDS]  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    collections = [(row, _SIZE_COMMANDS[row.key_type]) for row in rows if row.key_type in _SIZE_COMMANDS]  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
     if collections:
         with cache.pipeline(transaction=False) as pipe:
             for row, command in collections:
                 getattr(pipe, command)(row.key_name)
             for (row, _command), size in zip(collections, pipe.execute(), strict=True):
-                row.key_size = size  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-    strings = [row for row in rows if row.key_type == KeyType.STRING]  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+                row.key_size = size  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
+    strings = [row for row in rows if row.key_type == KeyType.STRING]  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
     if not strings:
         return
     client = cache.get_client(write=False)
     if not hasattr(client, "pipeline"):
         for row in strings:
-            row.key_size = get_size(cache, row.key_name, KeyType.STRING)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            row.key_size = get_size(cache, row.key_name, KeyType.STRING)  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
         return
     with client.pipeline(transaction=False) as raw:
         for row in strings:
             raw.strlen(cache.make_and_validate_key(row.key_name))
         for row, size in zip(strings, raw.execute(), strict=True):
-            row.key_size = size  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            row.key_size = size  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
 
 
 def _describe_keys(cache: Any, cache_name: str, keys: list[str], type_filter: str) -> list[Key]:
@@ -578,7 +578,7 @@ def _describe_keys(cache: Any, cache_name: str, keys: list[str], type_filter: st
     # ``key_type`` is only a hint to ``scan()``; a backend that can't push it
     # down would otherwise return every key.
     if type_filter:
-        rows = [row for row in rows if row.key_type == type_filter]  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        rows = [row for row in rows if row.key_type == type_filter]  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
 
     if pipelined:
         try:
@@ -589,7 +589,7 @@ def _describe_keys(cache: Any, cache_name: str, keys: list[str], type_filter: st
             return rows
     for row in rows:
         with contextlib.suppress(Exception):
-            row.key_size = get_size(cache, row.key_name, row.key_type)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            row.key_size = get_size(cache, row.key_name, row.key_type)  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
     return rows
 
 
@@ -629,7 +629,7 @@ class KeyAdminMixin:
         it, so it is forwarded only when given.
         """
         kwargs = {} if action_location is None else {"action_location": action_location}
-        actions = super().get_actions(request, **kwargs)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        actions = super().get_actions(request, **kwargs)  # type: ignore[misc]  # ty: ignore[missing-attribute]
         actions.pop("delete_selected", None)
         return actions
 
@@ -789,8 +789,8 @@ class KeyAdminMixin:
             count = min(MAX_SCAN_COUNT, max(1, int(request.GET.get("count", 100))))
         except ValueError, TypeError:
             count = 100
-        request._cachex_cursor = cursor  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-        request._cachex_count = count  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        request._cachex_cursor = cursor  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
+        request._cachex_count = count  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
 
         mutable = request.GET.copy()
         for key in ("cursor", "count", "help"):
@@ -803,7 +803,7 @@ class KeyAdminMixin:
             carried.pop(key, None)
         extra_context["pagination_query"] = carried.urlencode()
 
-        return super().changelist_view(request, extra_context)  # type: ignore[misc]  # ty: ignore[unresolved-attribute]
+        return super().changelist_view(request, extra_context)  # type: ignore[misc]  # ty: ignore[missing-attribute]
 
     # ------------------------------------------------------------------
     # Admin action

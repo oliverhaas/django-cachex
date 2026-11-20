@@ -1,7 +1,7 @@
 """Freezing the results of ``cached_data()`` functions, which every caller in the process shares."""
 
 import dataclasses
-import datetime
+import datetime as dt
 from decimal import Decimal
 from types import MappingProxyType, NoneType
 from typing import Any
@@ -21,10 +21,10 @@ _LEAVES = frozenset(
         NoneType,
         bytes,
         Decimal,
-        datetime.date,
-        datetime.datetime,
-        datetime.time,
-        datetime.timedelta,
+        dt.date,
+        dt.datetime,
+        dt.time,
+        dt.timedelta,
         UUID,
     },
 )
@@ -44,14 +44,15 @@ def _mutable(value: Any) -> str | None:
     for cls, problem in _MUTABLE:
         if isinstance(value, cls):
             return problem
-    name = type(value).__name__
+    cls = type(value)
+    name = cls.__name__
     if isinstance(value, Model):
         return f"a {name} instance; return its field values, such as from values_list()"
     if isinstance(value, QuerySet | BaseManager):
         return f"a {name}; return a tuple of its field values, such as from values_list()"
-    if hasattr(type(value), "__next__"):
+    if hasattr(cls, "__next__"):
         return "an iterator; use a tuple"
-    if dataclasses.is_dataclass(value) and not isinstance(value, type) and not value.__dataclass_params__.frozen:
+    if dataclasses.is_dataclass(value) and not isinstance(value, type) and not cls.__dataclass_params__.frozen:
         return f"a {name}, a dataclass that is not frozen; use @dataclass(frozen=True)"
     return None
 

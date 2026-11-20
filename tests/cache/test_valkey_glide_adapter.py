@@ -2,7 +2,7 @@
 on interpreters without a glide wheel, e.g. free-threaded cp314t)."""
 
 import asyncio
-import datetime
+import datetime as dt
 import inspect
 import threading
 from collections import OrderedDict
@@ -603,39 +603,39 @@ def test_wrongtype_client_translates_unknown_command_on_await(mocker):
 
 def test_expire_converts_timedelta_to_seconds(mocker):
     adapter, client = _adapter(mocker)
-    adapter.expire("k", datetime.timedelta(minutes=5))
+    adapter.expire("k", dt.timedelta(minutes=5))
     assert client.expire.call_args[0][1] == 300
 
 
 def test_pexpire_converts_timedelta_to_milliseconds(mocker):
     adapter, client = _adapter(mocker)
-    adapter.pexpire("k", datetime.timedelta(seconds=1.5))
+    adapter.pexpire("k", dt.timedelta(seconds=1.5))
     assert client.pexpire.call_args[0][1] == 1500
 
 
 @pytest.mark.asyncio
 async def test_aexpire_converts_timedelta_to_seconds(mocker):
     adapter, client = _async_adapter(mocker)
-    await adapter.aexpire("k", datetime.timedelta(minutes=5))
+    await adapter.aexpire("k", dt.timedelta(minutes=5))
     assert client.expire.await_args[0][1] == 300
 
 
 @pytest.mark.asyncio
 async def test_apexpire_converts_timedelta_to_milliseconds(mocker):
     adapter, client = _async_adapter(mocker)
-    await adapter.apexpire("k", datetime.timedelta(seconds=2))
+    await adapter.apexpire("k", dt.timedelta(seconds=2))
     assert client.pexpire.await_args[0][1] == 2000
 
 
 def test_pipeline_expire_converts_timedelta(mocker):
     pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
-    pipe.expire("k", datetime.timedelta(minutes=5))
+    pipe.expire("k", dt.timedelta(minutes=5))
     assert pipe._batch.commands[-1][1] == ["k", "300"]
 
 
 def test_pipeline_pexpire_converts_timedelta(mocker):
     pipe = ValkeyGlidePipelineAdapter(mocker.Mock(), transaction=False)
-    pipe.pexpire("k", datetime.timedelta(seconds=1))
+    pipe.pexpire("k", dt.timedelta(seconds=1))
     assert pipe._batch.commands[-1][1] == ["k", "1000"]
 
 
@@ -1521,7 +1521,7 @@ def test_pipeline_delete_queues_unlink(mocker):
 
 def test_hexpire_builds_the_wire_form(mocker):
     adapter, client = _adapter(mocker)
-    adapter.hexpire("h", datetime.timedelta(minutes=2), "a", "b", gt=True)
+    adapter.hexpire("h", dt.timedelta(minutes=2), "a", "b", gt=True)
 
     assert client.custom_command.call_args[0][0] == [
         "HEXPIRE",
@@ -1537,14 +1537,14 @@ def test_hexpire_builds_the_wire_form(mocker):
 
 def test_hpexpire_converts_to_milliseconds(mocker):
     adapter, client = _adapter(mocker)
-    adapter.hpexpire("h", datetime.timedelta(seconds=1.5), "a")
+    adapter.hpexpire("h", dt.timedelta(seconds=1.5), "a")
 
     assert client.custom_command.call_args[0][0][:3] == ["HPEXPIRE", "h", "1500"]
 
 
 def test_hexpireat_renders_a_datetime_as_unix_seconds(mocker):
     adapter, client = _adapter(mocker)
-    when = datetime.datetime(2030, 1, 1, tzinfo=datetime.UTC)
+    when = dt.datetime(2030, 1, 1, tzinfo=dt.UTC)
 
     adapter.hexpireat("h", when, "a", nx=True)
 
@@ -1561,7 +1561,7 @@ def test_hexpireat_renders_a_datetime_as_unix_seconds(mocker):
 
 def test_hpexpireat_renders_a_datetime_as_unix_milliseconds(mocker):
     adapter, client = _adapter(mocker)
-    when = datetime.datetime(2030, 1, 1, tzinfo=datetime.UTC)
+    when = dt.datetime(2030, 1, 1, tzinfo=dt.UTC)
 
     adapter.hpexpireat("h", when, "a")
 

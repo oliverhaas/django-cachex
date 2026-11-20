@@ -3,7 +3,7 @@
 # Derived from django-cachalot 2.9.1 (BSD-3-Clause, Copyright (c) 2014-2016
 # Bertrand Bordage); see the LICENSE file in this directory.
 
-import datetime
+import datetime as dt
 import re
 from decimal import Decimal
 from hashlib import sha1
@@ -62,10 +62,10 @@ _REPR_KEYED_TYPES = frozenset(
         bytes,
         str,
         type(None),
-        datetime.date,
-        datetime.time,
-        datetime.datetime,
-        datetime.timedelta,
+        dt.date,
+        dt.time,
+        dt.datetime,
+        dt.timedelta,
         UUID,
     },
 )

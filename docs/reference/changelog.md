@@ -6,6 +6,12 @@
 
 - Data that many rows of a page need, such as the children of each parent, took a query per row or a `prefetch_related()`, and even a cached query builds a QuerySet and model instances, about 170 µs per read with client tracking. The decorator `cached_data(*tables_or_models, db_alias="default", maxsize=1024)` in `django_cachex.orm.api` holds the results of a function in the process, per arguments, until a write changes one of the declared tables. A hit reads the generations of the tables and returns the held result, in about 10 µs with client tracking, which sends no command. Results are frozen, since every caller shares them: a returned `dict` becomes a read-only mapping, and a list, set, model instance or QuerySet inside a result raises `TypeError`. An ORM read of a table the decorator does not declare emits `UndeclaredTableWarning`, and the result is not held. See [cached_data()](../user-guide/orm-cache.md#cached_data) and the [benchmark](benchmarks.md#cached_data).
 
+## 0.15.0 (November 2026)
+
+### Improvements
+
+- `S3Cache` stores each key as one object in an S3 Express One Zone or S3 Standard bucket, for values too large to keep in Valkey or Redis in bulk. It has `get()`, `set()`, `delete()`, `has_key()`, `get_many()`, `set_many()`, `delete_many()` and `clear()` with their async twins, and sends the requests of `get_many()` and `set_many()` in parallel. A `bytes` value skips the serializer, so the object holds those bytes, compressed if a compressor is set. An expired object reads as a miss, and a lifecycle rule removes it. `add()`, `get_or_set()`, `touch()`, `incr()` and `decr()` raise `NotSupportedError`. A request times out after 5 seconds and is retried twice within 10 seconds unless `OPTIONS` says otherwise. Install the `s3` extra. See [S3 Cache](../user-guide/s3.md).
+
 ## 0.14.1 (October 2026)
 
 ### Fixes

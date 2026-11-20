@@ -49,3 +49,14 @@ The adapter runs on the cp314 GIL build only, because valkey-glide publishes no
 free-threaded (cp314t) wheels. See
 [Configuration](../user-guide/configuration.md#valkey-glide) for its backends
 and setup.
+
+## S3 backend (optional)
+
+`S3Cache` needs the `s3` extra, which installs
+[obstore](https://developmentseed.org/obstore/) 0.12:
+
+```console
+uv add django-cachex[s3]
+```
+
+See [S3 Cache](../user-guide/s3.md).

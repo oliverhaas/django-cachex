@@ -73,7 +73,7 @@ def key_add_view(
             if exists:
                 messages.warning(request, f"Key '{key_name}' already exists.")
                 user = request.user
-                if user.has_perm("django_cachex.view_key") or user.has_perm("django_cachex.change_key"):  # ty: ignore[unresolved-attribute]
+                if user.has_perm("django_cachex.view_key") or user.has_perm("django_cachex.change_key"):  # ty: ignore[missing-union-attribute]
                     return redirect(key_detail_url(cache_name, key_name))
             else:
                 # ``quote()`` escapes a '?' in the key, so the URL has no query string yet.

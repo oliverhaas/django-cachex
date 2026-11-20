@@ -234,19 +234,19 @@ def can_flush(request: HttpRequest) -> bool:
     project sets ``CACHEX_ADMIN["ALLOW_FLUSH"]``. Then they need ``change_cache``.
     """
     admin_settings = getattr(settings, "CACHEX_ADMIN", None) or {}
-    return bool(admin_settings.get("ALLOW_FLUSH")) and request.user.has_perm("django_cachex.change_cache")  # ty: ignore[unresolved-attribute]
+    return bool(admin_settings.get("ALLOW_FLUSH")) and request.user.has_perm("django_cachex.change_cache")  # ty: ignore[missing-union-attribute]
 
 
 def can_view_caches(request: HttpRequest) -> bool:
     """Report whether ``request`` can open the cache list and the cache pages."""
     user = request.user
-    return user.has_perm("django_cachex.view_cache") or user.has_perm("django_cachex.change_cache")  # ty: ignore[unresolved-attribute]
+    return user.has_perm("django_cachex.view_cache") or user.has_perm("django_cachex.change_cache")  # ty: ignore[missing-union-attribute]
 
 
 def can_view_keys(request: HttpRequest) -> bool:
     """Report whether ``request`` can open the key list of an alias it can access."""
     user = request.user
-    return user.has_perm("django_cachex.view_key") or user.has_perm("django_cachex.change_key")  # ty: ignore[unresolved-attribute]
+    return user.has_perm("django_cachex.view_key") or user.has_perm("django_cachex.change_key")  # ty: ignore[missing-union-attribute]
 
 
 def _backend_class(alias: str) -> type | None:
@@ -260,7 +260,7 @@ def _backend_class(alias: str) -> type | None:
 
 def can_access_cache(request: HttpRequest, alias: str) -> bool:
     """Report whether ``request`` can use the keys of cache ``alias``."""
-    return request.user.has_perm(f"django_cachex.access_{alias}")  # ty: ignore[unresolved-attribute]
+    return request.user.has_perm(f"django_cachex.access_{alias}")  # ty: ignore[missing-union-attribute]
 
 
 def accessible_caches(request: HttpRequest) -> list[str]:
