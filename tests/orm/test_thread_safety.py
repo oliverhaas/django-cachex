@@ -1,11 +1,12 @@
 # Derived from django-cachalot 2.9.1 (BSD-3-Clause, Copyright (c) 2014-2016
 # Bertrand Bordage); see django_cachex/orm/LICENSE.
 
-from threading import Thread
+from threading import Event, Thread
 
 import pytest
 from django.db import connection, transaction
 
+from django_cachex.orm.api import cached_data
 from tests.orm.app.models import Test
 from tests.orm.utils import assert_num_queries
 
@@ -161,3 +162,38 @@ def test_concurrent_write_between_query_and_caching():
         assert Test.objects.first() is None
 
     assert Test.objects.first() == created[0]
+
+
+def test_cached_data_from_threads_during_writes():
+    @cached_data(Test, maxsize=2)
+    def names(variant):
+        return (variant, tuple(Test.objects.order_by("pk").values_list("name", flat=True)))
+
+    writing = Event()
+    writing.set()
+    errors = []
+    final = []
+
+    def read():
+        try:
+            while writing.is_set():
+                for variant in range(4):
+                    names(variant)
+            final.append([names(variant) for variant in range(4)])
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+        finally:
+            connection.close()
+
+    readers = [Thread(target=read) for _ in range(4)]
+    for reader in readers:
+        reader.start()
+    for number in range(20):
+        Test.objects.create(name=f"test{number}")
+    writing.clear()
+    for reader in readers:
+        reader.join()
+
+    rows = tuple(Test.objects.order_by("pk").values_list("name", flat=True))
+    assert errors == []
+    assert final == [[(variant, rows) for variant in range(4)]] * 4

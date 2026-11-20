@@ -135,12 +135,15 @@ class OrmSettings:
 
     def __init__(self) -> None:
         self.patched = False
+        # Counts the loads, so state built from the settings can tell it is out of date.
+        self.revision = 0
 
     def load(self) -> None:
         raw = {**DEFAULTS, **{k: v for k, v in user_settings().items() if k in DEFAULTS}}
         for name, value in raw.items():
             converter = CONVERTERS.get(name)
             setattr(self, name, value if converter is None else converter(value))
+        self.revision += 1
 
         if not self.patched:
             # Imported here because monkey_patch imports this module.

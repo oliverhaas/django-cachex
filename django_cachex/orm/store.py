@@ -52,6 +52,12 @@ class Store(Protocol):
 
     def generations(self, db_alias: str, table_keys: Sequence[str]) -> list[str] | None: ...
 
+    def generation_keys(self, db_alias: str, table_keys: Sequence[str]) -> list[Any]:
+        """The keys ``read_generations()`` takes; the same for every instance over the same cache settings."""
+        ...
+
+    def read_generations(self, generation_keys: list[Any]) -> list[str] | None: ...
+
 
 def get_store(cache_alias: str) -> Store | None:
     """Return the store over cache ``cache_alias``, or None if its backend cannot hold one."""
@@ -110,7 +116,7 @@ class RespStore:
             return adapter.read_many(keys)
         return self._run(("MGET", *keys))[0]
 
-    def _generation_keys(self, db_alias: str, table_keys: Sequence[str]) -> list[str]:
+    def generation_keys(self, db_alias: str, table_keys: Sequence[str]) -> list[str]:
         return [self.cache.make_and_validate_key(_generation_key(db_alias, k)) for k in table_keys]
 
     def _token(self, generation_keys: list[str], generations: list[Any]) -> str | None:
@@ -128,7 +134,7 @@ class RespStore:
         return b":".join(generations).decode()
 
     def lookup(self, db_alias: str, query_key: str, table_keys: Sequence[str]) -> Lookup:
-        generation_keys = self._generation_keys(db_alias, table_keys)
+        generation_keys = self.generation_keys(db_alias, table_keys)
         entry_key = self.cache.make_and_validate_key(_entry_key(db_alias, query_key))
         *generations, entry = self._read([*generation_keys, entry_key])
         token = self._token(generation_keys, generations)
@@ -163,13 +169,15 @@ class RespStore:
 
     def bump(self, db_alias: str, table_keys: Sequence[str]) -> None:
         # MSET also creates a missing generation, which no stored result can match.
-        pairs = [(key, _new_generation()) for key in self._generation_keys(db_alias, table_keys)]
+        pairs = [(key, _new_generation()) for key in self.generation_keys(db_alias, table_keys)]
         self._run(("MSET", *itertools.chain.from_iterable(pairs)))
 
-    def generations(self, db_alias: str, table_keys: Sequence[str]) -> list[str] | None:
-        generation_keys = self._generation_keys(db_alias, table_keys)
+    def read_generations(self, generation_keys: list[str]) -> list[str] | None:
         token = self._token(generation_keys, self._read(generation_keys))
         return None if token is None else token.split(":")
+
+    def generations(self, db_alias: str, table_keys: Sequence[str]) -> list[str] | None:
+        return self.read_generations(self.generation_keys(db_alias, table_keys))
 
 
 # Generations in a local memory cache are (epoch, count) pairs. A new generation takes a new
@@ -215,7 +223,7 @@ class LocMemStore:
         return _ttl(self.cache, timeout)
 
     @staticmethod
-    def _keys(db_alias: str, table_keys: Sequence[str]) -> list[tuple[str, str]]:
+    def generation_keys(db_alias: str, table_keys: Sequence[str]) -> list[tuple[str, str]]:
         return [(db_alias, k) for k in table_keys]
 
     def _entry_key(self, db_alias: str, query_key: str) -> str:
@@ -224,7 +232,7 @@ class LocMemStore:
     def lookup(self, db_alias: str, query_key: str, table_keys: Sequence[str]) -> Lookup:
         cache: Any = self.cache
         entry_key = self._entry_key(db_alias, query_key)
-        keys = self._keys(db_alias, table_keys)
+        keys = self.generation_keys(db_alias, table_keys)
         with cache._lock:
             token = self.state.current(keys)
             raw = cache._cache.get(entry_key)
@@ -258,9 +266,12 @@ class LocMemStore:
     def bump(self, db_alias: str, table_keys: Sequence[str]) -> None:
         cache: Any = self.cache
         with cache._lock:
-            self.state.bump(self._keys(db_alias, table_keys))
+            self.state.bump(self.generation_keys(db_alias, table_keys))
 
-    def generations(self, db_alias: str, table_keys: Sequence[str]) -> list[str]:
+    def read_generations(self, generation_keys: list[tuple[str, str]]) -> list[str]:
         cache: Any = self.cache
         with cache._lock:
-            return [f"{epoch}.{count}" for epoch, count in self.state.current(self._keys(db_alias, table_keys))]
+            return [f"{epoch}.{count}" for epoch, count in self.state.current(generation_keys)]
+
+    def generations(self, db_alias: str, table_keys: Sequence[str]) -> list[str]:
+        return self.read_generations(self.generation_keys(db_alias, table_keys))

@@ -3,6 +3,7 @@
 import itertools
 import random
 import time
+import warnings
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from functools import partial
@@ -15,7 +16,7 @@ from django.core.management import call_command
 from django.db import connection, transaction
 from django.db.models import F
 
-from benchmarks.ormbench.models import Counter, Item, Legacy, Note, Threshold
+from benchmarks.ormbench.models import Child, Counter, Item, Legacy, Note, Parent, Threshold
 from benchmarks.ormbench.shared import COMMITTED, PHASE, READY, RUN, STOP, WAIT
 
 ITEMS = 1000
@@ -218,6 +219,61 @@ def sizes(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def cached_data(args: dict[str, Any]) -> dict[str, Any]:  # noqa: C901 (the ways it times are closures over the rows)
+    """Read the children of ``parents`` parents four ways, and time a single hit of a ``cached_data()`` function.
+
+    The ways: a query per parent, ``prefetch_related()`` (which reads the parents too), a ``cached_data()``
+    function called per parent, and one returning a map from each parent to its children.
+    """
+    # Only the cachex contenders install the ORM cache app.
+    from django_cachex.orm import api
+    from django_cachex.orm.exceptions import UndeclaredTableWarning
+
+    # An undeclared read would leave every call uncached and the timings meaningless.
+    warnings.simplefilter("error", UndeclaredTableWarning)
+    ops, warmup = args["ops"], args["warmup"]
+    parents = Parent.objects.bulk_create(Parent() for _ in range(args["parents"]))
+    Child.objects.bulk_create(Child(parent=parent) for parent in parents for _ in range(2))
+
+    @api.cached_data(Child)
+    def child_ids(parent_id: int) -> tuple[int, ...]:
+        return tuple(Child.objects.filter(parent_id=parent_id).order_by("pk").values_list("pk", flat=True))
+
+    @api.cached_data(Child)
+    def child_ids_by_parent() -> dict[int, tuple[int, ...]]:
+        ids: dict[int, list[int]] = {}
+        for parent_id, pk in Child.objects.order_by("pk").values_list("parent_id", "pk"):
+            ids.setdefault(parent_id, []).append(pk)
+        return {parent_id: tuple(group) for parent_id, group in ids.items()}
+
+    def query_per_parent() -> None:
+        for parent in parents:
+            list(parent.child_set.all())
+
+    def prefetch() -> None:
+        for parent in Parent.objects.prefetch_related("child_set"):
+            list(parent.child_set.all())
+
+    def call_per_parent() -> None:
+        for parent in parents:
+            child_ids(parent.pk)
+
+    def one_map() -> None:
+        ids = child_ids_by_parent()
+        for parent in parents:
+            ids.get(parent.pk, ())
+
+    ways = {
+        "query per parent": query_per_parent,
+        "prefetch": prefetch,
+        "call per parent": call_per_parent,
+        "one map": one_map,
+    }
+    result = {name: _timings(call, ops, warmup) for name, call in ways.items()}
+    result["hit"] = _timings(partial(child_ids, parents[0].pk), args["hit_ops"], warmup)
+    return result
+
+
 def mixed(args: dict[str, Any]) -> dict[str, Any]:
     """Read ``rows`` items by one of ``keys`` queries, or with probability ``write_share`` update a random item."""
     rng = random.Random(args["seed"])
@@ -266,6 +322,7 @@ ROLES: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "race_writer": race_writer,
     "latency": latency,
     "sizes": sizes,
+    "cached_data": cached_data,
     "mixed": mixed,
     "migrate_noop": migrate_noop,
 }
