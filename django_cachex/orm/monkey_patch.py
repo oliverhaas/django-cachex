@@ -133,13 +133,16 @@ def _patch_read(original: Callable[..., Any]) -> Callable[..., Any]:
             ):
                 return _read(compiler, result_type, execute)
             if (
-                connection.alias not in orm_settings.DATABASES
-                and not isinstance(compiler, WRITE_COMPILERS)
+                not isinstance(compiler, WRITE_COMPILERS)
                 and (recording := RECORDING.get()) is not None
                 and (meta := compiler.query.get_meta())
             ):
-                # Writes to that database do not change any generation, so the result must not be held.
-                recording.reads.add((connection.alias, meta.db_table))
+                if connection.alias not in orm_settings.DATABASES:
+                    # Writes to that database do not change any generation, so the result must not be held.
+                    recording.reads.add((connection.alias, meta.db_table))
+                elif not getattr(LOCAL_STORAGE, "orm_cache_enabled", True):
+                    # A read in orm_cache_disabled() skips _read(), which finds its tables, so the result must not be held.
+                    recording.uncachable.add(meta.db_table)
             return execute()
         finally:
             setattr(connection, _COMPILING, was_compiling)

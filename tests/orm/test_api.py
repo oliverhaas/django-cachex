@@ -378,6 +378,11 @@ def test_cached_data_accepts_frozen_results():
     assert f() == (Row("a", (Pair(1, "b"),)), frozenset({2}), MappingProxyType({"c": (Decimal(3), None)}))
 
 
+def count_users_with_the_cache_disabled():
+    with orm_cache_disabled():
+        return User.objects.count()
+
+
 @pytest.mark.parametrize(
     ("read", "options", "reported"),
     [
@@ -399,6 +404,12 @@ def test_cached_data_accepts_frozen_results():
             {"UNCACHABLE_TABLES": ("auth_user",)},
             "auth_user, which the ORM cache does not cache",
             id="uncachable",
+        ),
+        pytest.param(
+            count_users_with_the_cache_disabled,
+            {},
+            "auth_user, which the ORM cache does not cache",
+            id="orm_cache_disabled()",
         ),
     ],
 )
