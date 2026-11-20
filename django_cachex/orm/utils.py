@@ -44,7 +44,10 @@ if TYPE_CHECKING:
 
 
 class UncachableQuery(Exception):  # noqa: N818
-    pass
+    def __init__(self, *args: object, tables: Iterable[str] = ()) -> None:
+        super().__init__(*args)
+        # The tables UNCACHABLE_TABLES or ONLY_CACHABLE_TABLES rule out, if that is why.
+        self.tables = frozenset(tables)
 
 
 # Parameters are keyed by their type and whole value, which repr() shows for
@@ -169,6 +172,11 @@ def known_tables() -> set[str]:
     )
 
 
+def _named_in(name: str, lowercased_sql: str) -> bool:
+    # Whole names only: ``shop_order`` is not found inside ``shop_orderline``.
+    return name in lowercased_sql and re.search(rf"(?<!\w){re.escape(name)}(?!\w)", lowercased_sql) is not None
+
+
 def _get_tables_from_sql(
     connection: BaseDatabaseWrapper,
     lowercased_sql: str,
@@ -176,13 +184,11 @@ def _get_tables_from_sql(
     enable_quote: bool = False,
 ) -> set[str]:
     """Return the tables named in the final SQL of a query."""
-    tables = set()
-    for table in known_tables():
-        name = (connection.ops.quote_name(table) if enable_quote else table).lower()
-        # Whole names only: ``shop_order`` is not found inside ``shop_orderline``.
-        if name in lowercased_sql and re.search(rf"(?<!\w){re.escape(name)}(?!\w)", lowercased_sql):
-            tables.add(table)
-    return tables
+    return {
+        table
+        for table in known_tables()
+        if _named_in((connection.ops.quote_name(table) if enable_quote else table).lower(), lowercased_sql)
+    }
 
 
 def are_all_cachable(tables: set[str]) -> bool:
@@ -298,7 +304,7 @@ def _get_tables(db_alias: str, query: Query, compiler: SQLCompiler | None = None
         # The ORM quotes the tables it names; raw SQL does not have to.
         tables |= _get_tables_from_sql(connections[db_alias], final_sql, enable_quote=not finder.raw_sql)
     if not are_all_cachable(tables):
-        raise UncachableQuery
+        raise UncachableQuery(tables=tables - filter_cachable(tables))
     return tables
 
 
@@ -333,7 +339,7 @@ def query_key_and_tables(compiler: SQLCompiler, result_type: str) -> tuple[str, 
     if meta := query.get_meta():
         tables.add(meta.db_table)
     if not are_all_cachable(tables):
-        raise UncachableQuery
+        raise UncachableQuery(tables=tables - filter_cachable(tables))
     # One set of __in values gets one key in any order, such as the order prefetch_related() passes.
     _sort_in_values(query.where)
     digest = query_digest(compiler)
@@ -347,6 +353,16 @@ def query_key_and_tables(compiler: SQLCompiler, result_type: str) -> tuple[str, 
         raise TypeError(msg)
     # A SINGLE and a MULTI query can share their SQL but not their result.
     return f"{query_key}:{result_type}", tables
+
+
+def tables_in_sql(compiler: SQLCompiler, tables: Iterable[str]) -> list[str]:
+    """Return those of ``tables`` that the SQL of ``compiler`` names, once query_key_and_tables() compiled it.
+
+    A join the ORM trimmed, such as the one to the target of a foreign key filtered by its id, keeps its table
+    among the tables of the query but out of its SQL.
+    """
+    sql = getattr(compiler, _GENERATED_SQL)
+    return [table for table in tables if _named_in(table.lower(), sql)]
 
 
 def models_of_tables(tables: set[str]) -> list[type[Model]]:

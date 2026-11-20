@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Improvements
+
+- Data that many rows of a page need, such as the children of each parent, took a query per row or a `prefetch_related()`, and even a cached query builds a QuerySet and model instances, about 170 µs per read with client tracking. The decorator `cached_data(*tables_or_models, db_alias="default", maxsize=1024)` in `django_cachex.orm.api` holds the results of a function in the process, per arguments, until a write changes one of the declared tables. A hit reads the generations of the tables and returns the held result, in about 10 µs with client tracking, which sends no command. Results are frozen, since every caller shares them: a returned `dict` becomes a read-only mapping, and a list, set, model instance or QuerySet inside a result raises `TypeError`. An ORM read of a table the decorator does not declare emits `UndeclaredTableWarning`, and the result is not held. See [cached_data()](../user-guide/orm-cache.md#cached_data) and the [benchmark](benchmarks.md#cached_data).
+
 ## 0.14.1 (October 2026)
 
 ### Fixes
