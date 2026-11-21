@@ -19,13 +19,23 @@ clock: Final[Callable[[], float]] = (
 )
 
 
+# The decoded value of a copy no read decoded yet, of one read once, and of one that each read decodes.
+# The second read checks whether to keep its decoded value, so a copy read once costs no check.
+UNREAD: Final = object()
+READ_ONCE: Final = object()
+NOT_KEPT: Final = object()
+
+
 class Copy(NamedTuple):
     """A value read from the primary; ``value`` None marks a key the server did not have."""
 
     value: bytes | None
     # clock() at which the key expires on the server at the earliest, None without a TTL.
     deadline: float | None
+    # Counts the decoded value too, after it is kept.
     size: int
+    # Kept when no caller can change it, so that every read returns this object.
+    decoded: Any = UNREAD
 
 
 class LocalStore:
@@ -140,9 +150,38 @@ class LocalStore:
                 self._bytes -= old.size
             self._copies[key] = Copy(value, deadline, size)
             self._bytes += size
-            while self._bytes > self.max_bytes:
-                _, evicted = self._copies.popitem(last=False)
-                self._bytes -= evicted.size
+            self._evict()
+
+    def kept(self, key: str, value: bytes) -> Any:
+        """Return the decoded value kept with the copy of ``key``, or READ_ONCE if that copy is to be checked.
+
+        NOT_KEPT if the copy does not hold ``value``, the very object a read returned, or no read is to keep it.
+        """
+        with self._lock:
+            copy = self._copies.get(key)
+            if copy is None or copy.value is not value:
+                return NOT_KEPT
+            if copy.decoded is UNREAD:
+                self._copies[key] = copy._replace(decoded=READ_ONCE)
+                return NOT_KEPT
+            return copy.decoded
+
+    def keep(self, key: str, value: bytes, decoded: Any, size: int | None) -> None:
+        """Keep ``decoded``, of ``size`` bytes, with the copy of ``key`` if that copy still holds ``value``.
+
+        ``size`` None, for a value a caller can change or one too large, marks the copy NOT_KEPT, as does a size
+        that takes the copy above an eighth of ``max_bytes``.
+        """
+        with self._lock:
+            copy = self._copies.get(key)
+            if copy is None or copy.value is not value or copy.decoded is not READ_ONCE:
+                return
+            if size is None or copy.size + size > self.max_bytes // 8:
+                self._copies[key] = copy._replace(decoded=NOT_KEPT)
+                return
+            self._copies[key] = copy._replace(decoded=decoded, size=copy.size + size)
+            self._bytes += size
+            self._evict()
 
     def stats(self) -> dict[str, Any]:
         with self._lock:
@@ -161,6 +200,11 @@ class LocalStore:
         if copy is not None:
             self._bytes -= copy.size
         self._pending.pop(key, None)
+
+    def _evict(self) -> None:
+        while self._bytes > self.max_bytes:
+            _, evicted = self._copies.popitem(last=False)
+            self._bytes -= evicted.size
 
     def _clear(self) -> None:
         self._copies.clear()

@@ -6,11 +6,12 @@ import threading
 from typing import TYPE_CHECKING, Any
 
 from django_cachex.stampede import should_recompute_remaining
+from django_cachex.tracking.immutable import immutable_size
 from django_cachex.tracking.listener import Listener
-from django_cachex.tracking.store import LocalStore, clock
+from django_cachex.tracking.store import NOT_KEPT, READ_ONCE, LocalStore, clock
 
 if TYPE_CHECKING:
-    from collections.abc import Hashable, Iterable, Sequence
+    from collections.abc import Callable, Hashable, Iterable, Sequence
 
     from django_cachex.stampede import StampedeConfig
     from django_cachex.tracking.config import TrackingConfig
@@ -95,6 +96,21 @@ class Tracker:
             for index, (_, value, _) in zip(misses, fetched, strict=True):
                 values[index] = value
         return [values[index] for index in range(len(keys))]
+
+    def decoded(self, key: str | bytes, value: bytes, decode: Callable[[bytes], Any]) -> Any:
+        """Return ``decode(value)`` for a value a read of ``key`` returned, shared with every read of its copy.
+
+        Only a decoded value no caller can change is shared; any other is decoded for each read.
+        """
+        skey = store_key(key)
+        kept = self.store.kept(skey, value)
+        if kept is NOT_KEPT:
+            return decode(value)
+        if kept is not READ_ONCE:
+            return kept
+        decoded = decode(value)
+        self.store.keep(skey, value, decoded, immutable_size(decoded, self.store.max_bytes // 8))
+        return decoded
 
     def has_key(self, inner: Any, key: str | bytes, stampede: StampedeConfig | None) -> bool:
         if self.listener.drain():
@@ -218,13 +234,16 @@ if hasattr(os, "register_at_fork"):
 
 
 def registry_key(
-    adapter_class: type,
+    backend: type,
     servers: Sequence[str],
     options: dict[str, Any],
     config: TrackingConfig,
 ) -> Hashable:
-    """Caches with equal keys share one tracker: the same driver, servers, options and tracking settings."""
-    return (adapter_class, tuple(servers), repr(sorted(options.items())), config)
+    """Caches with equal keys share one tracker: the same backend, servers, options and tracking settings.
+
+    Sharing the backend and its options, they decode a value alike, so they can share its decoded value.
+    """
+    return (backend, tuple(servers), repr(sorted(options.items())), config)
 
 
 def get_tracker(key: Hashable, adapter: Any, config: TrackingConfig) -> Tracker | None:

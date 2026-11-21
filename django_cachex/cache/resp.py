@@ -282,7 +282,7 @@ class RespCache(ValueCodec, BaseCachex):
         adapter = adapter_class(self._servers, **self._options)
         if self._tracking is None:
             return adapter
-        key = registry_key(adapter_class, self._servers, self._options, self._tracking)
+        key = registry_key(type(self), self._servers, self._options, self._tracking)
         return cast("RespAdapterProtocol", TrackedAdapter(adapter, self._tracking, key))
 
     def encode(self, value: Any) -> bytes | int:
@@ -582,6 +582,8 @@ class RespCache(ValueCodec, BaseCachex):
         value = self.adapter.get(key, stampede_prevention=stampede_prevention)
         if value is None:
             return default
+        if self._tracking is not None:
+            return cast("TrackedAdapter", self.adapter).decoded(key, value, self.decode)
         return self.decode(value)
 
     @override
@@ -770,6 +772,9 @@ class RespCache(ValueCodec, BaseCachex):
         """Retrieve many keys."""
         key_map = {self.make_and_validate_key(key, version=version): key for key in keys}
         ret = self.adapter.get_many(list(key_map), stampede_prevention=stampede_prevention)
+        if self._tracking is not None:
+            adapter = cast("TrackedAdapter", self.adapter)
+            return {key_map[k]: adapter.decoded(k, v, self.decode) for k, v in ret.items()}
         return {key_map[k]: self.decode(v) for k, v in ret.items()}
 
     @override

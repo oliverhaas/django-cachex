@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Improvements
+
+- With `OPTIONS["tracking"]`, every `get()` of a local copy decoded the value again, so a tuple of 1000 rows took about 400 µs per read. From the second read of a copy on, `get()` and `get_many()` now return one shared object when no caller can change it, and such a read takes about 6 µs. This covers strings, numbers, dates, `Decimal`, `UUID`, enum members, tuples, frozensets, frozen dataclasses, named tuples, and from Python 3.15 `frozendict`, as long as everything they hold qualifies too. Lists, dicts, sets, model instances and anything that holds one are still decoded for each read. `max_bytes` now also counts the kept values, so the same setting can keep fewer copies. Aliases with different `BACKEND` classes no longer share a tracking connection. See [Decoded values](../user-guide/client-tracking.md#decoded-values).
+
 ## 0.15.0 (November 2026)
 
 ### Improvements
