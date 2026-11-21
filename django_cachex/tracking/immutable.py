@@ -1,4 +1,4 @@
-"""Which decoded values no caller can change, so that every read of a copy can return the same object."""
+"""Which decoded values a copy can keep: those no caller can change, and dicts, lists and sets of them."""
 
 import builtins
 import dataclasses
@@ -49,6 +49,9 @@ if (_frozendict := getattr(builtins, "frozendict", None)) is not None:
 _LEAVES: Final = frozenset(cls for cls, kind in _KINDS.items() if kind == _LEAF)
 _UNSET: Final = object()
 
+# Kept when their items qualify. Each read gets a shallow copy: its own container over the shared items.
+COPIED: Final = frozenset((dict, list, set))
+
 
 def _adds_no_state(cls: type) -> bool:
     """Return whether ``cls`` gives its instances no attributes: its ``__slots__`` hold at most ``__weakref__``."""
@@ -78,7 +81,20 @@ def _kind(cls: type) -> int | None:
     return kind
 
 
-def immutable_size(value: Any, limit: int) -> int | None:
+def kept_size(value: Any, limit: int) -> int | None:
+    """Return the bytes ``value`` takes kept with its copy; None if it cannot be kept, or above ``limit``.
+
+    It can be kept if no caller can change it, or if it is a dict, list or set whose items no caller can change.
+    """
+    cls = value.__class__
+    if cls not in COPIED:
+        return _immutable_size(value, limit)
+    items = (*value.keys(), *value.values()) if cls is dict else tuple(value)
+    size = _immutable_size(items, limit)
+    return None if size is None else size - sys.getsizeof(items) + sys.getsizeof(value)
+
+
+def _immutable_size(value: Any, limit: int) -> int | None:
     """Return the bytes ``value`` and its parts take; None if a caller can change any of them, or above ``limit``.
 
     A part reached twice counts twice. ``limit`` also ends a cycle, which only object.__setattr__() can close.

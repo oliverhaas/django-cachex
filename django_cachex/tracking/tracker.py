@@ -6,7 +6,7 @@ import threading
 from typing import TYPE_CHECKING, Any
 
 from django_cachex.stampede import should_recompute_remaining
-from django_cachex.tracking.immutable import immutable_size
+from django_cachex.tracking.immutable import COPIED, kept_size
 from django_cachex.tracking.listener import Listener
 from django_cachex.tracking.store import NOT_KEPT, READ_ONCE, LocalStore, clock
 
@@ -98,18 +98,24 @@ class Tracker:
         return [values[index] for index in range(len(keys))]
 
     def decoded(self, key: str | bytes, value: bytes, decode: Callable[[bytes], Any]) -> Any:
-        """Return ``decode(value)`` for a value a read of ``key`` returned, shared with every read of its copy.
+        """Return ``decode(value)`` for a value a read of ``key`` returned.
 
-        Only a decoded value no caller can change is shared; any other is decoded for each read.
+        Every read of a copy shares a decoded value no caller can change, and gets a shallow copy of a dict, list
+        or set of such values. Any other value is decoded for each read.
         """
         skey = store_key(key)
         kept = self.store.kept(skey, value)
         if kept is NOT_KEPT:
             return decode(value)
         if kept is not READ_ONCE:
-            return kept
+            return kept.copy() if kept.__class__ in COPIED else kept
         decoded = decode(value)
-        self.store.keep(skey, value, decoded, immutable_size(decoded, self.store.max_bytes // 8))
+        size = kept_size(decoded, self.store.max_bytes // 8)
+        kept = decoded
+        if size is not None and decoded.__class__ in COPIED:
+            # The caller can change the container it gets, so the copy keeps another one.
+            kept = decoded.copy()
+        self.store.keep(skey, value, kept, size)
         return decoded
 
     def has_key(self, inner: Any, key: str | bytes, stampede: StampedeConfig | None) -> bool:

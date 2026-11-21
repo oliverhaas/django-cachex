@@ -34,7 +34,7 @@ class Copy(NamedTuple):
     deadline: float | None
     # Counts the decoded value too, after it is kept.
     size: int
-    # Kept when no caller can change it, so that every read returns this object.
+    # Kept when no caller can change it, so that every read returns this object or a shallow copy of it.
     decoded: Any = UNREAD
 
 

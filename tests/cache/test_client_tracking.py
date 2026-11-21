@@ -37,7 +37,7 @@ from django_cachex.script import keys_only_pre
 from django_cachex.tracking import listener as listener_module
 from django_cachex.tracking import tracker as tracker_module
 from django_cachex.tracking.adapter import PIPELINE_READ_METHODS, READ_COMMANDS, READ_METHODS
-from django_cachex.tracking.immutable import immutable_size
+from django_cachex.tracking.immutable import kept_size
 from django_cachex.tracking.listener import Listener
 from django_cachex.tracking.resp3 import NEED_MORE, ErrorReply, Map, Parser, ProtocolError, Push, Set, SimpleString
 from django_cachex.tracking.store import ENTRY_OVERHEAD, NOT_KEPT, READ_ONCE, LocalStore
@@ -497,7 +497,7 @@ def _with_attribute(value: Any, name: str, attribute: Any) -> Any:
     return value
 
 
-IMMUTABLE = [
+KEPT = [
     "text",
     b"bytes",
     7,
@@ -521,11 +521,15 @@ IMMUTABLE = [
     _Color.RED,
     _Frozen("a", (1, 2)),
     _FrozenSlots("a"),
+    [1, ("a", 2)],
+    {"a": (1, 2)},
+    {1, "a"},
 ]
 MUTABLE = [
-    [1],
-    {"a": 1},
-    {1},
+    [[1]],
+    {"a": [1]},
+    [{1}],
+    collections.OrderedDict(a=1),
     bytearray(b"x"),
     (1, [2]),
     _Subpoint(1, 2),
@@ -541,39 +545,45 @@ def _type_name(value: Any) -> str:
     return type(value).__name__
 
 
-@pytest.mark.parametrize("value", IMMUTABLE, ids=_type_name)
-def test_an_immutable_value_is_sized(value):
-    assert immutable_size(value, 1 << 20) is not None
+@pytest.mark.parametrize("value", KEPT, ids=_type_name)
+def test_a_value_a_copy_can_keep_is_sized(value):
+    assert kept_size(value, 1 << 20) is not None
 
 
 @pytest.mark.parametrize("value", MUTABLE, ids=_type_name)
 def test_a_value_a_caller_can_change_is_not_sized(value):
-    assert immutable_size(value, 1 << 20) is None
+    assert kept_size(value, 1 << 20) is None
 
 
-def test_the_size_counts_every_part():
-    value = ("text", (1, 2.5))
-
-    assert immutable_size(value, 1 << 20) == sum(map(sys.getsizeof, [value, "text", value[1], 1, 2.5]))
+@pytest.mark.parametrize(
+    ("value", "parts"),
+    [
+        (("text", (1, 2.5)), ["text", (1, 2.5), 1, 2.5]),
+        ({"a": (1, 2.5)}, ["a", (1, 2.5), 1, 2.5]),
+    ],
+    ids=_type_name,
+)
+def test_the_size_counts_every_part(value, parts):
+    assert kept_size(value, 1 << 20) == sum(map(sys.getsizeof, [value, *parts]))
 
 
 def test_a_value_above_the_limit_is_not_sized():
     value = tuple(range(100))
 
-    assert immutable_size(value, sys.getsizeof(value)) is None
+    assert kept_size(value, sys.getsizeof(value)) is None
 
 
 def test_a_cycle_through_a_frozen_dataclass_ends_at_the_limit():
     node = _Frozen("a")
     _with_attribute(node, "tags", (node,))
 
-    assert immutable_size(node, 1 << 20) is None
+    assert kept_size(node, 1 << 20) is None
 
 
 @pytest.mark.skipif(FROZENDICT is None, reason="frozendict is a builtin from Python 3.15")
 @pytest.mark.parametrize(("items", "immutable"), [({"a": (1, 2)}, True), ({"a": [1]}, False)])
 def test_a_frozendict_is_immutable_when_its_values_are(items, immutable):
-    assert (immutable_size(FROZENDICT(items), 1 << 20) is not None) is immutable
+    assert (kept_size(FROZENDICT(items), 1 << 20) is not None) is immutable
 
 
 @pytest.mark.skipif(sys.version_info < (3, 15), reason="a tuple subclass takes non-empty __slots__ from Python 3.15")
@@ -584,7 +594,7 @@ def test_a_tuple_subclass_with_slots_is_not_sized():
     value = Slotted((1,))
     value.extra = []
 
-    assert immutable_size(value, 1 << 20) is None
+    assert kept_size(value, 1 << 20) is None
 
 
 DB = 15
@@ -722,6 +732,18 @@ def test_reads_of_a_copy_share_its_decoded_immutable_value(read, tracked):
 
     assert read(tracked) is kept
     assert kept == ((1, "a"), (2, "b"))
+
+
+@pytest.mark.parametrize("read", SHARED_READS)
+def test_each_read_of_a_kept_list_gets_its_own_list_over_shared_items(read, tracked):
+    tracked.set("k", [(1, "a"), (2, "b")])
+    read(tracked)
+    read(tracked).append((3, "c"))
+    read(tracked).append((4, "d"))
+    value = read(tracked)
+
+    assert value == [(1, "a"), (2, "b")]
+    assert value[0] is read(tracked)[0]
 
 
 def test_a_backend_that_decodes_otherwise_keeps_its_own_decoded_values(build, plain):

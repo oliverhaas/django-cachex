@@ -370,7 +370,8 @@ class TrackedAdapter:
     def decoded(self, key: Any, value: bytes, decode: Callable[[bytes], Any]) -> Any:
         """Return ``decode(value)`` for a value ``get()`` or ``get_many()`` returned for ``key``.
 
-        A decoded value no caller can change is kept with the copy, and every read of the copy returns it.
+        A decoded value no caller can change is kept with the copy, and every read of the copy returns it. A dict,
+        list or set of such values is kept too, and every read gets a shallow copy of it.
         """
         tracker = _tracker.find_tracker(self._registry_key) if self._config.covers(key) else None
         if tracker is None:

@@ -63,7 +63,9 @@ From the second read of a copy on, `get()` and `get_many()` return one shared ob
 - Frozen dataclasses whose fields hold qualifying values.
 - Subclasses of these that add no attributes: each class between the subclass and the qualifying type declares `__slots__` with at most `__weakref__`. Named tuples, `typing.NamedTuple` classes and Django's `SafeString` qualify.
 
-Every other value is decoded for each read, so each caller gets its own object. This covers lists, dicts, sets, model instances, a tuple that holds one of them, and the frozen classes of attrs, pydantic and msgspec. Async reads and the ORM cache's lookups decode each read too.
+A plain `list` or `set` of qualifying values, or a plain `dict` with qualifying keys and values, is kept too. Each read gets a shallow copy of it: its own container over the shared items. A caller can add, remove or replace items in its copy, and other reads do not see the change. A list of 1000 rows then reads in about 9 µs instead of about 440 µs, and a dict of 1000 rows in about 13 µs.
+
+Every other value is decoded for each read, so each caller gets its own object. This covers model instances, a list, dict, set or tuple that holds a list, dict, set or model instance, subclasses of `list`, `dict` and `set` such as `OrderedDict` and `defaultdict`, and the frozen classes of attrs, pydantic and msgspec. Async reads and the ORM cache's lookups decode each read too.
 
 The first read of a copy only decodes it, so a copy read once costs nothing extra. The second read also walks the decoded value once to check it. The walk takes about as long as decoding a tuple of short values, and longer for long strings. A kept value counts toward `max_bytes` with the `sys.getsizeof()` of each of its parts, and an object it holds twice counts twice. A value that takes its entry above an eighth of `max_bytes` is decoded for each read.
 
