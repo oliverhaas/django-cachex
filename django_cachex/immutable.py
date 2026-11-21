@@ -1,4 +1,4 @@
-"""Which decoded values a copy can keep: those no caller can change, and dicts, lists and sets of them."""
+"""Which values a cache can keep as objects: those no caller can change, and dicts, lists and sets of them."""
 
 import builtins
 import dataclasses
@@ -52,6 +52,9 @@ _UNSET: Final = object()
 # Kept when their items qualify. Each read gets a shallow copy: its own container over the shared items.
 COPIED: Final = frozenset((dict, list, set))
 
+# can_keep() keeps no value of more parts. The bound also ends a cycle, which only object.__setattr__() can close.
+_MAX_PARTS: Final = 1 << 20
+
 
 def _adds_no_state(cls: type) -> bool:
     """Return whether ``cls`` gives its instances no attributes: its ``__slots__`` hold at most ``__weakref__``."""
@@ -87,20 +90,40 @@ def kept_size(value: Any, limit: int) -> int | None:
     It can be kept if no caller can change it, or if it is a dict, list or set whose items no caller can change.
     """
     cls = value.__class__
+    if cls in _LEAVES:
+        return sys.getsizeof(value)
     if cls not in COPIED:
-        return _immutable_size(value, limit)
-    items = (*value.keys(), *value.values()) if cls is dict else tuple(value)
-    size = _immutable_size(items, limit)
+        return _walk(value, limit, sized=True)
+    items = _items(value)
+    size = _walk(items, limit, sized=True)
     return None if size is None else size - sys.getsizeof(items) + sys.getsizeof(value)
 
 
-def _immutable_size(value: Any, limit: int) -> int | None:
-    """Return the bytes ``value`` and its parts take; None if a caller can change any of them, or above ``limit``.
+def can_keep(value: Any) -> bool:
+    """Return whether ``value`` can be kept, as :func:`kept_size` decides, without sizing it.
 
-    A part reached twice counts twice. ``limit`` also ends a cycle, which only object.__setattr__() can close.
+    A value of more than 2**20 parts cannot.
+    """
+    cls = value.__class__
+    if cls in _LEAVES:
+        return True
+    return _walk(_items(value) if cls in COPIED else value, _MAX_PARTS, sized=False) is not None
+
+
+def _items(value: Any) -> tuple[Any, ...]:
+    """The parts of a dict, list or set: its keys and values, or its items."""
+    return (*value.keys(), *value.values()) if value.__class__ is dict else tuple(value)
+
+
+def _walk(value: Any, limit: int, *, sized: bool) -> int | None:  # noqa: C901
+    """Return the bytes ``value`` and its parts take, or their count if not ``sized``.
+
+    None if a caller can change any of them, or above ``limit``. A part reached twice counts twice. ``limit`` also
+    ends a cycle, which only object.__setattr__() can close.
     """
     kinds = _KINDS
     leaves = _LEAVES
+    copied = COPIED
     getsizeof = sys.getsizeof
     size = 0
     pending = [value]
@@ -111,21 +134,25 @@ def _immutable_size(value: Any, limit: int) -> int | None:
         kind = kinds.get(cls)
         if kind is None and (kind := _kind(cls)) is None:
             return None
-        size += getsizeof(value)
+        size += getsizeof(value) if sized else 1
         if kind == _ITEMS:
             parts = value
         elif kind == _MAPPING:
             parts = (*value.keys(), *value.values())
         elif kind == _FIELDS:
             parts = _attributes(value)
-            if state := getattr(value, "__dict__", None):
+            if sized and (state := getattr(value, "__dict__", None)):
                 size += getsizeof(state)
         else:
             continue
         # Most parts are str, int and the like, which are counted here rather than through ``pending``.
         for part in parts:
-            if part.__class__ in leaves:
-                size += getsizeof(part)
+            cls = part.__class__
+            if cls in leaves:
+                size += getsizeof(part) if sized else 1
+            elif cls in copied:
+                # A dict, list or set inside a value can change, so the walk stops at the first one.
+                return None
             else:
                 append(part)
         if size > limit:

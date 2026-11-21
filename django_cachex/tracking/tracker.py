@@ -5,8 +5,8 @@ import os
 import threading
 from typing import TYPE_CHECKING, Any
 
+from django_cachex.immutable import COPIED, kept_size
 from django_cachex.stampede import should_recompute_remaining
-from django_cachex.tracking.immutable import COPIED, kept_size
 from django_cachex.tracking.listener import Listener
 from django_cachex.tracking.store import NOT_KEPT, READ_ONCE, LocalStore, clock
 

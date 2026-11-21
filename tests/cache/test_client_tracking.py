@@ -32,12 +32,12 @@ from django.utils.safestring import mark_safe
 
 from django_cachex.adapters import ValkeyPyAdapter
 from django_cachex.cache import RedisCache
+from django_cachex.immutable import can_keep, kept_size
 from django_cachex.orm.store import RespStore
 from django_cachex.script import keys_only_pre
 from django_cachex.tracking import listener as listener_module
 from django_cachex.tracking import tracker as tracker_module
 from django_cachex.tracking.adapter import PIPELINE_READ_METHODS, READ_COMMANDS, READ_METHODS
-from django_cachex.tracking.immutable import kept_size
 from django_cachex.tracking.listener import Listener
 from django_cachex.tracking.resp3 import NEED_MORE, ErrorReply, Map, Parser, ProtocolError, Push, Set, SimpleString
 from django_cachex.tracking.store import ENTRY_OVERHEAD, NOT_KEPT, READ_ONCE, LocalStore
@@ -546,12 +546,14 @@ def _type_name(value: Any) -> str:
 
 
 @pytest.mark.parametrize("value", KEPT, ids=_type_name)
-def test_a_value_a_copy_can_keep_is_sized(value):
+def test_a_value_a_copy_can_keep_is_kept_and_sized(value):
+    assert can_keep(value)
     assert kept_size(value, 1 << 20) is not None
 
 
 @pytest.mark.parametrize("value", MUTABLE, ids=_type_name)
-def test_a_value_a_caller_can_change_is_not_sized(value):
+def test_a_value_a_caller_can_change_is_not_kept(value):
+    assert not can_keep(value)
     assert kept_size(value, 1 << 20) is None
 
 
@@ -577,6 +579,7 @@ def test_a_cycle_through_a_frozen_dataclass_ends_at_the_limit():
     node = _Frozen("a")
     _with_attribute(node, "tags", (node,))
 
+    assert not can_keep(node)
     assert kept_size(node, 1 << 20) is None
 
 

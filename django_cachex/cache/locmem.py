@@ -11,10 +11,12 @@ Notable design points:
   long-lived Python objects in a dedicated ``self._collections`` map;
   mutations are in-place under the lock, so collection ops avoid the
   whole-value pickle round-trip Django's stock backend pays for opaque
-  ``cache.set()`` values. A list element or hash value of a mutable type
-  is pickled on its own, so the caller never shares an object with the
-  cache. Ops on opaque (string-typed) values still go through the normal
-  pickled-bytes path in ``self._cache``.
+  ``cache.set()`` values.
+- A plain value, list element or hash value that no caller can change is
+  stored as the object itself, and a list, dict or set of such values as a
+  shallow copy that each read copies again. Any other value is pickled, as
+  Django's backend stores every value, so the caller never shares an
+  object it can change with the cache.
 - Existing keys preserve their TTL automatically (``_expire_info`` is left
   untouched on in-place mutation), avoiding the read-ttl-then-set-with-ttl
   dance.
@@ -49,6 +51,7 @@ from django_cachex.cache.base import (
     _is_int64,
 )
 from django_cachex.exceptions import WrongTypeError
+from django_cachex.immutable import COPIED, can_keep
 from django_cachex.semaphore import Semaphore, _SemaphoreRegistry
 from django_cachex.types import KeyType
 from django_cachex.utils import (
@@ -85,38 +88,23 @@ _OPAQUE = object()
 # Named ``_PySet`` to avoid colliding with ``LocMemCache._set`` (Django hook).
 _PySet = set
 
-# List elements and hash values of these types are stored as they are: the
-# caller cannot change them after the write. Any other type is pickled.
-_IMMUTABLE_TYPES = frozenset({str, bytes, int, float, bool, type(None)})
-
-
-class _Pickled(bytes):
-    """A list element or hash value stored as its pickle, as LocMemCache stores plain values.
-
-    Equal only to another ``_Pickled``, so a caller's ``bytes`` never matches it.
-    """
-
-    __slots__ = ()
-
-    def __eq__(self, other: object) -> bool:
-        return type(other) is _Pickled and bytes.__eq__(self, other)
-
-    def __ne__(self, other: object) -> bool:
-        return not self == other
-
-    __hash__ = bytes.__hash__
-
 
 def _pack(value: Any) -> Any:
-    """Return a list element or hash value in the form the cache stores it."""
-    if type(value) in _IMMUTABLE_TYPES:
-        return value
-    return _Pickled(pickle.dumps(value, pickle.HIGHEST_PROTOCOL))
+    """Return a value, list element or hash value in the form the cache stores it.
+
+    A value no caller can change is stored as it is, a list, dict or set of such values as a shallow copy, and any
+    other value as its pickle. Stored ``bytes`` is always a pickle, as Django and the ORM cache write one.
+    """
+    if type(value) is not bytes and can_keep(value):
+        return value.copy() if value.__class__ in COPIED else value
+    return pickle.dumps(value, pickle.HIGHEST_PROTOCOL)
 
 
-def _unpack(value: Any) -> Any:
-    """Undo :func:`_pack`, giving the caller a fresh copy of a pickled value."""
-    return pickle.loads(value) if type(value) is _Pickled else value  # noqa: S301
+def _unpack(stored: Any) -> Any:
+    """Undo :func:`_pack`, giving the caller its own copy of a pickled value and of a list, dict or set."""
+    if type(stored) is bytes:
+        return pickle.loads(stored)  # noqa: S301
+    return stored.copy() if stored.__class__ in COPIED else stored
 
 
 class _List(list[Any]):
@@ -267,7 +255,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
     # doesn't surface in stubs. ``_set`` and ``_delete`` are real overrides
     # below; no stub needed.
     if TYPE_CHECKING:
-        _cache: OrderedDict[str, bytes]
+        _cache: OrderedDict[str, Any]
         _expire_info: dict[str, float | None]
         _lock: Lock
         _max_entries: int
@@ -277,7 +265,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def __init__(self, name: str, params: dict[str, Any]) -> None:
         super().__init__(name, params)
-        # Kept outside the pickled-bytes ``self._cache`` to mutate in place.
+        # Kept outside ``self._cache`` to mutate in place.
         self._collections: dict[str, Any] = _collections.setdefault(name, {})
         self._semaphore_registry = _semaphore_registries.setdefault(name, _SemaphoreRegistry())
 
@@ -361,13 +349,13 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
 
     def _delete(self, key: str) -> bool:
         had_collection = self._collections.pop(key, None) is not None
-        had_pickled: bool = super()._delete(key)  # type: ignore[misc]  # ty: ignore[missing-attribute]
-        if had_collection and not had_pickled:
+        had_value: bool = super()._delete(key)  # type: ignore[misc]  # ty: ignore[missing-attribute]
+        if had_collection and not had_value:
             # Django's ``_delete`` only touches ``_expire_info`` when the
             # key is in ``_cache``; clean up the collection's TTL entry
             # ourselves.
             self._expire_info.pop(key, None)
-        return had_collection or had_pickled
+        return had_collection or had_value
 
     def clear(self) -> bool:  # type: ignore[override]
         """Delete every key at this LOCATION. Returns ``True``, as ``RespCache.clear`` does."""
@@ -440,9 +428,9 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 raise WrongTypeError(msg)
             if internal_key not in self._cache:
                 return default
-            pickled = self._cache[internal_key]
+            stored = self._cache[internal_key]
             self._cache.move_to_end(internal_key, last=False)
-        return pickle.loads(pickled)  # noqa: S301
+        return _unpack(stored)
 
     def incr(self, key: str, delta: int = 1, version: int | None = None) -> int:
         """Increment a value, mirroring Redis ``INCRBY``: WRONGTYPE on non-string keys.
@@ -468,11 +456,11 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             if internal_key not in self._cache:
                 msg = f"Key '{key}' not found"
                 raise ValueError(msg)
-            current = pickle.loads(self._cache[internal_key])  # noqa: S301
+            current = _unpack(self._cache[internal_key])
             if not _is_int64(current):
                 raise ValueError(_NOT_AN_INTEGER)
             new_value = _int64_sum(current, delta)
-            self._cache[internal_key] = pickle.dumps(new_value, self.pickle_protocol)
+            self._cache[internal_key] = _pack(new_value)
             self._cache.move_to_end(internal_key, last=False)
         return new_value
 
@@ -495,7 +483,7 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                     continue
                 found[key] = self._cache[internal_key]
                 self._cache.move_to_end(internal_key, last=False)
-        return {key: pickle.loads(pickled) for key, pickled in found.items()}  # noqa: S301
+        return {key: _unpack(stored) for key, stored in found.items()}
 
     def incr_version(self, key: str, delta: int = 1, version: int | None = None) -> int:
         """Move a key to a new version, mirroring Redis ``RENAME``.
@@ -526,6 +514,16 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
             self._expire_info[new_key] = self._expire_info.pop(old_key, None)
         return version + delta
 
+    def add(self, key: str, value: Any, timeout: float | None = DEFAULT_TIMEOUT, version: int | None = None) -> bool:
+        """Set a value only if the key is missing, as Django's ``LocMemCache.add`` does."""
+        internal_key = self.make_and_validate_key(key, version=version)
+        stored = _pack(value)
+        with self._lock:
+            if self._has_expired(internal_key):
+                self._set(internal_key, stored, timeout)
+                return True
+            return False
+
     def set(
         self,
         key: str,
@@ -546,10 +544,14 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
         :class:`~django_cachex.exceptions.WrongTypeError`, mirroring Redis.
         """
         if not (nx or xx or get):
-            return super().set(key, value, timeout, version)
+            internal_key = self.make_and_validate_key(key, version=version)
+            stored = _pack(value)
+            with self._lock:
+                self._set(internal_key, stored, timeout)
+            return None
         _validate_set_flags(nx=nx, xx=xx)
         internal_key = self.make_and_validate_key(key, version=version)
-        pickled = pickle.dumps(value, self.pickle_protocol)
+        stored = _pack(value)
         with self._lock:
             if self._has_expired(internal_key):
                 self._delete(internal_key)
@@ -559,10 +561,10 @@ class LocMemCache(BaseCachex, DjangoLocMemCache):
                 if internal_key in self._collections:
                     msg = f"WRONGTYPE Key {key!r} does not hold a string value."
                     raise WrongTypeError(msg)
-                prior = pickle.loads(self._cache[internal_key])  # noqa: S301
+                prior = _unpack(self._cache[internal_key])
             if (nx and exists) or (xx and not exists):
                 return prior if get else False
-            self._set(internal_key, pickled, timeout)
+            self._set(internal_key, stored, timeout)
             return prior if get else True
 
     async def aset(

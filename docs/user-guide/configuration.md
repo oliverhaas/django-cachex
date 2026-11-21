@@ -137,9 +137,24 @@ missing key, where the Valkey/Redis backends create it.
 fails. They raise `ValueError` with the server's message, for example on a
 value that is not an integer or on a sum beyond 64 bits.
 
-`LocMemCache` keeps copies of list elements and hash values, as it does of
-plain values. Changing an object after `rpush()`, `hset()` or a read leaves the
-cache unchanged. Set and sorted set members are stored by reference.
+`LocMemCache` stores a value that no caller can change as the object itself,
+and a plain list, dict or set of such values as a shallow copy. These are the
+values that [client tracking keeps](client-tracking.md#decoded-values). A read
+returns that object, or its own list, dict or set over the shared items, and
+unpickles nothing: a tuple of 1000 rows reads in about 2 µs instead of about
+320 µs, and a list of 1000 rows in about 4 µs. `set()` checks the value instead
+of pickling it, which takes about 290 µs for those 1000 rows instead of about
+800 µs, and longer than a pickle for a set of short strings. List elements and
+hash values are stored the same way. Every other value is pickled, as Django's
+`LocMemCache` pickles every value. Changing an object after `set()`, `rpush()`,
+`hset()` or a read leaves the cache unchanged. Set and sorted set members are
+stored by reference.
+
+A value stored as the object itself is never pickled, so `set()` accepts one
+whose class pickle cannot import, such as a frozen dataclass defined inside a
+function, where Django's `LocMemCache` and the Valkey/Redis backends raise.
+`object.__setattr__()` can still change a frozen dataclass, and a change made
+that way shows in every later read.
 
 Members compare as Python values, where the Valkey/Redis backends compare
 their serialized bytes. `1`, `True` and `1.0` are one member of a set or a

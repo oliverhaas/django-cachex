@@ -18,7 +18,7 @@ from django.core.cache import caches
 from django.test import override_settings
 
 from django_cachex.cache.base import BaseCachex
-from django_cachex.cache.locmem import LocMemCache, _ZSet
+from django_cachex.cache.locmem import LocMemCache, _unpack, _ZSet
 from django_cachex.exceptions import NotSupportedError, WrongTypeError
 from django_cachex.utils import _deep_getsizeof, _glob_to_regex
 
@@ -220,6 +220,33 @@ def test_hgetall_returns_independent_copy(locmem_cache: LocMemCache):
     snapshot = locmem_cache.hgetall("k")
     snapshot["c"] = 3
     assert locmem_cache.hgetall("k") == {"a": 1, "b": 2}
+
+
+@pytest.mark.parametrize("write", ["set", "add"])
+def test_reads_of_a_value_no_caller_can_change_return_that_value(locmem_cache: LocMemCache, write: str):
+    value = ("a", (1, Decimal("2.5")))
+    getattr(locmem_cache, write)("k", value)
+    assert locmem_cache.get("k") is value
+    assert locmem_cache.get_many(["k"])["k"] is value
+
+
+def test_each_read_of_a_list_gets_its_own_list_over_shared_items(locmem_cache: LocMemCache):
+    value = [(1, "a"), (2, "b")]
+    locmem_cache.set("k", value)
+    value.append((3, "c"))
+    locmem_cache.get("k").append((4, "d"))
+    stored = locmem_cache.get("k")
+    assert stored == [(1, "a"), (2, "b")]
+    assert stored[0] is value[0]
+
+
+def test_bytes_that_look_like_a_pickle_round_trip(locmem_cache: LocMemCache):
+    value = pickle.dumps(None)
+    locmem_cache.set("k", value)
+    locmem_cache.rpush("l", value)
+    assert locmem_cache.get("k") == value
+    assert locmem_cache.lrange("l", 0, -1) == [value]
+    assert locmem_cache.lpos("l", value) == 0
 
 
 def test_set_after_collection_overwrites(locmem_cache: LocMemCache):
@@ -2220,7 +2247,7 @@ def _seed_twin_data(cache: LocMemCache) -> None:
 def _twin_state(cache: LocMemCache) -> tuple[dict[str, object], dict[str, int | None]]:
     now = time.time()
     with cache._lock:
-        values = {key: pickle.loads(value) for key, value in cache._cache.items()}
+        values = {key: _unpack(value) for key, value in cache._cache.items()}
         values |= {key: (type(value).__name__, copy.deepcopy(value)) for key, value in cache._collections.items()}
         ttls = {key: None if expiry is None else round(expiry - now) for key, expiry in cache._expire_info.items()}
     return values, ttls
@@ -2357,15 +2384,18 @@ def test_delete_many_and_clear_return_what_resp_returns(locmem_cache: LocMemCach
     assert not locmem_cache._cache
 
 
-def test_list_and_hash_members_are_not_shared_with_the_caller(locmem_cache: LocMemCache):
+def test_values_list_elements_and_hash_values_are_not_shared_with_the_caller(locmem_cache: LocMemCache):
     member = {"tags": ["a"]}
+    locmem_cache.set("v", member)
     locmem_cache.rpush("l", member)
     locmem_cache.hset("h", "f", member)
     member["tags"].append("after write")
+    locmem_cache.get("v")["tags"].append("after read")
     locmem_cache.lindex("l", 0)["tags"].append("after read")
     locmem_cache.lrange("l", 0, -1)[0]["tags"].append("after read")
     locmem_cache.hget("h", "f")["tags"].append("after read")
     locmem_cache.hgetall("h")["f"]["tags"].append("after read")
+    assert locmem_cache.get("v") == {"tags": ["a"]}
     assert locmem_cache.lrange("l", 0, -1) == [{"tags": ["a"]}]
     assert locmem_cache.hgetall("h") == {"f": {"tags": ["a"]}}
     assert locmem_cache.lpos("l", {"tags": ["a"]}) == 0
