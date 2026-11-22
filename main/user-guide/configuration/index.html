@@ -1681,9 +1681,23 @@ missing key, where the Valkey/Redis backends create it.</p>
 <p><code>incr()</code>, <code>decr()</code>, <code>hincrby()</code> and <code>hincrbyfloat()</code> fail where the server
 fails. They raise <code>ValueError</code> with the server's message, for example on a
 value that is not an integer or on a sum beyond 64 bits.</p>
-<p><code>LocMemCache</code> keeps copies of list elements and hash values, as it does of
-plain values. Changing an object after <code>rpush()</code>, <code>hset()</code> or a read leaves the
-cache unchanged. Set and sorted set members are stored by reference.</p>
+<p><code>LocMemCache</code> stores a value that no caller can change as the object itself,
+and a plain list, dict or set of such values as a shallow copy. These are the
+values that <a href="../client-tracking/#decoded-values">client tracking keeps</a>. A read
+returns that object, or its own list, dict or set over the shared items, and
+unpickles nothing: a tuple of 1000 rows reads in about 2 µs instead of about
+320 µs, and a list of 1000 rows in about 4 µs. <code>set()</code> checks the value instead
+of pickling it, which takes about 290 µs for those 1000 rows instead of about
+800 µs, and longer than a pickle for a set of short strings. List elements and
+hash values are stored the same way. Every other value is pickled, as Django's
+<code>LocMemCache</code> pickles every value. Changing an object after <code>set()</code>, <code>rpush()</code>,
+<code>hset()</code> or a read leaves the cache unchanged. Set and sorted set members are
+stored by reference.</p>
+<p>A value stored as the object itself is never pickled, so <code>set()</code> accepts one
+whose class pickle cannot import, such as a frozen dataclass defined inside a
+function, where Django's <code>LocMemCache</code> and the Valkey/Redis backends raise.
+<code>object.__setattr__()</code> can still change a frozen dataclass, and a change made
+that way shows in every later read.</p>
 <p>Members compare as Python values, where the Valkey/Redis backends compare
 their serialized bytes. <code>1</code>, <code>True</code> and <code>1.0</code> are one member of a set or a
 sorted set, where the server stores three, and <code>lrem()</code> with any one of them

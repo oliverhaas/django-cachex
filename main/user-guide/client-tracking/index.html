@@ -768,6 +768,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#decoded-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decoded values
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#costs" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1109,6 +1120,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#decoded-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decoded values
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#costs" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1186,7 +1208,7 @@
 <tr>
 <td><code>max_bytes</code></td>
 <td><code>33554432</code> (32 MiB)</td>
-<td>Size of the local copies per process, counted as value bytes plus key characters plus 100 per entry. An entry above an eighth of it is not kept.</td>
+<td>Size of the local copies per process, counted as value bytes plus key characters plus 100 per entry, plus the <a href="#decoded-values">decoded values</a> kept with them. An entry above an eighth of it is not kept.</td>
 </tr>
 </tbody>
 </table>
@@ -1213,13 +1235,25 @@
 <li>Lua scripts and functions that build key names inside the script. Key names passed in <code>keys</code> or <code>args</code> are covered.</li>
 </ul>
 <p><code>SWAPDB</code> sends no invalidation, so copies of the swapped databases stay until their TTL runs out or the store evicts them. Don't use it with tracking.</p>
+<h2 id="decoded-values">Decoded values<a class="headerlink" href="#decoded-values" title="Permanent link">&para;</a></h2>
+<p>From the second read of a copy on, <code>get()</code> and <code>get_many()</code> return one shared object for every read of that copy when no caller can change it, and do not decode it again. A tuple of 1000 rows then reads in about 6 µs instead of about 400 µs. These values qualify:</p>
+<ul>
+<li><code>str</code>, <code>bytes</code>, <code>int</code>, <code>float</code>, <code>complex</code>, <code>bool</code>, <code>None</code>, <code>Decimal</code>, <code>Fraction</code>, <code>date</code>, <code>datetime</code>, <code>time</code>, <code>timedelta</code>, <code>UUID</code>, <code>range</code> and enum members.</li>
+<li><code>tuple</code> and <code>frozenset</code> of qualifying values, and from Python 3.15 <code>frozendict</code> with qualifying keys and values.</li>
+<li>Frozen dataclasses whose fields hold qualifying values.</li>
+<li>Subclasses of these that add no attributes: each class between the subclass and the qualifying type declares <code>__slots__</code> with at most <code>__weakref__</code>. Named tuples, <code>typing.NamedTuple</code> classes and Django's <code>SafeString</code> qualify.</li>
+</ul>
+<p>A plain <code>list</code> or <code>set</code> of qualifying values, or a plain <code>dict</code> with qualifying keys and values, is kept too. Each read gets a shallow copy of it: its own container over the shared items. A caller can add, remove or replace items in its copy, and other reads do not see the change. A list of 1000 rows then reads in about 9 µs instead of about 440 µs, and a dict of 1000 rows in about 13 µs.</p>
+<p>Every other value is decoded for each read, so each caller gets its own object. This covers model instances, a list, dict, set or tuple that holds a list, dict, set or model instance, subclasses of <code>list</code>, <code>dict</code> and <code>set</code> such as <code>OrderedDict</code> and <code>defaultdict</code>, and the frozen classes of attrs, pydantic and msgspec. Async reads and the ORM cache's lookups decode each read too.</p>
+<p>The first read of a copy only decodes it, so a copy read once costs nothing extra. The second read also walks the decoded value once to check it. The walk takes about as long as decoding a tuple of short values, and longer for long strings. A kept value counts toward <code>max_bytes</code> with the <code>sys.getsizeof()</code> of each of its parts, and an object it holds twice counts twice. A value that takes its entry above an eighth of <code>max_bytes</code> is decoded for each read.</p>
+<p><code>object.__setattr__()</code> can still change a frozen dataclass. A change made that way to a shared value shows in every read of the copy until the server invalidates it.</p>
 <h2 id="costs">Costs<a class="headerlink" href="#costs" title="Permanent link">&para;</a></h2>
 <ul>
-<li>One extra connection and one thread, <code>django-cachex-tracking</code>, per process and configuration. Aliases with the same driver, servers, options and tracking settings share them. Each configuration keeps its connection, thread and copies until the process exits. A test that reads the cache under a new <code>KEY_PREFIX</code>, set through <code>override_settings</code>, adds one of each.</li>
+<li>One extra connection and one thread, <code>django-cachex-tracking</code>, per process and configuration. Aliases with the same backend, servers, options and tracking settings share them. Each configuration keeps its connection, thread and copies until the process exits. A test that reads the cache under a new <code>KEY_PREFIX</code>, set through <code>override_settings</code>, adds one of each.</li>
 <li>An invalidation to every process for every write under the prefix, from any client.</li>
 <li>About two <code>PING</code>s per <code>max_staleness</code> for each tracking connection.</li>
 <li>One non-blocking socket read per tracked read, on top of the lookup.</li>
-<li><code>max_bytes</code> caps the counted size of the copies per process. Real memory is up to about twice that for values under a few hundred bytes.</li>
+<li><code>max_bytes</code> caps the counted size of the copies and their kept decoded values per process. Real memory is up to about twice that for values under a few hundred bytes.</li>
 <li>A read without a copy sends <code>GET</code> and <code>PTTL</code> in one pipeline, and <code>get_many()</code> fetches all keys without copies in one pipeline. <code>has_key()</code> without a copy sends <code>EXISTS</code>, or <code>PTTL</code> under stampede prevention, and keeps no copy.</li>
 <li>A read without a copy goes to the primary. On a Sentinel alias, or with replicas in <code>LOCATION</code>, other reads go to the replicas.</li>
 </ul>
