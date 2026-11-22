@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -1364,10 +1364,10 @@
 <p>Some operations reach past one alias and need the permission of every alias in <code>CACHES</code>:</p>
 <ul>
 <li>The danger zone's Flush database runs <code>FLUSHDB</code>, which removes every key in the database, whichever alias wrote it.</li>
-<li>The Clear tool and the Flush action on Django's own <code>RedisCache</code>, which clears with <code>FLUSHDB</code>, and on the memcached backends, which clear with <code>flush_all</code>.</li>
+<li>The Clear tool and the Flush action on every backend but the Valkey and Redis backends. Their <code>clear()</code> deletes every key in the storage, whichever alias wrote it: <code>LocMemCache</code>, <code>FileBasedCache</code>, <code>DatabaseCache</code> and <code>S3Cache</code> empty the <code>LOCATION</code>, Django's own <code>RedisCache</code> runs <code>FLUSHDB</code> and the memcached backends run <code>flush_all</code>.</li>
 <li>The slow log on the cache info page covers the whole server, and its arguments hold the key names and values of every client. Without every alias, it shows the command names only.</li>
 </ul>
-<p>The permissions do not check other aliases that share a cache's storage. On <code>LocMemCache</code>, <code>DatabaseCache</code> and <code>FileBasedCache</code>, the Clear tool and the Flush action delete every key at the <code>LOCATION</code>, and on the Valkey and Redis backends, Clear all versions deletes every version under the <code>KEY_PREFIX</code>. Give each alias a <code>LOCATION</code> of its own.</p>
+<p>On the Valkey and Redis backends, the Clear tool and the Flush action delete only the keys of the alias's <code>KEY_PREFIX</code> and <code>VERSION</code>, so they need only the permission of the cache. Clear all versions deletes every version under the <code>KEY_PREFIX</code> and does not check other aliases with the same <code>KEY_PREFIX</code> at the same <code>LOCATION</code>. Give each alias a <code>KEY_PREFIX</code> or a <code>LOCATION</code> of its own.</p>
 <p>The cache list and the cache info page's configuration and server statistics need only <code>view_cache</code>.</p>
 <p><code>migrate</code> creates the <code>access_&lt;alias&gt;</code> permissions. After adding an alias to <code>CACHES</code>, run <code>migrate</code> again; until then, only superusers can use that cache's keys.</p>
 <h3 id="sessions">Sessions<a class="headerlink" href="#sessions" title="Permanent link">&para;</a></h3>
@@ -1390,7 +1390,7 @@
 <p>The Flush action, the Clear tool and the danger zone delete keys in bulk, so they are off by default, for superusers too. To turn them on, set:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">CACHEX_ADMIN</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"ALLOW_FLUSH"</span><span class="p">:</span> <span class="kc">True</span><span class="p">}</span>
 </span></code></pre></div>
-<p>They still need the <code>change_cache</code> permission and the <a href="#permissions">permission of the cache</a>, or that of every cache where they empty a whole database or server. While they are off, the admin hides them and refuses their requests.</p>
+<p>They still need the <code>change_cache</code> permission and the <a href="#permissions">permission of the cache</a>, or that of every cache where they can delete the keys of other caches. While they are off, the admin hides them and refuses their requests.</p>
 <h2 id="support-levels">Support Levels<a class="headerlink" href="#support-levels" title="Permanent link">&para;</a></h2>
 <p>The cache list badges each cache "cachex" or "limited". The Valkey and Redis backends, <code>LocMemCache</code> and <code>DatabaseCache</code> are "cachex" and get the features in <a href="#backend-abilities">Backend Abilities</a>. <code>S3Cache</code>, stock Django backends (<code>django.core.cache.backends.*</code>) and custom backends are "limited", with no key browsing.</p>
 <p>Switch Django's stock <code>LocMemCache</code> or <code>DatabaseCache</code> to <code>django_cachex.cache.LocMemCache</code> or <code>django_cachex.cache.DatabaseCache</code>, their drop-in replacements, for full support. To replace Django's stock Redis backend with <code>ValkeyCache</code> or <code>RedisCache</code>, follow the <a href="../../migration/">migration guide</a>.</p>

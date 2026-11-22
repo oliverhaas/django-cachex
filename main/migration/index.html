@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -1475,7 +1475,7 @@
 </tr>
 <tr>
 <td><code>CACHALOT_CACHE_RANDOM</code>, <code>CACHALOT_CACHE_ITERATORS</code>, <code>CACHALOT_INVALIDATE_RAW</code></td>
-<td>Removed. Random queries and the results of <code>iterator()</code> are never cached, and raw SQL writes always invalidate.</td>
+<td>Removed. Random queries are never cached, <code>iterator()</code> stores its results only when the database sets <code>DISABLE_SERVER_SIDE_CURSORS</code>, and raw SQL writes always invalidate.</td>
 </tr>
 <tr>
 <td><code>CACHALOT_QUERY_KEYGEN</code>, <code>CACHALOT_TABLE_KEYGEN</code></td>

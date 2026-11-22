@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -1240,11 +1240,12 @@
 <ul>
 <li><code>str</code>, <code>bytes</code>, <code>int</code>, <code>float</code>, <code>complex</code>, <code>bool</code>, <code>None</code>, <code>Decimal</code>, <code>Fraction</code>, <code>date</code>, <code>datetime</code>, <code>time</code>, <code>timedelta</code>, <code>UUID</code>, <code>range</code> and enum members.</li>
 <li><code>tuple</code> and <code>frozenset</code> of qualifying values, and from Python 3.15 <code>frozendict</code> with qualifying keys and values.</li>
-<li>Frozen dataclasses whose fields hold qualifying values.</li>
-<li>Subclasses of these that add no attributes: each class between the subclass and the qualifying type declares <code>__slots__</code> with at most <code>__weakref__</code>. Named tuples, <code>typing.NamedTuple</code> classes and Django's <code>SafeString</code> qualify.</li>
+<li>Frozen dataclasses whose fields hold qualifying values. A subclass of a frozen dataclass must be a frozen dataclass too. The <code>__slots__</code> of such a class, if it declares them, hold only its fields and <code>__weakref__</code>, as <code>dataclass(frozen=True, slots=True)</code> makes them.</li>
+<li>Subclasses of the other types above that add no attributes: each class between the subclass and the qualifying type declares <code>__slots__</code> with at most <code>__weakref__</code>. Named tuples, <code>typing.NamedTuple</code> classes and Django's <code>SafeString</code> qualify.</li>
 </ul>
 <p>A plain <code>list</code> or <code>set</code> of qualifying values, or a plain <code>dict</code> with qualifying keys and values, is kept too. Each read gets a shallow copy of it: its own container over the shared items. A caller can add, remove or replace items in its copy, and other reads do not see the change. A list of 1000 rows then reads in about 9 µs instead of about 440 µs, and a dict of 1000 rows in about 13 µs.</p>
-<p>Every other value is decoded for each read, so each caller gets its own object. This covers model instances, a list, dict, set or tuple that holds a list, dict, set or model instance, subclasses of <code>list</code>, <code>dict</code> and <code>set</code> such as <code>OrderedDict</code> and <code>defaultdict</code>, and the frozen classes of attrs, pydantic and msgspec. Async reads and the ORM cache's lookups decode each read too.</p>
+<p>Every other value is decoded for each read, so each caller gets its own object. This covers model instances, a list, dict, set or tuple that holds a list, dict, set or model instance, subclasses of <code>list</code>, <code>dict</code> and <code>set</code> such as <code>OrderedDict</code> and <code>defaultdict</code>, a frozen dataclass that also subclasses <code>tuple</code> or <code>frozenset</code>, and the frozen classes of attrs, pydantic and msgspec. Async reads decode each read too.</p>
+<p>The ORM cache's lookups share an entry that qualifies, such as a <a href="../orm-cache/#cached_data"><code>cached_data()</code></a> result that is a tuple of rows, or the result of <code>count()</code>, <code>exists()</code> or <code>aggregate()</code>. The entry of a query that returns rows holds a list of them, so each lookup decodes it.</p>
 <p>The first read of a copy only decodes it, so a copy read once costs nothing extra. The second read also walks the decoded value once to check it. The walk takes about as long as decoding a tuple of short values, and longer for long strings. A kept value counts toward <code>max_bytes</code> with the <code>sys.getsizeof()</code> of each of its parts, and an object it holds twice counts twice. A value that takes its entry above an eighth of <code>max_bytes</code> is decoded for each read.</p>
 <p><code>object.__setattr__()</code> can still change a frozen dataclass. A change made that way to a shared value shows in every read of the copy until the server invalidates it.</p>
 <h2 id="costs">Costs<a class="headerlink" href="#costs" title="Permanent link">&para;</a></h2>
