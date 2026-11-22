@@ -941,6 +941,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#cached_data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        cached_data()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#management-command" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1359,6 +1370,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#cached_data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        cached_data()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#management-command" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1530,7 +1552,7 @@
 <p>With <a href="../client-tracking/">client tracking</a>, the writing process still gets the new rows after the write returns. Another process gets them after the server's invalidation of the second change reaches it, about one network delay after that change. The invalidation normally arrives well before a task message reaches a worker, and the new rows show at most <code>max_staleness</code> after the change.</p>
 <p>Without <a href="../client-tracking/">client tracking</a>, a cached read costs one round trip to the cache, an <code>MGET</code> of the generations and the result, and a miss two. With it, a lookup whose keys all have copies sends no command, and any other lookup takes one round trip. A write under autocommit, or the commit of a transaction that wrote, costs two. Reads go to the primary even when the cache alias lists replicas, since a replica can lag behind a write. On a redis-py or valkey-py cluster, <code>read_from_replicas</code> or a <code>load_balancing_strategy</code> in the alias's <code>OPTIONS</code> sends them to replicas, which can serve the old rows until they have caught up with a write.</p>
 <h3 id="cache-keys">Cache keys<a class="headerlink" href="#cache-keys" title="Permanent link">&para;</a></h3>
-<p>A result is stored under <code>orm:{&lt;database alias&gt;}:q:&lt;query key&gt;:&lt;result type&gt;</code> and the generation of a table under <code>orm:{&lt;database alias&gt;}:g:&lt;table key&gt;</code>, both under the cache alias's <code>KEY_PREFIX</code> and <code>VERSION</code>. The database alias is the hash tag, so on a cluster all keys of one database live on one shard. The keys name database aliases, not databases. Projects or environments sharing a cache server need distinct <code>KEY_PREFIX</code>es or database numbers, or each serves the results the other read.</p>
+<p>A result is stored under <code>orm:{&lt;database alias&gt;}:q:&lt;query key&gt;:&lt;result type&gt;</code>, a result of a <a href="#cached_data"><code>cached_data()</code></a> function under <code>orm:{&lt;database alias&gt;}:d:&lt;function key&gt;</code>, and the generation of a table under <code>orm:{&lt;database alias&gt;}:g:&lt;table key&gt;</code>, both under the cache alias's <code>KEY_PREFIX</code> and <code>VERSION</code>. The database alias is the hash tag, so on a cluster all keys of one database live on one shard. The keys name database aliases, not databases. Projects or environments sharing a cache server need distinct <code>KEY_PREFIX</code>es or database numbers, or each serves the results the other read.</p>
 <p>By default the query key is the sorted names of the tables the query reads, joined with <code>.</code>, then <code>:</code> and the SHA-1 digest of the database alias, SQL and parameters. Past 100 characters, the names that do not fit are left out and counted, as in <code>shop_customer.+3more</code>. The table key is the table name:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>orm:{default}:q:shop_customer.shop_order:3f2a9c...:multi
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>orm:{default}:g:shop_order
@@ -1591,7 +1613,7 @@
 <p>A write that cannot change the generations of its tables before it runs, for example because the cache server is down, raises <code>django_cachex.orm.exceptions.InvalidationError</code> before the statement or <code>COMMIT</code> runs. The error is a <code>DatabaseError</code>, so <code>atomic()</code> rolls the transaction back. To keep writing through a cache outage, set <code>CACHEX_ORM["ENABLED"] = False</code>. A write that cannot reach the cache then logs a warning and goes ahead. Run <code>invalidate_orm_cache</code> before enabling it again.</p>
 <p>If the change after the write fails, or the process dies between the commit and that change, results that other processes read while the write ran can be served until the next write to one of their tables or until they expire. A failed lookup or store, or a failed change after a write, logs a warning to the <code>django_cachex.orm</code> logger and does not raise.</p>
 <h2 id="api">API<a class="headerlink" href="#api" title="Permanent link">&para;</a></h2>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex.orm.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">invalidate</span><span class="p">,</span> <span class="n">orm_cache_disabled</span><span class="p">,</span> <span class="n">table_generations</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex.orm.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">cached_data</span><span class="p">,</span> <span class="n">invalidate</span><span class="p">,</span> <span class="n">orm_cache_disabled</span><span class="p">,</span> <span class="n">table_generations</span>
 </span></code></pre></div>
 <h3 id="invalidate">invalidate()<a class="headerlink" href="#invalidate" title="Permanent link">&para;</a></h3>
 <p><code>invalidate(*tables_or_models, cache_alias=None, db_alias=None)</code> invalidates the cached queries of the given tables, models or <code>"app_label.ModelName"</code> strings, or of every table when none are given. <code>cache_alias</code> and <code>db_alias</code> narrow it to one cache or database. Call it after changing data the ORM cache cannot see, such as a bulk load through another client.</p>
@@ -1602,7 +1624,7 @@
 </span></code></pre></div>
 <p>Queries in the block run against the database, and writes in it still invalidate the cache. It applies to the current thread or asyncio task.</p>
 <h3 id="table_generations">table_generations()<a class="headerlink" href="#table_generations" title="Permanent link">&para;</a></h3>
-<p><code>table_generations(*tables_or_models, db_alias="default")</code> returns the current generations of the given tables as a tuple of strings. With <a href="../client-tracking/">client tracking</a>, the generations come from the process's copies, at most <code>max_staleness</code> behind, and show its own writes after they return. Every committed write to one of the tables changes the tuple, so a value computed from the tables can be cached under it:</p>
+<p><code>table_generations(*tables_or_models, db_alias="default")</code> returns the current generations of the given tables as a tuple of strings. With <a href="../client-tracking/">client tracking</a>, the generations come from the process's copies, at most <code>max_staleness</code> behind, and show its own writes after they return. Every committed write to one of the tables changes the tuple, so a value computed from the tables can be cached under it. <a href="#cached_data"><code>cached_data()</code></a> does this for the results of a function:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.core.cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">cache</span>
 </span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex.orm.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">table_generations</span>
 </span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
@@ -1625,10 +1647,54 @@
 <li>When the generations cannot be read from the cache. A warning is logged.</li>
 </ul>
 <p>Called without a table or model, it raises <code>TypeError</code>.</p>
+<h3 id="cached_data">cached_data()<a class="headerlink" href="#cached_data" title="Permanent link">&para;</a></h3>
+<p><code>cached_data(*tables_or_models, db_alias="default", version=0)</code> stores the results of the decorated function in the ORM cache until a write changes one of the given tables. A result is stored as a query result is, with the generations of the declared tables, so every process shares it. A hit is one <code>MGET</code> of the generations and the result, as for a cached query. It runs no query and builds no model instance, and with <a href="../client-tracking/">client tracking</a> it sends no command.</p>
+<p>Put the data that a page needs into a function that returns plain values, and look the values up in the loop instead of querying once per row:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django_cachex.orm.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">cached_data</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="nd">@cached_data</span><span class="p">(</span><span class="n">Category</span><span class="p">)</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">child_names_by_parent</span><span class="p">():</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>    <span class="n">names</span> <span class="o">=</span> <span class="p">{}</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>    <span class="k">for</span> <span class="n">parent_id</span><span class="p">,</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">Category</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">exclude</span><span class="p">(</span><span class="n">parent</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s2">"name"</span><span class="p">)</span><span class="o">.</span><span class="n">values_list</span><span class="p">(</span><span class="s2">"parent_id"</span><span class="p">,</span> <span class="s2">"name"</span><span class="p">):</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>        <span class="n">names</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">parent_id</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>    <span class="k">return</span> <span class="p">{</span><span class="n">parent_id</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">group</span><span class="p">)</span> <span class="k">for</span> <span class="n">parent_id</span><span class="p">,</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">names</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>
+</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>
+</span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="k">def</span><span class="w"> </span><span class="nf">render</span><span class="p">(</span><span class="n">parents</span><span class="p">):</span>
+</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>    <span class="n">names</span> <span class="o">=</span> <span class="n">child_names_by_parent</span><span class="p">()</span>
+</span><span id="__span-10-14"><a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>    <span class="k">return</span> <span class="p">[(</span><span class="n">parent</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">names</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">parent</span><span class="o">.</span><span class="n">pk</span><span class="p">,</span> <span class="p">()))</span> <span class="k">for</span> <span class="n">parent</span> <span class="ow">in</span> <span class="n">parents</span><span class="p">]</span>
+</span></code></pre></div>
+<p>A function with arguments stores one result per set of arguments. Declare every table that the function reads, including the through table of a many-to-many relation:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nd">@cached_data</span><span class="p">(</span><span class="n">Tag</span><span class="p">,</span> <span class="n">Category</span><span class="o">.</span><span class="n">tags</span><span class="o">.</span><span class="n">through</span><span class="p">)</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">tag_names</span><span class="p">(</span><span class="n">category_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">Tag</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">categories__id</span><span class="o">=</span><span class="n">category_id</span><span class="p">)</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s2">"name"</span><span class="p">)</span><span class="o">.</span><span class="n">values_list</span><span class="p">(</span><span class="s2">"name"</span><span class="p">,</span> <span class="n">flat</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+</span></code></pre></div>
+<ul>
+<li><code>tables_or_models</code>: models, <code>"app_label.ModelName"</code> strings or table names, as <code>table_generations()</code> takes them. At least one is required.</li>
+<li><code>db_alias</code>: the database that the function reads.</li>
+<li><code>version</code>: an int or a string in the key. Change it when the results change for a reason that the function's own code does not show, such as a change in a function that it calls.</li>
+</ul>
+<p>A result is stored under <code>orm:{&lt;database alias&gt;}:d:&lt;module&gt;.&lt;qualified name&gt;:&lt;hash&gt;:(&lt;arguments&gt;)</code>, for <code>TIMEOUT</code>. The hash covers the function's code, its defaults, the values it closes over and <code>version</code>, so the results of changed code and those of the old code in a process that still runs it are kept apart. Functions that one factory makes with different closure values are kept apart too. A closure value whose <code>repr()</code> holds its address, such as another function, gives each process its own results.</p>
+<p>The key holds the <code>repr()</code> of each argument, with keyword arguments sorted by name. An argument must be a value that no caller can change, as client tracking <a href="../client-tracking/#decoded-values">keeps them</a>: a string, number, <code>Decimal</code>, date, <code>UUID</code>, enum member or <code>None</code>, or a tuple, frozenset, named tuple, frozen dataclass or, from Python 3.15, <code>frozendict</code> of such values. Any other argument, such as a list, dict or model instance, raises <code>TypeError</code>, so pass primary keys. Arguments with the same <code>repr()</code> share a result, so a frozen dataclass with <code>repr=False</code> must not be one. A frozenset of strings has a different <code>repr()</code> in each process, so each process gets its own results for it.</p>
+<p>A result can be anything that the cache's serializer stores. A result that no caller can change, of the kinds that an argument can be, is shared: with <code>LocMemCache</code> every hit returns the stored object, and with client tracking every hit from the third read of a copy on. Any other result, such as a <code>dict</code> or a <code>list</code>, is decoded for each hit, so a caller can change the result it gets without changing the stored one. A QuerySet raises <code>TypeError</code>, since it would read its tables after the decorator checked them. Return a tuple of its rows instead.</p>
+<p>While the function runs on a miss, the decorator records the tables of its ORM queries. If a query read a table that is not declared, read from another database, read a table that <code>UNCACHABLE_TABLES</code> or <code>ONLY_CACHABLE_TABLES</code> excludes, or ran inside <code>orm_cache_disabled()</code>, it emits <code>django_cachex.orm.exceptions.UndeclaredTableWarning</code> and does not store the result. Tables that share a key through <code>TABLE_KEYGEN</code> count as declared. Only the tables in the SQL count, so a filter such as <code>parent_id=...</code> reads the table of the filtered model alone. A decorated function called by another one reports its declared tables and the tables it read to the outer function, so the outer one declares them too. Run your tests with <code>-W error::django_cachex.orm.exceptions.UndeclaredTableWarning</code> to make them fail on the warning. These reads are not checked, so a result computed from an undeclared table through them is stored, and writes to that table do not invalidate it:</p>
+<ul>
+<li>Raw SQL, through <code>cursor.execute()</code> or <code>Manager.raw()</code>.</li>
+<li>Queries that the ORM cache does not cache for another reason, such as <code>select_for_update()</code>, <code>order_by("?")</code>, <code>Now()</code> or a <code>QUERY_KEYGEN</code> that raises <code>UncachableQuery</code>.</li>
+</ul>
+<p>The function runs on every call, and its result is not stored, in the cases where <code>table_generations()</code> returns <code>None</code>, when <code>TIMEOUT</code> is 0 or less, and when the cache fails, which logs a warning. Inside a transaction, a write to a table that shares a key with a declared table counts as a write to a declared table, and a result is not stored when the function itself wrote a declared table. Threads and processes that miss at the same time each run the function. A change to <code>CACHEX_ORM</code>, <code>DATABASES</code> or <code>CACHES</code> applies from the next call.</p>
+<p>The function must compute its result from its arguments and the declared tables only:</p>
+<ul>
+<li>The result must not depend on the request, the user, the language, the time, settings or another database. With django-tenants, the table keys do not include the schema, so pass the tenant as an argument.</li>
+<li>Without client tracking, each call takes one round trip to the cache server. With it, a result can be up to <code>max_staleness</code> behind a write in another process. A process sees its own writes after they return.</li>
+<li>Writes that the ORM cache does not see (see <a href="#limits">Limits</a>) do not invalidate stored results.</li>
+</ul>
+<p><code>cached_data()</code> raises <code>TypeError</code> for a decorated <code>async def</code> function, which you call through <code>sync_to_async()</code> instead, for no tables and for a <code>version</code> that is not an int or a string. A call raises <code>TypeError</code> for an argument that a caller can change and for a QuerySet result, and the first call raises <code>LookupError</code> when a declared name is neither an installed model nor a table in <code>ADDITIONAL_TABLES</code>.</p>
 <h3 id="management-command">Management command<a class="headerlink" href="#management-command" title="Permanent link">&para;</a></h3>
-<div class="language-console highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="go">python manage.py invalidate_orm_cache                    # every table</span>
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="go">python manage.py invalidate_orm_cache shop               # an app's models, many-to-many tables included</span>
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="go">python manage.py invalidate_orm_cache shop.Order --cache default --db default</span>
+<div class="language-console highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="go">python manage.py invalidate_orm_cache                    # every table</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="go">python manage.py invalidate_orm_cache shop               # an app's models, many-to-many tables included</span>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="go">python manage.py invalidate_orm_cache shop.Order --cache default --db default</span>
 </span></code></pre></div>
 <h2 id="system-checks">System checks<a class="headerlink" href="#system-checks" title="Permanent link">&para;</a></h2>
 <table>
