@@ -56,13 +56,14 @@ COPIED: Final = frozenset((dict, list, set))
 _MAX_PARTS: Final = 1 << 20
 
 
-def _adds_no_state(cls: type) -> bool:
-    """Return whether ``cls`` gives its instances no attributes: its ``__slots__`` hold at most ``__weakref__``."""
+def _slot_names(cls: type) -> set[str] | None:
+    """The names in the ``__slots__`` that ``cls`` itself declares, without ``__weakref__``; None without any."""
     slots = cls.__dict__.get("__slots__")
     if slots is None:
-        return False
-    names = (slots,) if isinstance(slots, str) else slots
-    return all(name == "__weakref__" for name in names)
+        return None
+    names = {slots} if isinstance(slots, str) else set(slots)
+    names.discard("__weakref__")
+    return names
 
 
 @functools.lru_cache(maxsize=1024)
@@ -76,11 +77,23 @@ def _kind(cls: type) -> int | None:
         found = _KINDS.get(base)
         params = base.__dict__.get("__dataclass_params__")
         if found is None and params is not None and params.frozen:
+            # _attributes() reads the fields and __dict__ only, so another slot could hold a list.
+            names = {field.name for field in dataclasses.fields(base)}  # ty: ignore[invalid-argument-type]
+            if not (_slot_names(base) or set()) <= names:
+                return None
             found = _FIELDS
         if found is not None:
-            kind = found if kind is None else kind
-        elif base is not object and not _adds_no_state(base):
+            if kind is not None and found != kind:
+                # Such as a frozen dataclass that is also a tuple: the walk would skip its items.
+                return None
+            kind = found
+        elif base is not object and _slot_names(base) != set():
+            # The class gives its instances attributes: it has no __slots__, or slots other than __weakref__.
             return None
+    if kind == _FIELDS and "__dataclass_params__" not in cls.__dict__:
+        # The frozen __setattr__() refuses every name only on instances of the dataclass itself. An instance of
+        # a subclass can take new attributes, and the subclass can replace __setattr__().
+        return None
     return kind
 
 

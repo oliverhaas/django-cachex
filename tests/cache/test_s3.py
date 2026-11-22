@@ -318,6 +318,21 @@ def test_requests_in_a_child_forked_after_a_request_raise(s3_cache: S3Cache, met
     assert os.waitstatus_to_exitcode(status) == 0
 
 
+def test_many_key_calls_without_keys_before_a_fork_leave_the_child_working(
+    s3_cache: S3Cache,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(s3_module, "_requesting_pid", None)
+    s3_cache.get_many([])
+    s3_cache.set_many({})
+
+    parent = os.getpid()
+    monkeypatch.setattr(os, "getpid", lambda: parent + 1)
+    s3_cache.set("k", 1)
+
+    assert s3_cache.get("k") == 1
+
+
 @pytest.mark.asyncio
 async def test_async_operations(s3_cache: S3Cache):
     data = {f"item:{n}": n for n in range(20)}
@@ -521,3 +536,13 @@ def test_s3_express_follows_the_bucket_name(
     S3Cache(location, {"OPTIONS": {"region": "us-west-2", **options}})
 
     assert from_url.call_args.kwargs.get("s3_express") is express
+
+
+@pytest.mark.parametrize(
+    "options",
+    [{"aws_s3_express": False}, {"config": {"s3_express": False}}, {"config": {"AWS_S3_EXPRESS": False}}],
+)
+def test_s3_express_set_under_another_name_keeps_the_users_value(options: dict[str, Any]):
+    cache = S3Cache("s3://cache--usw2-az1--x-s3/p", {"OPTIONS": {"region": "us-west-2", **options}})
+
+    assert cache._s3_store.config["s3_express"] == "false"

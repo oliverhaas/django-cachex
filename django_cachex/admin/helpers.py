@@ -11,8 +11,6 @@ from typing import TYPE_CHECKING, Any
 from django.conf import settings
 from django.contrib import messages
 from django.core.cache import caches
-from django.core.cache.backends.memcached import BaseMemcachedCache
-from django.core.cache.backends.redis import RedisCache as DjangoRedisCache
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseRedirect
 from django.urls import reverse
@@ -280,13 +278,14 @@ def can_access_all_caches(request: HttpRequest) -> bool:
 def can_clear_cache(request: HttpRequest, alias: str) -> bool:
     """Report whether ``request`` can run ``clear()`` on ``alias`` from the Clear tool or the Flush action.
 
-    Django's ``RedisCache`` clears with FLUSHDB and the memcached backends with
-    ``flush_all``, so on those the clear needs every alias.
+    Only ``RespCache.clear()`` keeps to the alias's ``KEY_PREFIX`` and version.
+    Every other backend empties its whole storage, whichever alias wrote the
+    keys, so there the clear needs every alias.
     """
     backend = _backend_class(alias)
-    if backend is not None and issubclass(backend, DjangoRedisCache | BaseMemcachedCache):
-        return can_access_all_caches(request)
-    return can_access_cache(request, alias)
+    if backend is not None and issubclass(backend, RespCache):
+        return can_access_cache(request, alias)
+    return can_access_all_caches(request)
 
 
 def requested_cache(request: HttpRequest) -> str:
@@ -585,7 +584,7 @@ def _zset_entries(cache: Any, key: str, start: int, stop: int) -> list[tuple[Any
     return cache.zrange(key, start, stop, withscores=True)
 
 
-def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> dict[str, Any]:  # noqa: PLR0911
+def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> dict[str, Any]:  # noqa: C901, PLR0911
     """Fetch type-specific data from cache, paginated.
 
     Lists and sorted sets read only the page. A stream reads from its nearer
@@ -599,6 +598,9 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
             case KeyType.LIST:
                 length = cache.llen(key)
                 pagination = _paginate(length, page)
+                if not length:
+                    # LRANGE 0 -1 would read in full a list recreated since LLEN.
+                    return {"length": 0, "pagination": pagination, "item_entries": []}
                 start = pagination["start_index"]
                 stop = pagination["end_index"] - 1  # LRANGE stop is inclusive
                 item_entries = []
@@ -622,6 +624,9 @@ def _fetch_type_data(cache: Any, key: str, key_type: str, *, page: int = 1) -> d
             case KeyType.ZSET:
                 length = cache.zcard(key)
                 pagination = _paginate(length, page)
+                if not length:
+                    # ZRANGE 0 -1 would read in full a sorted set recreated since ZCARD.
+                    return {"members": [], "length": 0, "pagination": pagination}
                 start = pagination["start_index"]
                 stop = pagination["end_index"] - 1  # ZRANGE stop is inclusive
                 zset_members = _zset_rows(_zset_entries(cache, key, start, stop))

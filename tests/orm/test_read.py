@@ -15,10 +15,11 @@ import pytest
 from django.contrib.auth.models import Group, Permission, User
 from django.contrib.contenttypes.models import ContentType
 from django.db import OperationalError, ProgrammingError, connection, transaction
-from django.db.models import Case, Count, F, FilteredRelation, Q, Value, When
+from django.db.models import Case, Count, F, FilteredRelation, Q, Value, When, Window
 from django.db.models.expressions import Exists, OuterRef, RawSQL, Subquery
 from django.db.models.fields.tuple_lookups import Tuple, TupleIn
-from django.db.models.functions import Coalesce, Now
+from django.db.models.functions import Coalesce, Now, RowNumber
+from django.db.models.lookups import Exact
 from django.db.models.sql.compiler import SQLCompiler
 from django.db.transaction import TransactionManagementError
 from django.test import override_settings
@@ -382,7 +383,7 @@ def test_foreign_key(rows):
     assert data2 == [rows.user, rows.admin]
 
     qs = Test.objects.values_list("owner", flat=True)
-    assert_tables(qs, Test, User)
+    assert_tables(qs, Test)
     assert_query_cached(qs, [rows.user.pk, rows.admin.pk])
 
 
@@ -396,7 +397,7 @@ def test_many_to_many():
         Permission.objects.create(name="Can cuddle", content_type=ct, codename="cuddle"),
     )
     qs = u.user_permissions.values_list("codename", flat=True)
-    assert_tables(qs, User, User.user_permissions.through, Permission, ContentType)
+    assert_tables(qs, User.user_permissions.through, Permission, ContentType)
     assert_query_cached(qs, ["cuddle", "discuss", "touch"])
 
 
@@ -431,7 +432,7 @@ def test_subquery(rows):
     assert_query_cached(qs, [rows.t1])
 
     qs = TestChild.objects.exclude(permissions__isnull=True)
-    assert_tables(qs, TestParent, TestChild, TestChild.permissions.through, Permission)
+    assert_tables(qs, TestParent, TestChild, TestChild.permissions.through)
     assert_query_cached(qs, [])
 
     qs = TestChild.objects.exclude(permissions__name="")
@@ -496,6 +497,29 @@ def test_subquery_in_order_by(rows, alias):
     Group.objects.create(name="test2")
     with assert_num_queries(1):
         assert list(qs) == [rows.t1, rows.t2]
+
+
+@pytest.mark.parametrize("shape", ["compared", "or", "alias"])
+@override_orm_settings(FINAL_SQL_CHECK=False)
+def test_subquery_in_window_filter(rows, shape):
+    first, second = Permission.objects.order_by("pk")[:2]
+    Test.objects.filter(pk=rows.t1.pk).update(permission=first, a_float=1)
+    Test.objects.create(name="test3", owner=rows.user, permission=second, a_float=2)
+    Permission.objects.filter(pk=first.pk).update(name="a")
+    Permission.objects.filter(pk=second.pk).update(name="b")
+    first_float = Subquery(Test.objects.filter(owner=OuterRef("pk")).order_by("permission__name").values("a_float")[:1])
+    users = User.objects.filter(pk=rows.user.pk).annotate(number=Window(RowNumber()))
+    qs = {
+        "compared": users.filter(number=first_float),
+        "or": users.filter(Q(number=0) | Exact(first_float, 1)),
+        "alias": users.alias(first_float=first_float).filter(number=F("first_float")),
+    }[shape]
+    assert_tables(qs, User, Test, Permission)
+    assert_query_cached(qs, [rows.user])
+
+    Permission.objects.filter(pk=first.pk).update(name="c")
+    with assert_num_queries(1):
+        assert list(qs) == []
 
 
 @override_orm_settings(FINAL_SQL_CHECK=False)
@@ -715,7 +739,7 @@ def test_filtered_relation():
     assert_query_cached(qs)
 
     values_qs = qs.values("filtered_permissions")
-    assert_tables(values_qs, TestParent, TestChild, TestChild.permissions.through, Permission)
+    assert_tables(values_qs, TestChild, TestChild.permissions.through, Permission)
     assert_query_cached(values_qs)
 
     filtered_qs = qs.filter(filtered_permissions__pk__gt=2)
@@ -859,7 +883,7 @@ def test_select_for_update(rows):
 @pytest.mark.usefixtures("final_sql_check")
 def test_having(rows):
     qs = User.objects.annotate(n=Count("user_permissions")).filter(n__gte=1)
-    assert_tables(qs, User, User.user_permissions.through, Permission)
+    assert_tables(qs, User, User.user_permissions.through)
     assert_query_cached(qs, [rows.user])
 
     with assert_num_queries(1):

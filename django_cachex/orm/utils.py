@@ -6,6 +6,7 @@
 import datetime as dt
 import re
 from decimal import Decimal
+from enum import Enum
 from hashlib import sha1
 from ipaddress import IPv4Address, IPv6Address
 from typing import TYPE_CHECKING, Any, cast
@@ -133,6 +134,9 @@ def _param_key(param: Any) -> str:
     if issubclass(cls, Choices):
         # Choices are unique enums, so the underlying value decides.
         return _param_key(param.value)
+    if issubclass(cls, Enum):
+        # Drivers send other members by their value or by their name, so the key holds both, and the class.
+        return f"{cls.__module__}.{cls.__qualname__}.{param.name}({_param_key(param.value)})"
     raise UncachableQuery
 
 
@@ -206,6 +210,13 @@ def filter_cachable(tables: set[str]) -> set[str]:
     return tables
 
 
+def _referenced_tables(query: Query) -> set[str]:
+    """Return the tables of the joins ``query`` references; its SQL leaves out the others, like trimmed joins."""
+    # Not table_map: clones share its lists, so it can hold the aliases of another clone.
+    refcount = query.alias_refcount
+    return {join.table_name for alias, join in query.alias_map.items() if refcount[alias]}
+
+
 class _TableFinder:
     """Find the tables a query and its subqueries read.
 
@@ -221,6 +232,8 @@ class _TableFinder:
         self.raw_sql = False
         self.check_final_sql = orm_settings.FINAL_SQL_CHECK
         self.subqueries = 0
+        # Tables of unreferenced joins: the final SQL tells whether it reads them.
+        self.unreferenced: set[str] = set()
 
     def add_query(self, query: Query) -> None:
         meta = query.get_meta()
@@ -233,11 +246,19 @@ class _TableFinder:
         if query.extra:
             self.raw_sql = True
         # The tables joined so far. Compiling joins the ones select_related()
-        # and the ordering need, so queries are compiled before they get here.
-        self.tables.update(query.table_map, query.extra_tables)
+        # and the ordering need, so queries are compiled before they get here,
+        # but it references those joins only while it runs.
+        referenced = _referenced_tables(query)
+        self.tables.update(referenced, query.extra_tables)
+        self.unreferenced.update(query.table_map.keys() - referenced)
         if meta:
             self.tables.add(meta.db_table)
+        subqueries = self.subqueries
         self.visit([*query.annotations.values(), query.where, *query.combined_queries])
+        if self.subqueries > subqueries and query.where.contains_over_clause:
+            # A filter on a window function compiles copies of its subqueries for the QUALIFY. Only the final SQL
+            # shows the joins that those copies add for their ordering.
+            self.check_final_sql = True
         for join in query.alias_map.values():
             if (relation := join.filtered_relation) is not None:
                 self.visit((relation.condition, getattr(relation, "resolved_condition", None)))
@@ -296,13 +317,16 @@ def _get_tables(db_alias: str, query: Query, compiler: SQLCompiler | None = None
     finder = _TableFinder(db_alias)
     finder.add_query(query)
     tables = finder.tables
-    if finder.raw_sql or finder.check_final_sql:
+    unreferenced = finder.unreferenced - tables
+    if unreferenced or finder.raw_sql or finder.check_final_sql:
         # Stored by query_digest, saving another as_sql() call.
         final_sql = getattr(compiler, _GENERATED_SQL, None)
         if final_sql is None:
             final_sql = query.get_compiler(db_alias).as_sql()[0].lower()
-        # The ORM quotes the tables it names; raw SQL does not have to.
-        tables |= _get_tables_from_sql(connections[db_alias], final_sql, enable_quote=not finder.raw_sql)
+        tables.update(table for table in unreferenced if _named_in(table.lower(), final_sql))
+        if finder.raw_sql or finder.check_final_sql:
+            # The ORM quotes the tables it names; raw SQL does not have to.
+            tables |= _get_tables_from_sql(connections[db_alias], final_sql, enable_quote=not finder.raw_sql)
     if not are_all_cachable(tables):
         raise UncachableQuery(tables=tables - filter_cachable(tables))
     return tables
@@ -335,7 +359,7 @@ def query_key_and_tables(compiler: SQLCompiler, result_type: str) -> tuple[str, 
     """Return the cache key and tables of the query of ``compiler``; raise UncachableQuery if it is not cachable."""
     query = compiler.query
     # Compiling only adds tables, so an uncachable one here rules out caching before as_sql() runs.
-    tables = {*query.table_map, *query.extra_tables}
+    tables = {*_referenced_tables(query), *query.extra_tables}
     if meta := query.get_meta():
         tables.add(meta.db_table)
     if not are_all_cachable(tables):
@@ -358,8 +382,8 @@ def query_key_and_tables(compiler: SQLCompiler, result_type: str) -> tuple[str, 
 def tables_in_sql(compiler: SQLCompiler, tables: Iterable[str]) -> list[str]:
     """Return those of ``tables`` that the SQL of ``compiler`` names, once query_key_and_tables() compiled it.
 
-    A join the ORM trimmed, such as the one to the target of a foreign key filtered by its id, keeps its table
-    among the tables of the query but out of its SQL.
+    A subquery in an annotation that alias() hides and nothing uses keeps its tables among the tables of the query
+    but out of its SQL.
     """
     sql = getattr(compiler, _GENERATED_SQL)
     return [table for table in tables if _named_in(table.lower(), sql)]

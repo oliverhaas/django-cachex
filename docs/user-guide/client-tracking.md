@@ -60,12 +60,14 @@ From the second read of a copy on, `get()` and `get_many()` return one shared ob
 
 - `str`, `bytes`, `int`, `float`, `complex`, `bool`, `None`, `Decimal`, `Fraction`, `date`, `datetime`, `time`, `timedelta`, `UUID`, `range` and enum members.
 - `tuple` and `frozenset` of qualifying values, and from Python 3.15 `frozendict` with qualifying keys and values.
-- Frozen dataclasses whose fields hold qualifying values.
-- Subclasses of these that add no attributes: each class between the subclass and the qualifying type declares `__slots__` with at most `__weakref__`. Named tuples, `typing.NamedTuple` classes and Django's `SafeString` qualify.
+- Frozen dataclasses whose fields hold qualifying values. A subclass of a frozen dataclass must be a frozen dataclass too. The `__slots__` of such a class, if it declares them, hold only its fields and `__weakref__`, as `dataclass(frozen=True, slots=True)` makes them.
+- Subclasses of the other types above that add no attributes: each class between the subclass and the qualifying type declares `__slots__` with at most `__weakref__`. Named tuples, `typing.NamedTuple` classes and Django's `SafeString` qualify.
 
 A plain `list` or `set` of qualifying values, or a plain `dict` with qualifying keys and values, is kept too. Each read gets a shallow copy of it: its own container over the shared items. A caller can add, remove or replace items in its copy, and other reads do not see the change. A list of 1000 rows then reads in about 9 µs instead of about 440 µs, and a dict of 1000 rows in about 13 µs.
 
-Every other value is decoded for each read, so each caller gets its own object. This covers model instances, a list, dict, set or tuple that holds a list, dict, set or model instance, subclasses of `list`, `dict` and `set` such as `OrderedDict` and `defaultdict`, and the frozen classes of attrs, pydantic and msgspec. Async reads and the ORM cache's lookups decode each read too.
+Every other value is decoded for each read, so each caller gets its own object. This covers model instances, a list, dict, set or tuple that holds a list, dict, set or model instance, subclasses of `list`, `dict` and `set` such as `OrderedDict` and `defaultdict`, a frozen dataclass that also subclasses `tuple` or `frozenset`, and the frozen classes of attrs, pydantic and msgspec. Async reads decode each read too.
+
+The ORM cache's lookups share an entry that qualifies, such as a [`cached_data()`](orm-cache.md#cached_data) result that is a tuple of rows, or the result of `count()`, `exists()` or `aggregate()`. The entry of a query that returns rows holds a list of them, so each lookup decodes it.
 
 The first read of a copy only decodes it, so a copy read once costs nothing extra. The second read also walks the decoded value once to check it. The walk takes about as long as decoding a tuple of short values, and longer for long strings. A kept value counts toward `max_bytes` with the `sys.getsizeof()` of each of its parts, and an object it holds twice counts twice. A value that takes its entry above an eighth of `max_bytes` is decoded for each read.
 

@@ -30,10 +30,10 @@ Every key operation needs both kinds, so `view_key` with `access_default` lists 
 Some operations reach past one alias and need the permission of every alias in `CACHES`:
 
 - The danger zone's Flush database runs `FLUSHDB`, which removes every key in the database, whichever alias wrote it.
-- The Clear tool and the Flush action on Django's own `RedisCache`, which clears with `FLUSHDB`, and on the memcached backends, which clear with `flush_all`.
+- The Clear tool and the Flush action on every backend but the Valkey and Redis backends. Their `clear()` deletes every key in the storage, whichever alias wrote it: `LocMemCache`, `FileBasedCache`, `DatabaseCache` and `S3Cache` empty the `LOCATION`, Django's own `RedisCache` runs `FLUSHDB` and the memcached backends run `flush_all`.
 - The slow log on the cache info page covers the whole server, and its arguments hold the key names and values of every client. Without every alias, it shows the command names only.
 
-The permissions do not check other aliases that share a cache's storage. On `LocMemCache`, `DatabaseCache` and `FileBasedCache`, the Clear tool and the Flush action delete every key at the `LOCATION`, and on the Valkey and Redis backends, Clear all versions deletes every version under the `KEY_PREFIX`. Give each alias a `LOCATION` of its own.
+On the Valkey and Redis backends, the Clear tool and the Flush action delete only the keys of the alias's `KEY_PREFIX` and `VERSION`, so they need only the permission of the cache. Clear all versions deletes every version under the `KEY_PREFIX` and does not check other aliases with the same `KEY_PREFIX` at the same `LOCATION`. Give each alias a `KEY_PREFIX` or a `LOCATION` of its own.
 
 The cache list and the cache info page's configuration and server statistics need only `view_cache`.
 
@@ -68,7 +68,7 @@ The Flush action, the Clear tool and the danger zone delete keys in bulk, so the
 CACHEX_ADMIN = {"ALLOW_FLUSH": True}
 ```
 
-They still need the `change_cache` permission and the [permission of the cache](#permissions), or that of every cache where they empty a whole database or server. While they are off, the admin hides them and refuses their requests.
+They still need the `change_cache` permission and the [permission of the cache](#permissions), or that of every cache where they can delete the keys of other caches. While they are off, the admin hides them and refuses their requests.
 
 ## Support Levels
 

@@ -33,7 +33,7 @@ CACHES = {
 - Pluggable serializers (Pickle, JSON, MsgPack, ormsgpack, orjson) and compressors (Zlib, Gzip, LZ4, LZMA, Zstandard), each with a fallback chain to migrate between formats.
 - Cache stampede prevention (TTL-based XFetch).
 - [Client tracking](https://oliverhaas.github.io/django-cachex/latest/user-guide/client-tracking/), one option that keeps local copies of the values each process reads, kept current by the server's `CLIENT TRACKING`.
-- An opt-in [ORM cache](https://oliverhaas.github.io/django-cachex/latest/user-guide/orm-cache/), `django_cachex.orm`, that caches ORM query results per table and invalidates them on every write.
+- An opt-in [ORM cache](https://oliverhaas.github.io/django-cachex/latest/user-guide/orm-cache/), `django_cachex.orm`, that caches ORM query results per table and invalidates them on every write. Its `cached_data()` decorator stores a function's results the same way, per arguments, under the tables it declares.
 - `LocMemCache` and `DatabaseCache` extensions with the hash, list, set and sorted set operations, `ttl()`/`expire()`/`persist()`, key patterns and admin support, but no streams, locks, pipelines or Lua.
 - Experimental `ValkeyGlideCache` and `ValkeyGlideClusterCache` backends on `valkey-glide`, Valkey's official client with a Rust core.
 - `S3Cache`, which stores large values in an S3 Express One Zone or S3 Standard bucket, with parallel `get_many()` and `set_many()`. See [S3 Cache](https://oliverhaas.github.io/django-cachex/latest/user-guide/s3/).

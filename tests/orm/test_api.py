@@ -2,6 +2,7 @@
 # Bertrand Bordage); see django_cachex/orm/LICENSE.
 
 import re
+from contextlib import nullcontext
 from dataclasses import dataclass
 from decimal import Decimal
 from io import StringIO
@@ -267,6 +268,20 @@ def test_cached_data_keeps_the_results_of_other_closures_and_defaults_apart(make
     assert make("b")() == ("test1b",)
 
 
+def test_cached_data_keeps_the_results_of_swapped_parameters_apart():
+    @cached_data(Test)
+    def pick(first, second):
+        return first
+
+    picked = pick(first="a", second="b")
+
+    @cached_data(Test)
+    def pick(second, first):
+        return second
+
+    assert (picked, pick(first="a", second="b")) == ("a", "b")
+
+
 @pytest.mark.parametrize(
     "change",
     [
@@ -315,6 +330,27 @@ def test_cached_data_does_not_store_a_result_with_its_own_uncommitted_write():
         assert names() == ("test1", "test2")
         transaction.set_rollback(True)
     assert names() == ("test1",)
+
+
+@pytest.mark.parametrize(
+    "outer",
+    [pytest.param(nullcontext, id="transaction"), pytest.param(transaction.atomic, id="savepoint")],
+)
+def test_cached_data_does_not_store_a_result_with_its_own_rolled_back_write(outer):
+    made = ["rolled_back"]
+
+    @cached_data(Test)
+    def names():
+        with transaction.atomic():
+            if made:
+                Test.objects.create(name=made.pop())
+            result = tuple(Test.objects.values_list("name", flat=True))
+            transaction.set_rollback(True)
+        return result
+
+    with outer():
+        assert names() == ("rolled_back", "test1")
+        assert names() == ("test1",)
 
 
 @pytest.mark.parametrize(
@@ -533,6 +569,22 @@ def test_cached_data_accepts_a_filter_on_a_trimmed_join(user, declared, read):
     assert len(pks(user.pk)) == 1
     pks(user.pk)
     assert calls == [user.pk]
+
+
+@pytest.mark.filterwarnings("error::django_cachex.orm.exceptions.UndeclaredTableWarning")
+@override_orm_settings(UNCACHABLE_TABLES=("auth_user",))
+def test_cached_data_accepts_a_trimmed_join_to_an_uncachable_table(user):
+    Test.objects.create(name="owned", owner=user)
+
+    @cached_data(Test)
+    def owned(user_pk):
+        return tuple(Test.objects.filter(owner__id=user_pk).values_list("name", flat=True))
+
+    with assert_num_queries(1):
+        assert owned(user.pk) == ("owned",)
+    with assert_num_queries(0):
+        assert owned(user.pk) == ("owned",)
+        assert list(Test.objects.filter(owner__id=user.pk).values_list("name", flat=True)) == ["owned"]
 
 
 @pytest.mark.filterwarnings("error::django_cachex.orm.exceptions.UndeclaredTableWarning")

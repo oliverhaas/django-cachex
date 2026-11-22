@@ -3592,6 +3592,10 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
     _async_sentinel_pool_class: builtins.type[Any] | None = None
     _async_sentinel_ssl_connection_class: builtins.type[Any] | None = None
 
+    # Options that the driver's Sentinel class takes and a connection rejects.
+    _SENTINEL_OPTIONS: frozenset[str] = frozenset({"min_other_sentinels"})
+    _CLIENT_ONLY_OPTIONS = ValkeyPyAdapter._CLIENT_ONLY_OPTIONS | _SENTINEL_OPTIONS
+
     # Sentinel-managed pools live on ``_async_sentinel_pool_class``; clear the
     # generic ``_async_pool_class`` inherited from ``ValkeyPyAdapter`` so callers
     # that probe it (e.g. tests gating on ``_async_pool_class is None``)
@@ -3667,7 +3671,12 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
             sentinels,
             sentinel_kwargs=self._discovery_kwargs(pool_options),
             **pool_options,
+            **self._sentinel_options,
         )
+
+    @cached_property
+    def _sentinel_options(self) -> dict[str, Any]:
+        return {name: self._options[name] for name in self._SENTINEL_OPTIONS if name in self._options}
 
     def _discovery_kwargs(self, pool_options: Mapping[str, Any]) -> dict[str, Any]:
         """The ``sentinel_kwargs`` for the clients that ask the Sentinels where the servers are.
@@ -3818,6 +3827,7 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
                 sentinels,
                 sentinel_kwargs=self._discovery_kwargs(pool_options),
                 **pool_options,
+                **self._sentinel_options,
             )
             self._async_sentinels[loop] = async_sentinel
             return async_sentinel
@@ -3868,7 +3878,7 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
 
     @cached_property
     def _fleet_key(self) -> tuple[Any, ...]:
-        """The fleet and ``sentinel_kwargs``, standing in for a pool's sentinel manager in registry keys.
+        """The fleet, ``sentinel_kwargs`` and Sentinel options: a pool's sentinel manager, in registry keys.
 
         Each adapter instance builds its own manager, and asgiref hands every
         thread and task a fresh instance, so the manager itself would split pools.
@@ -3877,6 +3887,7 @@ class ValkeyPySentinelAdapter(ValkeyPyAdapter):
         return (
             tuple(tuple(entry) for entry in sentinels),
             _options_key(self._options.get("sentinel_kwargs") or {}),
+            _options_key(self._sentinel_options),
         )
 
     @cached_property
