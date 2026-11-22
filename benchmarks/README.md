@@ -220,6 +220,11 @@ ORM cache reads no client clock, so its rows only check that.
   operations updating a random row of the table instead.
 - `test_migrate_noop`: how many of 100 cached queries a `migrate` with
   nothing to apply leaves cached.
+- `test_cached_data`: reads of the children of 100 parents, 2 each, by a
+  query per parent, by `prefetch_related()`, by a `cached_data()` function
+  called per parent and by one returning a map, plus single hits of the
+  function. The ORM cache contenders only, since cachalot has no
+  `cached_data()`.
 
 ```console
 uv run pytest benchmarks/test_orm.py -c benchmarks/pytest.ini

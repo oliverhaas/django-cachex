@@ -3,6 +3,7 @@
 import pytest
 
 from benchmarks.orm_runner import (
+    format_cached_data,
     format_latency,
     format_migrate,
     format_mixed,
@@ -10,6 +11,7 @@ from benchmarks.orm_runner import (
     format_scorecard,
     format_sizes,
     format_skew,
+    run_cached_data,
     run_latency,
     run_migrate_noop,
     run_mixed,
@@ -129,6 +131,16 @@ def test_sizes(contender, orm_env, orm_sizes, capsys) -> None:
     with capsys.disabled():
         print()
         print(format_sizes([result]))
+
+
+@pytest.mark.parametrize("contender", ["cachex", "cachex+tracking"])
+def test_cached_data(contender, orm_env, orm_cached_data, capsys) -> None:
+    result = run_cached_data(orm_env, contender, parents=100, ops=200, hit_ops=2000, warmup=20)
+    orm_cached_data.add(result)
+
+    with capsys.disabled():
+        print()
+        print(format_cached_data([result]))
 
 
 @pytest.mark.parametrize("write_share", [0.01, 0.1])

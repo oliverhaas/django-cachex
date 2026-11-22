@@ -18,7 +18,7 @@ from django.db.models.sql.compiler import SQLCompiler, SQLDeleteCompiler, SQLIns
 from django.db.models.sql.constants import GET_ITERATOR_CHUNK_SIZE, MULTI, SINGLE
 
 from django_cachex.orm import transaction
-from django_cachex.orm.api import LOCAL_STORAGE, _invalidation_failed, _table_keys, invalidate
+from django_cachex.orm.api import LOCAL_STORAGE, RECORDING, _invalidation_failed, _table_keys, invalidate
 from django_cachex.orm.settings import ITERABLES, orm_settings
 from django_cachex.orm.store import Store, get_store
 from django_cachex.orm.utils import (
@@ -28,6 +28,7 @@ from django_cachex.orm.utils import (
     filter_cachable,
     models_of_tables,
     query_key_and_tables,
+    tables_in_sql,
 )
 
 logger = logging.getLogger(__name__)
@@ -74,8 +75,14 @@ def _read(compiler: Any, result_type: Any, execute: Callable[[], Any]) -> Any:
         return execute()
     try:
         query_key, tables = query_key_and_tables(compiler, result_type)
-    except EmptyResultSet, UncachableQuery:
+    except EmptyResultSet:
         return execute()
+    except UncachableQuery as e:
+        if e.tables and (recording := RECORDING.get()) is not None:
+            recording.uncachable.update(e.tables)
+        return execute()
+    if (recording := RECORDING.get()) is not None:
+        recording.reads.update((connection.alias, table) for table in tables_in_sql(compiler, tables))
     # The transaction reads its own writes, which the shared cache must not see.
     if transaction.in_transaction(connection) and not tables.isdisjoint(transaction.written(connection)):
         return execute()
@@ -125,6 +132,17 @@ def _patch_read(original: Callable[..., Any]) -> Callable[..., Any]:
                 and connection.alias in orm_settings.DATABASES
             ):
                 return _read(compiler, result_type, execute)
+            if (
+                not isinstance(compiler, WRITE_COMPILERS)
+                and (recording := RECORDING.get()) is not None
+                and (meta := compiler.query.get_meta())
+            ):
+                if connection.alias not in orm_settings.DATABASES:
+                    # Writes to that database do not change any generation, so the result must not be stored.
+                    recording.reads.add((connection.alias, meta.db_table))
+                elif not getattr(LOCAL_STORAGE, "orm_cache_enabled", True):
+                    # A read in orm_cache_disabled() skips _read(), which finds its tables, so the result must not be stored.
+                    recording.uncachable.add(meta.db_table)
             return execute()
         finally:
             setattr(connection, _COMPILING, was_compiling)
