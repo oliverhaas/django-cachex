@@ -23,7 +23,7 @@ CACHES = {
 |---|---|---|
 | `prefix` | `f"{KEY_PREFIX}:"` | Keys whose name on the server, after `KEY_FUNCTION` and `VERSION`, starts with it get local copies. Other keys are read from the server. A prefix that matches none of the alias's keys keeps no copies and raises no error. Required with a custom `KEY_FUNCTION`. |
 | `max_staleness` | `1.0` | Seconds. Copies are served only while the server confirmed within this window that every invalidation reached the process. |
-| `max_bytes` | `33554432` (32 MiB) | Size of the local copies per process, counted as value bytes plus key characters plus 100 per entry. An entry above an eighth of it is not kept. |
+| `max_bytes` | `33554432` (32 MiB) | Size of the local copies per process, counted as value bytes plus key characters plus 100 per entry, plus the [decoded values](#decoded-values) kept with them. An entry above an eighth of it is not kept. |
 
 ```python
 "OPTIONS": {
@@ -54,13 +54,30 @@ These writes reach the writing process like another process's writes, after abou
 
 `SWAPDB` sends no invalidation, so copies of the swapped databases stay until their TTL runs out or the store evicts them. Don't use it with tracking.
 
+## Decoded values
+
+From the second read of a copy on, `get()` and `get_many()` return one shared object for every read of that copy when no caller can change it, and do not decode it again. A tuple of 1000 rows then reads in about 6 µs instead of about 400 µs. These values qualify:
+
+- `str`, `bytes`, `int`, `float`, `complex`, `bool`, `None`, `Decimal`, `Fraction`, `date`, `datetime`, `time`, `timedelta`, `UUID`, `range` and enum members.
+- `tuple` and `frozenset` of qualifying values, and from Python 3.15 `frozendict` with qualifying keys and values.
+- Frozen dataclasses whose fields hold qualifying values.
+- Subclasses of these that add no attributes: each class between the subclass and the qualifying type declares `__slots__` with at most `__weakref__`. Named tuples, `typing.NamedTuple` classes and Django's `SafeString` qualify.
+
+A plain `list` or `set` of qualifying values, or a plain `dict` with qualifying keys and values, is kept too. Each read gets a shallow copy of it: its own container over the shared items. A caller can add, remove or replace items in its copy, and other reads do not see the change. A list of 1000 rows then reads in about 9 µs instead of about 440 µs, and a dict of 1000 rows in about 13 µs.
+
+Every other value is decoded for each read, so each caller gets its own object. This covers model instances, a list, dict, set or tuple that holds a list, dict, set or model instance, subclasses of `list`, `dict` and `set` such as `OrderedDict` and `defaultdict`, and the frozen classes of attrs, pydantic and msgspec. Async reads and the ORM cache's lookups decode each read too.
+
+The first read of a copy only decodes it, so a copy read once costs nothing extra. The second read also walks the decoded value once to check it. The walk takes about as long as decoding a tuple of short values, and longer for long strings. A kept value counts toward `max_bytes` with the `sys.getsizeof()` of each of its parts, and an object it holds twice counts twice. A value that takes its entry above an eighth of `max_bytes` is decoded for each read.
+
+`object.__setattr__()` can still change a frozen dataclass. A change made that way to a shared value shows in every read of the copy until the server invalidates it.
+
 ## Costs
 
-- One extra connection and one thread, `django-cachex-tracking`, per process and configuration. Aliases with the same driver, servers, options and tracking settings share them. Each configuration keeps its connection, thread and copies until the process exits. A test that reads the cache under a new `KEY_PREFIX`, set through `override_settings`, adds one of each.
+- One extra connection and one thread, `django-cachex-tracking`, per process and configuration. Aliases with the same backend, servers, options and tracking settings share them. Each configuration keeps its connection, thread and copies until the process exits. A test that reads the cache under a new `KEY_PREFIX`, set through `override_settings`, adds one of each.
 - An invalidation to every process for every write under the prefix, from any client.
 - About two `PING`s per `max_staleness` for each tracking connection.
 - One non-blocking socket read per tracked read, on top of the lookup.
-- `max_bytes` caps the counted size of the copies per process. Real memory is up to about twice that for values under a few hundred bytes.
+- `max_bytes` caps the counted size of the copies and their kept decoded values per process. Real memory is up to about twice that for values under a few hundred bytes.
 - A read without a copy sends `GET` and `PTTL` in one pipeline, and `get_many()` fetches all keys without copies in one pipeline. `has_key()` without a copy sends `EXISTS`, or `PTTL` under stampede prevention, and keeps no copy.
 - A read without a copy goes to the primary. On a Sentinel alias, or with replicas in `LOCATION`, other reads go to the replicas.
 

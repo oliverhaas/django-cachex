@@ -1,27 +1,38 @@
 """Client tracking: local copies of string values that the server's invalidations keep current."""
 
 import asyncio
+import builtins
+import collections
+import datetime as dt
 import inspect
 import itertools
 import logging
 import os
 import random
 import socket
+import sys
 import threading
 import time
 from collections.abc import Iterator
 from contextlib import suppress
+from dataclasses import dataclass
+from decimal import Decimal
+from enum import Enum
+from fractions import Fraction
 from pathlib import Path
-from uuid import uuid4
+from typing import Any, NamedTuple
+from uuid import UUID, uuid4
 
 import pytest
 import redis
 import valkey
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
+from django.utils.safestring import mark_safe
 
 from django_cachex.adapters import ValkeyPyAdapter
 from django_cachex.cache import RedisCache
+from django_cachex.immutable import can_keep, kept_size
 from django_cachex.orm.store import RespStore
 from django_cachex.script import keys_only_pre
 from django_cachex.tracking import listener as listener_module
@@ -29,7 +40,7 @@ from django_cachex.tracking import tracker as tracker_module
 from django_cachex.tracking.adapter import PIPELINE_READ_METHODS, READ_COMMANDS, READ_METHODS
 from django_cachex.tracking.listener import Listener
 from django_cachex.tracking.resp3 import NEED_MORE, ErrorReply, Map, Parser, ProtocolError, Push, Set, SimpleString
-from django_cachex.tracking.store import ENTRY_OVERHEAD, LocalStore
+from django_cachex.tracking.store import ENTRY_OVERHEAD, NOT_KEPT, READ_ONCE, LocalStore
 from tests.cache.support import Op, TcpProxy, make_cache, run_forked_while_held, stale_reads, wait_until
 from tests.fixtures.cache import (
     ADAPTER_IMAGES,
@@ -386,6 +397,209 @@ def test_stats_count_the_bytes_of_the_copies_kept():
     assert totals == [1400, 1450, 1050, 550, 250, 0]
 
 
+def _read_twice(store: LocalStore, key: str, value: bytes) -> object:
+    store.kept(key, value)
+    return store.kept(key, value)
+
+
+def test_a_kept_value_counts_toward_the_bytes_until_its_copy_goes():
+    store = _store()
+    value = _sized("t:a", 300)
+    _absorb(store, "t:a", value)
+    assert _read_twice(store, "t:a", value) is READ_ONCE
+
+    store.keep("t:a", value, ("decoded",), 200)
+    totals = [store.stats()["bytes"]]
+    kept = store.kept("t:a", value)
+    store.invalidate(["t:a"])
+    totals.append(store.stats()["bytes"])
+
+    assert kept == ("decoded",)
+    assert totals == [500, 0]
+
+
+@pytest.mark.parametrize("size", [None, 401], ids=["mutable", "above-an-eighth"])
+def test_a_value_that_is_not_kept_is_decoded_by_every_read(size):
+    store = _store(max_bytes=8000)
+    value = _sized("t:a", 600)
+    _absorb(store, "t:a", value)
+    _read_twice(store, "t:a", value)
+
+    store.keep("t:a", value, ("decoded",), size)
+
+    assert store.kept("t:a", value) is NOT_KEPT
+    assert store.stats()["bytes"] == 600
+
+
+def test_a_copy_replaced_after_its_read_keeps_nothing():
+    store = _store()
+    old, new = b"old", b"new"
+    _absorb(store, "t:a", old)
+    _read_twice(store, "t:a", old)
+    store.invalidate(["t:a"])
+    _absorb(store, "t:a", new)
+    _read_twice(store, "t:a", new)
+
+    store.keep("t:a", old, ("old",), 10)
+
+    assert store.kept("t:a", new) is READ_ONCE
+
+
+def test_keeping_a_value_evicts_the_least_recently_used_copies():
+    store = _store(max_bytes=8000)
+    for index in range(1, 8):
+        _absorb(store, f"t:{index}", _sized(f"t:{index}", 1000))
+    _absorb(store, "t:8", _sized("t:8", 300))
+    _absorb(store, "t:a", value := _sized("t:a", 600))
+    _read_twice(store, "t:a", value)
+
+    store.keep("t:a", value, ("decoded",), 400)
+
+    assert store.lookup("t:1", 100.0) is None
+    assert store.lookup("t:2", 100.0) is not None
+    assert store.stats()["bytes"] == 7300
+
+
+@dataclass(frozen=True)
+class _Frozen:
+    name: str
+    tags: Any = ()
+
+
+@dataclass(frozen=True, slots=True)
+class _FrozenSlots:
+    name: str
+
+
+@dataclass
+class _Open:
+    name: str
+
+
+class _Point(NamedTuple):
+    x: int
+    y: int
+
+
+class _Subpoint(_Point):
+    pass
+
+
+_Pair = collections.namedtuple("_Pair", "a b")  # noqa: PYI024
+
+
+class _Color(Enum):
+    RED = 1
+
+
+def _with_attribute(value: Any, name: str, attribute: Any) -> Any:
+    object.__setattr__(value, name, attribute)
+    return value
+
+
+KEPT = [
+    "text",
+    b"bytes",
+    7,
+    1.5,
+    2j,
+    True,
+    None,
+    Decimal("1.5"),
+    Fraction(1, 3),
+    dt.date(2026, 1, 1),
+    dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+    dt.time(12),
+    dt.timedelta(days=1),
+    UUID(int=1),
+    range(3),
+    (1, ("a", (None,))),
+    frozenset({1, "a"}),
+    _Point(1, 2),
+    _Pair(1, "b"),
+    mark_safe("<b>"),
+    _Color.RED,
+    _Frozen("a", (1, 2)),
+    _FrozenSlots("a"),
+    [1, ("a", 2)],
+    {"a": (1, 2)},
+    {1, "a"},
+]
+MUTABLE = [
+    [[1]],
+    {"a": [1]},
+    [{1}],
+    collections.OrderedDict(a=1),
+    bytearray(b"x"),
+    (1, [2]),
+    _Subpoint(1, 2),
+    _Open("a"),
+    _Frozen("a", [1]),
+    _with_attribute(_Frozen("a"), "cache", []),
+    object(),
+]
+FROZENDICT = getattr(builtins, "frozendict", None)
+
+
+def _type_name(value: Any) -> str:
+    return type(value).__name__
+
+
+@pytest.mark.parametrize("value", KEPT, ids=_type_name)
+def test_a_value_a_copy_can_keep_is_kept_and_sized(value):
+    assert can_keep(value)
+    assert kept_size(value, 1 << 20) is not None
+
+
+@pytest.mark.parametrize("value", MUTABLE, ids=_type_name)
+def test_a_value_a_caller_can_change_is_not_kept(value):
+    assert not can_keep(value)
+    assert kept_size(value, 1 << 20) is None
+
+
+@pytest.mark.parametrize(
+    ("value", "parts"),
+    [
+        (("text", (1, 2.5)), ["text", (1, 2.5), 1, 2.5]),
+        ({"a": (1, 2.5)}, ["a", (1, 2.5), 1, 2.5]),
+    ],
+    ids=_type_name,
+)
+def test_the_size_counts_every_part(value, parts):
+    assert kept_size(value, 1 << 20) == sum(map(sys.getsizeof, [value, *parts]))
+
+
+def test_a_value_above_the_limit_is_not_sized():
+    value = tuple(range(100))
+
+    assert kept_size(value, sys.getsizeof(value)) is None
+
+
+def test_a_cycle_through_a_frozen_dataclass_ends_at_the_limit():
+    node = _Frozen("a")
+    _with_attribute(node, "tags", (node,))
+
+    assert not can_keep(node)
+    assert kept_size(node, 1 << 20) is None
+
+
+@pytest.mark.skipif(FROZENDICT is None, reason="frozendict is a builtin from Python 3.15")
+@pytest.mark.parametrize(("items", "immutable"), [({"a": (1, 2)}, True), ({"a": [1]}, False)])
+def test_a_frozendict_is_immutable_when_its_values_are(items, immutable):
+    assert (kept_size(FROZENDICT(items), 1 << 20) is not None) is immutable
+
+
+@pytest.mark.skipif(sys.version_info < (3, 15), reason="a tuple subclass takes non-empty __slots__ from Python 3.15")
+def test_a_tuple_subclass_with_slots_is_not_sized():
+    class Slotted(tuple):
+        __slots__ = ("extra",)
+
+    value = Slotted((1,))
+    value.extra = []
+
+    assert kept_size(value, 1 << 20) is None
+
+
 DB = 15
 
 
@@ -438,11 +652,12 @@ def build(resp_adapter, redis_container):
         userinfo="",
         tracking=False,
         warm_key="k",
+        backend=None,
         **options,
     ):
         host, port = ("127.0.0.1", port) if port else (container.host, container.port)
         options = {**_get_client_library_options(ADAPTER_IMAGES[resp_adapter][1]), **options, "tracking": tracking}
-        backend = import_string(BACKENDS[("default", resp_adapter)])
+        backend = backend or import_string(BACKENDS[("default", resp_adapter)])
         cache = backend(f"{scheme}://{userinfo}{host}:{port}?db={DB}", {"KEY_PREFIX": prefix, "OPTIONS": options})
         built.append(cache)
         if tracking and warm_key is not None:
@@ -504,6 +719,48 @@ def test_info_counts_the_reads_served_from_copies(tracked):
     tracked.get("k")
 
     assert tracked.info()["tracking"]["hits"] == hits + 1
+
+
+SHARED_READS = [
+    pytest.param(lambda cache: cache.get("k"), id="get"),
+    pytest.param(lambda cache: cache.get_many(["k"])["k"], id="get_many"),
+]
+
+
+@pytest.mark.parametrize("read", SHARED_READS)
+def test_reads_of_a_copy_share_its_decoded_immutable_value(read, tracked):
+    tracked.set("k", ((1, "a"), (2, "b")))
+    read(tracked)
+    kept = read(tracked)
+
+    assert read(tracked) is kept
+    assert kept == ((1, "a"), (2, "b"))
+
+
+@pytest.mark.parametrize("read", SHARED_READS)
+def test_each_read_of_a_kept_list_gets_its_own_list_over_shared_items(read, tracked):
+    tracked.set("k", [(1, "a"), (2, "b")])
+    read(tracked)
+    read(tracked).append((3, "c"))
+    read(tracked).append((4, "d"))
+    value = read(tracked)
+
+    assert value == [(1, "a"), (2, "b")]
+    assert value[0] is read(tracked)[0]
+
+
+def test_a_backend_that_decodes_otherwise_keeps_its_own_decoded_values(build, plain):
+    class Wrapped(type(plain)):
+        def decode(self, value):
+            return ("wrapped", super().decode(value))
+
+    plain.set("k", ("v",))
+    first = build(tracking={"max_staleness": 3600})
+    first.get("k")
+    first.get("k")
+    second = build(backend=Wrapped, tracking={"max_staleness": 3600}, warm_key="other")
+
+    assert second.get("k") == ("wrapped", ("v",))
 
 
 def test_stampede_prevention_recomputes_from_a_kept_copy(build, proxy, plain, server):
