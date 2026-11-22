@@ -317,6 +317,39 @@ async def test_sentinel_kwargs_retry_list_keeps_one_async_pool(monkeypatch: pyte
         await adapter.aclose()
 
 
+@pytest.mark.parametrize(
+    ("adapter_class", "options"),
+    [
+        pytest.param(ValkeyPySentinelAdapter, {"min_other_sentinels": 1}, marks=requires_valkey, id="valkey-py"),
+        pytest.param(
+            RedisPySentinelAdapter,
+            {"min_other_sentinels": 1, "force_master_ip": "10.0.0.1"},
+            id="redis-py",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_sentinel_only_options_reach_the_sentinel_and_not_the_connections(
+    monkeypatch: pytest.MonkeyPatch,
+    adapter_class: Any,
+    options: dict[str, Any],
+):
+    monkeypatch.setattr(adapter_class, "_sync_pools", {})
+    monkeypatch.setattr(adapter_class, "_async_pools", weakref.WeakKeyDictionary())
+    adapter = adapter_class(["redis://mymaster/0"], sentinels=[("sentinel-a", 26379)], **options)
+    try:
+        pools = [
+            adapter.get_client(write=True).connection_pool,
+            (await adapter.get_async_client(write=True)).connection_pool,
+        ]
+        for pool in pools:
+            pool.make_connection()
+
+        assert [pool.sentinel_manager.min_other_sentinels for pool in pools] == [1, 1]
+    finally:
+        await adapter.aclose()
+
+
 FORK_LOCATION = ["redis://fork:6379/0"]
 
 

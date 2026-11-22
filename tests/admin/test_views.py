@@ -2182,6 +2182,16 @@ def test_create_mode_string_shows_value_form(
     assert 'id="id_value"' in content
 
 
+def test_create_page_of_a_list_offers_no_pop(admin_client: Client, test_cache: RespCache):
+    response = admin_client.get(_key_detail_create_url("default", "newkey:list:nopop", "list"))
+
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert 'name="action" value="rpush"' in content
+    assert 'name="action" value="lpop"' not in content
+    assert 'name="ttl_value"' not in content
+
+
 def test_create_mode_operation_creates_key(
     admin_client: Client,
     test_cache: RespCache,
@@ -2318,6 +2328,15 @@ def test_cache_detail_count_parameter(admin_client: Client, test_cache):
     for count in [10, 25, 50]:
         response = admin_client.get(url + f"?count={count}")
         assert response.status_code == 200
+
+
+def test_cache_detail_with_a_huge_slow_log_count_reads_the_slow_log(admin_client: Client, test_cache):
+    response = admin_client.get(_cache_detail_url("default") + "?count=99999999999999999999")
+
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert "<h2>Slow Log</h2>" in content
+    assert "could not be read" not in content
 
 
 def test_make_pk_parse_pk_roundtrip_plain():
@@ -4114,6 +4133,17 @@ def test_list_key_page_has_no_mutation_controls_for_a_viewer(db, test_cache: Res
     assert 'name="action" value="lrem"' not in content
 
 
+def test_sorted_set_page_shows_scores_to_a_viewer(db, test_cache: RespCache):
+    test_cache.zadd("viewonly:zset", {"member-a": 7.5})
+    client = _staff_client(["view_key"])
+
+    response = client.get(_key_detail_url("default", "viewonly:zset"))
+
+    assert response.status_code == 200
+    table = _table_containing(response.content, "member-a")
+    assert [field["value"] for field in table.select('input[name="score_value"]')] == ["7.5"]
+
+
 def test_change_permission_restores_the_mutation_controls(db, test_cache: RespCache):
     test_cache.set("viewonly:changeable", "value")
     client = _staff_client(["view_key", "change_key"])
@@ -5169,6 +5199,14 @@ def test_key_list_of_an_unknown_alias_still_says_not_found(db, test_cache):
     assert response.url == reverse("admin:index")
 
 
+def test_key_list_of_an_unknown_alias_is_forbidden_without_key_permissions(db, test_cache):
+    client = _staff_client([], aliases=())
+
+    response = client.get(_key_list_url("nonexistent"))
+
+    assert response.status_code == 403
+
+
 def test_key_queryset_refuses_an_alias_without_permission(db, test_cache, rf):
     request = rf.get(_key_list_url("local"))
     request.user = User.objects.create_user(username="staff_queryset", is_staff=True)
@@ -5398,6 +5436,21 @@ def test_clear_tool_on_a_server_wide_backend_needs_every_alias(db, test_cache: R
 
     assert response.status_code == 403
     assert test_cache.get("shared:clear") == "value"
+
+
+@pytest.mark.usefixtures("_allow_flush")
+def test_clear_tool_on_a_shared_database_table_needs_every_alias(db, test_cache: RespCache):
+    call_command("createcachetable", "admin_test_shared")
+    shared = {"BACKEND": "django_cachex.cache.DatabaseCache", "LOCATION": "admin_test_shared"}
+    client = _staff_client(["view_key", "change_cache"], aliases=("mine",))
+
+    with override_settings(CACHES={**settings.CACHES, "mine": shared, "theirs": {**shared, "KEY_PREFIX": "theirs"}}):
+        caches["theirs"].set("theirs:key", "value")
+        response = client.post(_key_list_url("mine"), {"action": "clear_cache", "cache_name": "mine"})
+        survivor = caches["theirs"].get("theirs:key")
+
+    assert response.status_code == 403
+    assert survivor == "value"
 
 
 @pytest.mark.usefixtures("_allow_flush")

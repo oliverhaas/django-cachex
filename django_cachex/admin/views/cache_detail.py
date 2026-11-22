@@ -32,6 +32,11 @@ if TYPE_CHECKING:
     from django.http import HttpRequest, HttpResponse
 
 
+# Cap for the user-supplied ``?count=`` of the slow log, which the server
+# rejects past its integer range.
+MAX_SLOWLOG_COUNT = 1000
+
+
 def supports_danger_zone(cache: Any) -> bool:
     """Report whether ``cache`` implements the destructive admin operations.
 
@@ -143,7 +148,7 @@ def cache_detail_view(
     info_data = parse_metadata(cache, cache_config, raw_info)
 
     try:
-        slowlog_count = max(1, int(request.GET.get("count", 10)))
+        slowlog_count = min(MAX_SLOWLOG_COUNT, max(1, int(request.GET.get("count", 10))))
     except ValueError, TypeError:
         slowlog_count = 10
 

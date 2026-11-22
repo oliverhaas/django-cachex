@@ -1055,7 +1055,7 @@ def key_detail_view(  # noqa: C901, PLR0911, PLR0912, PLR0915
     user = request.user
     # ``_check_post_permission`` rejects the same submissions; hiding the
     # controls keeps a view-only user from filling in a form that only 403s.
-    can_change = (key_exists or create_mode) and user.has_perm("django_cachex.change_key")  # ty: ignore[missing-union-attribute]
+    can_change = key_exists and user.has_perm("django_cachex.change_key")  # ty: ignore[missing-union-attribute]
     can_mutate = can_change or create_mode
     can_delete = key_exists and user.has_perm("django_cachex.delete_key")  # ty: ignore[missing-union-attribute]
     can_edit_ttl = can_change and supports_ttl_edit(cache)

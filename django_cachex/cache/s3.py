@@ -59,6 +59,9 @@ _OPTION_DEFAULTS = {"serializer": None, "compressor": None, "max_concurrency": 6
 _CLIENT_DEFAULTS = {"timeout": "5s", "connect_timeout": "1s"}
 _RETRY_DEFAULTS = {"max_retries": 2, "retry_timeout": timedelta(seconds=10)}
 
+# The names obstore takes for its S3 Express switch.
+_S3_EXPRESS_KEYS = frozenset({"s3_express", "aws_s3_express"})
+
 # obstore's runtime does not survive fork(): after this process has sent a
 # request, every request in a forked child hangs, even on a new store.
 _requesting_pid: int | None = None
@@ -107,7 +110,9 @@ def _shared_store(location: str, options: dict[str, Any]) -> S3Store:
     with _stores_lock:
         store = _stores.get(registry_key)
         if store is None:
-            if "s3_express" not in options and urlsplit(location).netloc.endswith("--x-s3"):
+            # obstore reads these keys in any case, at the top level and in "config", and rejects a duplicate.
+            given = {key.lower() for key in (*options, *(options.get("config") or {}))}
+            if given.isdisjoint(_S3_EXPRESS_KEYS) and urlsplit(location).netloc.endswith("--x-s3"):
                 options = {**options, "s3_express": True}
             try:
                 store = S3Store.from_url(location, **options)
@@ -224,10 +229,11 @@ class S3Cache(ValueCodec, BaseCachex):
             return None
 
     def _map[T, R](self, fn: Callable[[T], R], items: list[T]) -> list[R]:
+        if len(items) <= 1:
+            # Without items no request goes out, so the fork check must not record this process.
+            return [fn(item) for item in items]
         # In a forked child the inherited pool has no threads, so the check runs here, not in a worker.
         _check_fork()
-        if len(items) <= 1:
-            return [fn(item) for item in items]
         pools = _pools.by_size
         if self._max_concurrency not in pools:
             pools[self._max_concurrency] = ThreadPoolExecutor(self._max_concurrency, thread_name_prefix="cachex-s3")

@@ -65,10 +65,10 @@
                 {% for member, score, editable in type_data.members %}
                 <tr class="{% cycle "row1" "row2" %}">
                     <td>{% include input_tpl with name="new_member" value=member rows=2 form_id="zset-update-" row_index=forloop.counter0 editable=editable can_mutate=can_mutate only %}</td>
-                    {% if can_mutate %}
                     <td>
-                        <input type="number" name="score_value" value="{{ score|unlocalize }}" step="any" class="cachex-value-input" form="zset-update-{{ forloop.counter0 }}" aria-label="{% trans "Score" %}"{% if not editable %} readonly{% endif %}>
+                        <input type="number" name="score_value" value="{{ score|unlocalize }}" step="any" class="cachex-value-input" form="zset-update-{{ forloop.counter0 }}" aria-label="{% trans "Score" %}"{% if not can_mutate %} readonly title="{% trans "You do not have permission to change cache keys." %}"{% elif not editable %} readonly{% endif %}>
                     </td>
+                    {% if can_mutate %}
                     <td>
                         <div class="cachex-row-actions">
                             {% if editable %}

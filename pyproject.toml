@@ -66,7 +66,7 @@ dev = [
   "redis[hiredis]==8.1.0",
   "beautifulsoup4==4.15.0",
   "django-stubs==6.1.2",
-  "djlint==1.50.0",
+  "djlint==1.54.0",
   "lz4==4.4.5",
   "msgpack==1.2.4",
   "ormsgpack==1.13.1",
@@ -83,10 +83,10 @@ dev = [
   "pytest-mock==3.17.0",
   "pytest-xdist==3.8.0",
   "pytest==9.2.0",
-  "ruff==0.17.5",
+  "ruff==0.17.6",
   "testcontainers==4.15.0",
-  "ty==0.0.102",
-  "types-docker==7.2.0.20261102",
+  "ty==0.0.107",
+  "types-docker==7.2.0.20261122",
   # ASGI benchmark only: granian (real ASGI server) plus httpx (load gen).
   "granian>=2.6,<3",
   "httpx>=0.28,<0.29",
@@ -101,7 +101,7 @@ dev = [
 # `dev` so `uv sync` works on the cp314t interpreter; opt in via
 # `uv sync --extra valkey-glide` on a GIL build (cp312/cp313/cp314) when
 # working on the backend or running the glide test slice.
-docs = ["mkdocs==1.6.1", "mkdocs-material==9.8.1", "mike==2.2.0"]
+docs = ["mkdocs==1.6.1", "mkdocs-material==9.8.2", "mike==2.2.0"]
 
 [build-system]
 requires = ["hatchling"]

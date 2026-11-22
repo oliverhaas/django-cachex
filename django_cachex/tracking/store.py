@@ -130,7 +130,8 @@ class LocalStore:
         with self._lock:
             if self._pending.get(key) is not token:
                 return
-            del self._pending[key]
+            # The fetch read a newer value than the old copy, which goes even if the new one is not stored.
+            self._drop(key)
             if value is None:
                 # Only an absent key is stored as absent. A nil with a TTL is a key written
                 # between the two commands, or on the MGET path a key of another type.
@@ -145,9 +146,6 @@ class LocalStore:
                 size = len(value) + len(key) + ENTRY_OVERHEAD
             if size > self.max_bytes // 8:
                 return
-            old = self._copies.pop(key, None)
-            if old is not None:
-                self._bytes -= old.size
             self._copies[key] = Copy(value, deadline, size)
             self._bytes += size
             self._evict()

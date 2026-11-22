@@ -116,6 +116,9 @@ class RedisPyAdapter(_RedisPyMixin, ValkeyPyAdapter):
 class RedisPySentinelAdapter(_RedisPyMixin, ValkeyPySentinelAdapter):
     """Sentinel-managed cache adapter using ``redis-py``."""
 
+    _SENTINEL_OPTIONS = frozenset({"min_other_sentinels", "force_master_ip"})
+    _CLIENT_ONLY_OPTIONS = ValkeyPySentinelAdapter._CLIENT_ONLY_OPTIONS | _SENTINEL_OPTIONS
+
     if _REDIS_AVAILABLE:
         _lib = redis
         _client_class = RedisClient

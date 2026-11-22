@@ -66,7 +66,7 @@ These are not cached:
 - `select_for_update()` and `explain()`.
 - Queries ordered by `"?"`.
 - Queries calling `Now()`, `TransactionNow()`, `Random()`, `UUID4()`, `UUID7()` or `RandomUUID()` anywhere, subqueries included.
-- The results of `iterator()` and `aiterator()`.
+- The results of `iterator()` and `aiterator()`, unless the database sets `DISABLE_SERVER_SIDE_CURSORS`. They still return the stored result of the same query: `Order.objects.iterator()` after `list(Order.objects.all())` sends no query.
 - Queries holding an expression without `get_source_expressions()`.
 - Queries with a parameter the cache key cannot represent exactly, such as JSON, binary and range parameters under psycopg2.
 - Raw SQL through `cursor.execute()` and `Manager.raw()`.
@@ -257,7 +257,7 @@ def tag_names(category_id: int) -> tuple[str, ...]:
 - `db_alias`: the database that the function reads.
 - `version`: an int or a string in the key. Change it when the results change for a reason that the function's own code does not show, such as a change in a function that it calls.
 
-A result is stored under `orm:{<database alias>}:d:<module>.<qualified name>:<hash>:(<arguments>)`, for `TIMEOUT`. The hash covers the function's code, its defaults, the values it closes over and `version`, so the results of changed code and those of the old code in a process that still runs it are kept apart. Functions that one factory makes with different closure values are kept apart too. A closure value whose `repr()` holds its address, such as another function, gives each process its own results.
+A result is stored under `orm:{<database alias>}:d:<module>.<qualified name>:<hash>:(<arguments>)`, for `TIMEOUT`. The hash covers the function's code and parameter names, its defaults, the values it closes over and `version`, so the results of changed code and those of the old code in a process that still runs it are kept apart. Functions that one factory makes with different closure values are kept apart too. A closure value whose `repr()` holds its address, such as another function, gives each process its own results.
 
 The key holds the `repr()` of each argument, with keyword arguments sorted by name. An argument must be a value that no caller can change, as client tracking [keeps them](client-tracking.md#decoded-values): a string, number, `Decimal`, date, `UUID`, enum member or `None`, or a tuple, frozenset, named tuple, frozen dataclass or, from Python 3.15, `frozendict` of such values. Any other argument, such as a list, dict or model instance, raises `TypeError`, so pass primary keys. Arguments with the same `repr()` share a result, so a frozen dataclass with `repr=False` must not be one. A frozenset of strings has a different `repr()` in each process, so each process gets its own results for it.
 
@@ -268,7 +268,7 @@ While the function runs on a miss, the decorator records the tables of its ORM q
 - Raw SQL, through `cursor.execute()` or `Manager.raw()`.
 - Queries that the ORM cache does not cache for another reason, such as `select_for_update()`, `order_by("?")`, `Now()` or a `QUERY_KEYGEN` that raises `UncachableQuery`.
 
-The function runs on every call, and its result is not stored, in the cases where `table_generations()` returns `None`, when `TIMEOUT` is 0 or less, and when the cache fails, which logs a warning. Inside a transaction, a write to a table that shares a key with a declared table counts as a write to a declared table, and a result is not stored when the function itself wrote a declared table. Threads and processes that miss at the same time each run the function. A change to `CACHEX_ORM`, `DATABASES` or `CACHES` applies from the next call.
+The function runs on every call, and its result is not stored, in the cases where `table_generations()` returns `None`, when `TIMEOUT` is 0 or less, and when the cache fails, which logs a warning. Inside a transaction, a write to a table that shares a key with a declared table counts as a write to a declared table, and a result is not stored when the function itself wrote a declared table, even if it rolled the write back. Threads and processes that miss at the same time each run the function. A change to `CACHEX_ORM`, `DATABASES` or `CACHES` applies from the next call.
 
 The function must compute its result from its arguments and the declared tables only:
 

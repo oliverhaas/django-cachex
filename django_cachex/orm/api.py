@@ -37,13 +37,14 @@ LOCAL_STORAGE = Local()
 
 
 class Recording:
-    """The tables a ``cached_data()`` function reads through the ORM while it runs."""
+    """The tables a ``cached_data()`` function reads, and writes, through the ORM while it runs."""
 
-    __slots__ = ("reads", "uncachable")
+    __slots__ = ("reads", "uncachable", "writes")
 
     def __init__(self) -> None:
         self.reads: set[tuple[str, str]] = set()
         self.uncachable: set[str] = set()
+        self.writes: set[tuple[str, str]] = set()
 
 
 # The recording of the cached_data() function running in this context, which _read reports to.
@@ -182,10 +183,17 @@ class _Declared:
 def _code_parts(value: Any) -> Iterator[bytes]:
     if isinstance(value, CodeType):
         yield value.co_code
-        yield repr(value.co_names).encode()
+        # The names and kinds of the parameters too, since arguments are keyed by name.
+        signature = (value.co_varnames, value.co_argcount, value.co_posonlyargcount, value.co_kwonlyargcount)
+        yield repr((value.co_names, *signature, value.co_flags)).encode()
         yield from _code_parts(value.co_consts)
     elif isinstance(value, tuple):
         for item in value:
+            yield from _code_parts(item)
+    elif isinstance(value, dict):
+        # Each value goes through _code_parts, which sorts frozensets, such as those in keyword-only defaults.
+        for key, item in value.items():
+            yield repr(key).encode()
             yield from _code_parts(item)
     elif isinstance(value, frozenset):
         # Iterated in the order of their hashes, which differs between processes.
@@ -320,6 +328,7 @@ class _CachedData:
                 # The outer result depends on every table this function read, declared or not.
                 outer.reads |= recording.reads
                 outer.uncachable |= recording.uncachable
+                outer.writes |= recording.writes
         if isinstance(result, QuerySet):
             msg = (
                 f"{self.name}() returned a QuerySet, which reads its tables after @cached_data() checked them; "
@@ -335,9 +344,14 @@ class _CachedData:
                 stacklevel=3,
             )
             return result
-        if found.token is None or self._wrote(table_keys):
+        written = [table for db_alias, table in recording.writes if db_alias == self.db_alias]
+        if (
+            found.token is None
+            or self._wrote(table_keys)
+            or not set(table_keys).isdisjoint(_table_keys(self.db_alias, written))
+        ):
             # Not stored without generations. A function that wrote a declared table can return rows that the
-            # transaction rolls back.
+            # transaction rolls back, or that the function rolled back itself.
             return result
         try:
             store.store(self.db_alias, key, found.token, result, orm_settings.TIMEOUT, kind=DATA)

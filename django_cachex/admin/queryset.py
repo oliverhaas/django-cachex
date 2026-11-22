@@ -742,11 +742,14 @@ class KeyAdminMixin:
             reverse("admin:django_cachex_key_changelist") + "?" + urlencode({"cache": cache_name}),
         )
 
-    def changelist_view(
+    def changelist_view(  # noqa: C901
         self,
         request: HttpRequest,
         extra_context: dict[str, Any] | None = None,
     ) -> HttpResponse:
+        # Before the alias lookup, whose answers tell which aliases exist.
+        if not self.has_view_or_change_permission(request):  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
+            raise PermissionDenied
         extra_context = extra_context or {}
 
         cache_name = requested_cache(request)

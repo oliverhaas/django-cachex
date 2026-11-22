@@ -4,6 +4,7 @@
 import datetime as dt
 import json
 from decimal import Decimal
+from enum import StrEnum
 from uuid import UUID
 
 import pytest
@@ -187,6 +188,16 @@ def test_uuid():
         Test.objects.get(uuid=first)
     with assert_num_queries(0):
         Test.objects.get(uuid=first)
+
+
+class Name(StrEnum):
+    TEST1 = "test1"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_enum_member_is_cached():
+    t = Test.objects.create(name="test1")
+    assert_query_cached(Test.objects.filter(name=Name.TEST1), [t])
 
 
 @pytest.mark.django_db(transaction=True)

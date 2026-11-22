@@ -187,6 +187,9 @@ def _write(connection: Any, tables: set[str], run: Callable[[], Any]) -> Any:
     """Run ``run``, a statement writing to ``tables``, and invalidate their cached queries."""
     if not tables or connection.alias not in orm_settings.DATABASES:
         return run()
+    if (recording := RECORDING.get()) is not None:
+        # A rollback drops the write from the transaction, but not from the result of the function.
+        recording.writes.update((connection.alias, table) for table in tables)
     active = getattr(connection, _WRITING, _NOTHING)
     if tables <= active:
         return run()

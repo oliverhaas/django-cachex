@@ -314,6 +314,20 @@ def test_concurrent_fetches_of_a_key_keep_the_first_reply():
     assert store.lookup("t:a", 100.0).value == b"first"
 
 
+@pytest.mark.parametrize(
+    ("value", "pttl"),
+    [(_sized("t:a", 1001), -1), (None, 500), (b"new", -2)],
+    ids=["above-an-eighth", "nil-with-ttl", "deleted-between-commands"],
+)
+def test_a_fetch_that_keeps_nothing_drops_the_older_copy(value, pttl):
+    store = _store(max_bytes=8000)
+    _absorb(store, "t:a", b"old")
+    _absorb(store, "t:a", value, pttl=pttl)
+
+    assert store.lookup("t:a", 100.0) is None
+    assert store.stats()["bytes"] == 0
+
+
 def test_a_push_after_the_fetch_drops_the_copy():
     store = _store()
     _absorb(store, "t:a", b"v")
@@ -471,6 +485,39 @@ class _FrozenSlots:
     name: str
 
 
+@dataclass(frozen=True, slots=True, weakref_slot=True)
+class _FrozenWeakSlots:
+    name: str
+
+
+@dataclass(frozen=True)
+class _FrozenChild(_Frozen):
+    extra: str = ""
+
+
+@dataclass(frozen=True)
+class _FrozenWithCacheSlot:
+    __slots__ = ("_cache", "name")
+    name: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "_cache", [])
+
+
+class _FrozenSubclass(_Frozen):
+    __slots__ = ()
+
+
+class _FrozenReopened(_Frozen):
+    __slots__ = ()
+    __setattr__ = object.__setattr__
+
+
+@dataclass(frozen=True, init=False)
+class _FrozenTuple(tuple):  # noqa: SLOT001
+    pass
+
+
 @dataclass
 class _Open:
     name: str
@@ -521,6 +568,8 @@ KEPT = [
     _Color.RED,
     _Frozen("a", (1, 2)),
     _FrozenSlots("a"),
+    _FrozenWeakSlots("a"),
+    _FrozenChild("a", (1,), "b"),
     [1, ("a", 2)],
     {"a": (1, 2)},
     {1, "a"},
@@ -536,6 +585,10 @@ MUTABLE = [
     _Open("a"),
     _Frozen("a", [1]),
     _with_attribute(_Frozen("a"), "cache", []),
+    _FrozenWithCacheSlot("a"),
+    _FrozenSubclass("a"),
+    _FrozenReopened("a"),
+    _FrozenTuple(([1],)),
     object(),
 ]
 FROZENDICT = getattr(builtins, "frozendict", None)

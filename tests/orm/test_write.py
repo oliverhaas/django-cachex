@@ -626,7 +626,7 @@ def test_invalidate_prefetch_related():  # noqa: PLR0915
     with assert_num_queries(1):
         group.name = "modified_test_group"
         group.save()
-    with assert_num_queries(2):
+    with assert_num_queries(1):
         data6 = list(Test.objects.select_related("owner").prefetch_related("owner__groups__permissions"))
         g = list(data6[0].owner.groups.all())[0]
         assert g.name == "modified_test_group"
@@ -634,7 +634,7 @@ def test_invalidate_prefetch_related():  # noqa: PLR0915
     with assert_num_queries(1):
         User.objects.update(username="modified_user")
 
-    with assert_num_queries(2):
+    with assert_num_queries(1):
         data7 = list(Test.objects.select_related("owner").prefetch_related("owner__groups__permissions"))
         assert data7[0].owner.username == "modified_user"
 
@@ -709,7 +709,7 @@ def test_invalidate_having():
 
     p = Permission.objects.first()
     p.save()
-    with assert_num_queries(1):
+    with assert_num_queries(0):
         data3 = list(_query())
         assert data3 == []
 
