@@ -7,3 +7,7 @@ from django_cachex.exceptions import CachexError
 
 class InvalidationError(CachexError, DatabaseError):
     """The ORM cache could not invalidate the cached queries of some tables."""
+
+
+class UndeclaredTableWarning(RuntimeWarning):
+    """A ``cached_data()`` function read a table its decorator does not declare, so its result was not stored."""

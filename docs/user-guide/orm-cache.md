@@ -86,7 +86,7 @@ Without [client tracking](client-tracking.md), a cached read costs one round tri
 
 ### Cache keys
 
-A result is stored under `orm:{<database alias>}:q:<query key>:<result type>` and the generation of a table under `orm:{<database alias>}:g:<table key>`, both under the cache alias's `KEY_PREFIX` and `VERSION`. The database alias is the hash tag, so on a cluster all keys of one database live on one shard. The keys name database aliases, not databases. Projects or environments sharing a cache server need distinct `KEY_PREFIX`es or database numbers, or each serves the results the other read.
+A result is stored under `orm:{<database alias>}:q:<query key>:<result type>`, a result of a [`cached_data()`](#cached_data) function under `orm:{<database alias>}:d:<function key>`, and the generation of a table under `orm:{<database alias>}:g:<table key>`, both under the cache alias's `KEY_PREFIX` and `VERSION`. The database alias is the hash tag, so on a cluster all keys of one database live on one shard. The keys name database aliases, not databases. Projects or environments sharing a cache server need distinct `KEY_PREFIX`es or database numbers, or each serves the results the other read.
 
 By default the query key is the sorted names of the tables the query reads, joined with `.`, then `:` and the SHA-1 digest of the database alias, SQL and parameters. Past 100 characters, the names that do not fit are left out and counted, as in `shop_customer.+3more`. The table key is the table name:
 
@@ -175,7 +175,7 @@ If the change after the write fails, or the process dies between the commit and 
 ## API
 
 ```python
-from django_cachex.orm.api import invalidate, orm_cache_disabled, table_generations
+from django_cachex.orm.api import cached_data, invalidate, orm_cache_disabled, table_generations
 ```
 
 ### invalidate()
@@ -195,7 +195,7 @@ Queries in the block run against the database, and writes in it still invalidate
 
 ### table_generations()
 
-`table_generations(*tables_or_models, db_alias="default")` returns the current generations of the given tables as a tuple of strings. With [client tracking](client-tracking.md), the generations come from the process's copies, at most `max_staleness` behind, and show its own writes after they return. Every committed write to one of the tables changes the tuple, so a value computed from the tables can be cached under it:
+`table_generations(*tables_or_models, db_alias="default")` returns the current generations of the given tables as a tuple of strings. With [client tracking](client-tracking.md), the generations come from the process's copies, at most `max_staleness` behind, and show its own writes after they return. Every committed write to one of the tables changes the tuple, so a value computed from the tables can be cached under it. [`cached_data()`](#cached_data) does this for the results of a function:
 
 ```python
 from django.core.cache import cache
@@ -221,6 +221,62 @@ Read the generations before computing the value, and name every table the comput
 - When the generations cannot be read from the cache. A warning is logged.
 
 Called without a table or model, it raises `TypeError`.
+
+### cached_data()
+
+`cached_data(*tables_or_models, db_alias="default", version=0)` stores the results of the decorated function in the ORM cache until a write changes one of the given tables. A result is stored as a query result is, with the generations of the declared tables, so every process shares it. A hit is one `MGET` of the generations and the result, as for a cached query. It runs no query and builds no model instance, and with [client tracking](client-tracking.md) it sends no command.
+
+Put the data that a page needs into a function that returns plain values, and look the values up in the loop instead of querying once per row:
+
+```python
+from django_cachex.orm.api import cached_data
+
+
+@cached_data(Category)
+def child_names_by_parent():
+    names = {}
+    for parent_id, name in Category.objects.exclude(parent=None).order_by("name").values_list("parent_id", "name"):
+        names.setdefault(parent_id, []).append(name)
+    return {parent_id: tuple(group) for parent_id, group in names.items()}
+
+
+def render(parents):
+    names = child_names_by_parent()
+    return [(parent.name, names.get(parent.pk, ())) for parent in parents]
+```
+
+A function with arguments stores one result per set of arguments. Declare every table that the function reads, including the through table of a many-to-many relation:
+
+```python
+@cached_data(Tag, Category.tags.through)
+def tag_names(category_id: int) -> tuple[str, ...]:
+    return tuple(Tag.objects.filter(categories__id=category_id).order_by("name").values_list("name", flat=True))
+```
+
+- `tables_or_models`: models, `"app_label.ModelName"` strings or table names, as `table_generations()` takes them. At least one is required.
+- `db_alias`: the database that the function reads.
+- `version`: an int or a string in the key. Change it when the results change for a reason that the function's own code does not show, such as a change in a function that it calls.
+
+A result is stored under `orm:{<database alias>}:d:<module>.<qualified name>:<hash>:(<arguments>)`, for `TIMEOUT`. The hash covers the function's code, its defaults, the values it closes over and `version`, so the results of changed code and those of the old code in a process that still runs it are kept apart. Functions that one factory makes with different closure values are kept apart too. A closure value whose `repr()` holds its address, such as another function, gives each process its own results.
+
+The key holds the `repr()` of each argument, with keyword arguments sorted by name. An argument must be a value that no caller can change, as client tracking [keeps them](client-tracking.md#decoded-values): a string, number, `Decimal`, date, `UUID`, enum member or `None`, or a tuple, frozenset, named tuple, frozen dataclass or, from Python 3.15, `frozendict` of such values. Any other argument, such as a list, dict or model instance, raises `TypeError`, so pass primary keys. Arguments with the same `repr()` share a result, so a frozen dataclass with `repr=False` must not be one. A frozenset of strings has a different `repr()` in each process, so each process gets its own results for it.
+
+A result can be anything that the cache's serializer stores. A result that no caller can change, of the kinds that an argument can be, is shared: with `LocMemCache` every hit returns the stored object, and with client tracking every hit from the third read of a copy on. Any other result, such as a `dict` or a `list`, is decoded for each hit, so a caller can change the result it gets without changing the stored one. A QuerySet raises `TypeError`, since it would read its tables after the decorator checked them. Return a tuple of its rows instead.
+
+While the function runs on a miss, the decorator records the tables of its ORM queries. If a query read a table that is not declared, read from another database, read a table that `UNCACHABLE_TABLES` or `ONLY_CACHABLE_TABLES` excludes, or ran inside `orm_cache_disabled()`, it emits `django_cachex.orm.exceptions.UndeclaredTableWarning` and does not store the result. Tables that share a key through `TABLE_KEYGEN` count as declared. Only the tables in the SQL count, so a filter such as `parent_id=...` reads the table of the filtered model alone. A decorated function called by another one reports its declared tables and the tables it read to the outer function, so the outer one declares them too. Run your tests with `-W error::django_cachex.orm.exceptions.UndeclaredTableWarning` to make them fail on the warning. These reads are not checked, so a result computed from an undeclared table through them is stored, and writes to that table do not invalidate it:
+
+- Raw SQL, through `cursor.execute()` or `Manager.raw()`.
+- Queries that the ORM cache does not cache for another reason, such as `select_for_update()`, `order_by("?")`, `Now()` or a `QUERY_KEYGEN` that raises `UncachableQuery`.
+
+The function runs on every call, and its result is not stored, in the cases where `table_generations()` returns `None`, when `TIMEOUT` is 0 or less, and when the cache fails, which logs a warning. Inside a transaction, a write to a table that shares a key with a declared table counts as a write to a declared table, and a result is not stored when the function itself wrote a declared table. Threads and processes that miss at the same time each run the function. A change to `CACHEX_ORM`, `DATABASES` or `CACHES` applies from the next call.
+
+The function must compute its result from its arguments and the declared tables only:
+
+- The result must not depend on the request, the user, the language, the time, settings or another database. With django-tenants, the table keys do not include the schema, so pass the tenant as an argument.
+- Without client tracking, each call takes one round trip to the cache server. With it, a result can be up to `max_staleness` behind a write in another process. A process sees its own writes after they return.
+- Writes that the ORM cache does not see (see [Limits](#limits)) do not invalidate stored results.
+
+`cached_data()` raises `TypeError` for a decorated `async def` function, which you call through `sync_to_async()` instead, for no tables and for a `version` that is not an int or a string. A call raises `TypeError` for an argument that a caller can change and for a QuerySet result, and the first call raises `LookupError` when a declared name is neither an installed model nor a table in `ADDITIONAL_TABLES`.
 
 ### Management command
 

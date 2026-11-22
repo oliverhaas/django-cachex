@@ -5,7 +5,6 @@
 
 import itertools
 import logging
-import pickle
 import secrets
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
@@ -14,6 +13,7 @@ from django.core.cache import caches
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.cache.backends.locmem import LocMemCache
 
+from django_cachex.cache.locmem import _pack, _unpack
 from django_cachex.cache.resp import RespCache
 from django_cachex.tracking.adapter import TrackedAdapter
 
@@ -38,15 +38,30 @@ class Lookup:
 
 BYPASS = Lookup()
 
+# The kinds of results, which keep their keys apart: of a query, and of a call of a cached_data() function.
+QUERY = "q"
+DATA = "d"
+
 
 class Store(Protocol):
     def ttl(self, timeout: Any) -> float | None:
         """Seconds a result stored with ``timeout`` lives, None for ever; nothing is stored at 0 or less."""
         ...
 
-    def lookup(self, db_alias: str, query_key: str, table_keys: Sequence[str]) -> Lookup: ...
+    def lookup(self, db_alias: str, key: str, table_keys: Sequence[str], *, kind: str = QUERY) -> Lookup:
+        """Look up the result under ``key``, a query key, or the call of a ``cached_data()`` function for DATA."""
+        ...
 
-    def store(self, db_alias: str, query_key: str, token: Any, result: Any, timeout: Any) -> bool: ...
+    def store(
+        self,
+        db_alias: str,
+        key: str,
+        token: Any,
+        result: Any,
+        timeout: Any,
+        *,
+        kind: str = QUERY,
+    ) -> bool: ...
 
     def bump(self, db_alias: str, table_keys: Sequence[str]) -> None: ...
 
@@ -67,10 +82,10 @@ def _ttl(cache: BaseCache, timeout: Any) -> float | None:
     return cache.default_timeout if timeout is DEFAULT_TIMEOUT else timeout
 
 
-def _entry_key(db_alias: str, query_key: str) -> str:
+def _entry_key(db_alias: str, key: str, kind: str = QUERY) -> str:
     # The database alias is the hash tag, so the keys one command reads share a
     # cluster slot.
-    return f"orm:{{{db_alias}}}:q:{query_key}"
+    return f"orm:{{{db_alias}}}:{kind}:{key}"
 
 
 def _generation_key(db_alias: str, table_key: str) -> str:
@@ -127,16 +142,21 @@ class RespStore:
                 return None
         return b":".join(generations).decode()
 
-    def lookup(self, db_alias: str, query_key: str, table_keys: Sequence[str]) -> Lookup:
+    def lookup(self, db_alias: str, key: str, table_keys: Sequence[str], *, kind: str = QUERY) -> Lookup:
         generation_keys = self._generation_keys(db_alias, table_keys)
-        entry_key = self.cache.make_and_validate_key(_entry_key(db_alias, query_key))
+        entry_key = self.cache.make_and_validate_key(_entry_key(db_alias, key, kind))
         *generations, entry = self._read([*generation_keys, entry_key])
         token = self._token(generation_keys, generations)
         if token is None:
             return BYPASS
         if entry is not None:
+            adapter = self.cache.adapter
             try:
-                stored_under, value = self.cache.decode(entry)
+                if isinstance(adapter, TrackedAdapter):
+                    # Every hit on a copy shares an entry no caller can change, without decoding it again.
+                    stored_under, value = adapter.decoded(entry_key, entry, self.cache.decode)
+                else:
+                    stored_under, value = self.cache.decode(entry)
             except Exception:
                 # Written by another serializer, say during a deploy: run the query
                 # and store its result over this one.
@@ -146,14 +166,23 @@ class RespStore:
                     return Lookup(hit=True, value=value)
         return Lookup(token=token)
 
-    def store(self, db_alias: str, query_key: str, token: Any, result: Any, timeout: Any) -> bool:
+    def store(
+        self,
+        db_alias: str,
+        key: str,
+        token: Any,
+        result: Any,
+        timeout: Any,
+        *,
+        kind: str = QUERY,
+    ) -> bool:
         ttl = self.ttl(timeout)
         if ttl is not None and ttl <= 0:
             return False
         # Stored whatever the generations are now: one bumped since the lookup only leaves the result unserved.
         command: tuple[Any, ...] = (
             "SET",
-            self.cache.make_and_validate_key(_entry_key(db_alias, query_key)),
+            self.cache.make_and_validate_key(_entry_key(db_alias, key, kind)),
             self.cache.encode((token, result)),
         )
         if ttl is not None:
@@ -218,12 +247,12 @@ class LocMemStore:
     def _keys(db_alias: str, table_keys: Sequence[str]) -> list[tuple[str, str]]:
         return [(db_alias, k) for k in table_keys]
 
-    def _entry_key(self, db_alias: str, query_key: str) -> str:
-        return self.cache.make_and_validate_key(_entry_key(db_alias, query_key))
+    def _entry_key(self, db_alias: str, key: str, kind: str = QUERY) -> str:
+        return self.cache.make_and_validate_key(_entry_key(db_alias, key, kind))
 
-    def lookup(self, db_alias: str, query_key: str, table_keys: Sequence[str]) -> Lookup:
+    def lookup(self, db_alias: str, key: str, table_keys: Sequence[str], *, kind: str = QUERY) -> Lookup:
         cache: Any = self.cache
-        entry_key = self._entry_key(db_alias, query_key)
+        entry_key = self._entry_key(db_alias, key, kind)
         keys = self._keys(db_alias, table_keys)
         with cache._lock:
             token = self.state.current(keys)
@@ -236,7 +265,8 @@ class LocMemStore:
                     cache._cache.move_to_end(entry_key, last=False)
         if raw is not None:
             try:
-                stored_under, result = pickle.loads(raw)  # noqa: S301
+                # An entry no caller can change is stored as it is, and every hit shares it.
+                stored_under, result = _unpack(raw)
             except Exception:
                 logger.warning("Ignoring an ORM cache entry that does not unpickle.", exc_info=True)
             else:
@@ -244,13 +274,22 @@ class LocMemStore:
                     return Lookup(hit=True, value=result)
         return Lookup(token=token)
 
-    def store(self, db_alias: str, query_key: str, token: Any, result: Any, timeout: Any) -> bool:
+    def store(
+        self,
+        db_alias: str,
+        key: str,
+        token: Any,
+        result: Any,
+        timeout: Any,
+        *,
+        kind: str = QUERY,
+    ) -> bool:
         ttl = self.ttl(timeout)
         if ttl is not None and ttl <= 0:
             return False
         cache: Any = self.cache
-        raw = pickle.dumps((token, result), pickle.HIGHEST_PROTOCOL)
-        entry_key = self._entry_key(db_alias, query_key)
+        raw = _pack((token, result))
+        entry_key = self._entry_key(db_alias, key, kind)
         with cache._lock:
             cache._set(entry_key, raw, ttl)
         return True

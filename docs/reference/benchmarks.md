@@ -280,6 +280,30 @@ the query alone.
 - A `migrate` with nothing to apply emptied cachalot's cache of 100 queries
   and left the ORM cache's intact.
 
+### cached_data()
+
+Milliseconds to read the children of 100 parents, 2 each, as the median of
+200 runs, with Django 6.1.3. A loop runs a query per parent,
+`prefetch_related()` reads the parents and their children in two queries, and
+a [`cached_data()`](../user-guide/orm-cache.md#cached_data) function returns
+the ids of one parent's children, or a map of every parent's. The last column
+is the median of 2,000 single hits, in µs. Only the ORM cache has
+`cached_data()`.
+
+| Contender | Query per parent | `prefetch_related()` | `cached_data()` per parent | `cached_data()` map | `cached_data()` hit (µs) |
+|-----------|-----:|-----:|-----:|------:|----:|
+| cachex          | 60.3 | 4.08 | 40.1 | 0.431 | 390 |
+| cachex+tracking | 20.7 | 3.22 | 1.92 | 0.078 | 18.1 |
+
+- Without client tracking, each `cached_data()` call takes a round trip for
+  the generations and the result. A call per parent saves the work of
+  building the query and the model instances but not the round trip, and a
+  map takes one round trip for all parents.
+- With client tracking, a hit takes 18 µs, against 170 µs for a cached query
+  that builds model instances. A call per parent reads the 100 parents in
+  2 ms. The map is a dict, which each hit decodes, and reads them in a
+  fortieth of the time of `prefetch_related()`.
+
 ### Network delay
 
 The 250 µs column comes from the runs in [Races](#races) and [Speed](#speed),

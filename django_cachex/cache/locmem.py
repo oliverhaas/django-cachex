@@ -93,7 +93,7 @@ def _pack(value: Any) -> Any:
     """Return a value, list element or hash value in the form the cache stores it.
 
     A value no caller can change is stored as it is, a list, dict or set of such values as a shallow copy, and any
-    other value as its pickle. Stored ``bytes`` is always a pickle, as Django and the ORM cache write one.
+    other value as its pickle. Stored ``bytes`` is always a pickle, as Django writes one.
     """
     if type(value) is not bytes and can_keep(value):
         return value.copy() if value.__class__ in COPIED else value
