@@ -10,4 +10,4 @@ class InvalidationError(CachexError, DatabaseError):
 
 
 class UndeclaredTableWarning(RuntimeWarning):
-    """A ``cached_data()`` function read a table its decorator does not declare, so its result was not stored."""
+    """An ``orm_cached()`` function read a table its decorator does not declare, so its result was not stored."""

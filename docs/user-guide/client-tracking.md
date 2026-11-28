@@ -67,7 +67,7 @@ A plain `list` or `set` of qualifying values, or a plain `dict` with qualifying 
 
 Every other value is decoded for each read, so each caller gets its own object. This covers model instances, a list, dict, set or tuple that holds a list, dict, set or model instance, subclasses of `list`, `dict` and `set` such as `OrderedDict` and `defaultdict`, a frozen dataclass that also subclasses `tuple` or `frozenset`, and the frozen classes of attrs, pydantic and msgspec. Async reads decode each read too.
 
-The ORM cache's lookups share an entry that qualifies, such as a [`cached_data()`](orm-cache.md#cached_data) result that is a tuple of rows, or the result of `count()`, `exists()` or `aggregate()`. The entry of a query that returns rows holds a list of them, so each lookup decodes it.
+The ORM cache's lookups share an entry that qualifies, such as an [`orm_cached()`](orm-cache.md#orm_cached) result that is a tuple of rows, or the result of `count()`, `exists()` or `aggregate()`. The entry of a query that returns rows holds a list of them, so each lookup decodes it.
 
 The first read of a copy only decodes it, so a copy read once costs nothing extra. The second read also walks the decoded value once to check it. The walk takes about as long as decoding a tuple of short values, and longer for long strings. A kept value counts toward `max_bytes` with the `sys.getsizeof()` of each of its parts, and an object it holds twice counts twice. A value that takes its entry above an eighth of `max_bytes` is decoded for each read.
 

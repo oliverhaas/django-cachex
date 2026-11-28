@@ -6,7 +6,7 @@ from threading import Event, Thread
 import pytest
 from django.db import connection, transaction
 
-from django_cachex.orm.api import cached_data
+from django_cachex.orm.api import orm_cached
 from tests.orm.app.models import Test
 from tests.orm.utils import assert_num_queries
 
@@ -164,8 +164,8 @@ def test_concurrent_write_between_query_and_caching():
     assert Test.objects.first() == created[0]
 
 
-def test_cached_data_from_threads_during_writes():
-    @cached_data(Test)
+def test_orm_cached_from_threads_during_writes():
+    @orm_cached(Test)
     def names(variant):
         return (variant, tuple(Test.objects.order_by("pk").values_list("name", flat=True)))
 

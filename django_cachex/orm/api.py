@@ -37,7 +37,7 @@ LOCAL_STORAGE = Local()
 
 
 class Recording:
-    """The tables a ``cached_data()`` function reads, and writes, through the ORM while it runs."""
+    """The tables an ``orm_cached()`` function reads, and writes, through the ORM while it runs."""
 
     __slots__ = ("reads", "uncachable", "writes")
 
@@ -47,11 +47,11 @@ class Recording:
         self.writes: set[tuple[str, str]] = set()
 
 
-# The recording of the cached_data() function running in this context, which _read reports to.
+# The recording of the orm_cached() function running in this context, which _read reports to.
 RECORDING: ContextVar[Recording | None] = ContextVar("cachex_orm_recording", default=None)
 
 
-__all__ = ("cached_data", "invalidate", "orm_cache_disabled", "table_generations")
+__all__ = ("invalidate", "orm_cache_disabled", "orm_cached", "table_generations")
 
 
 def _table_names(tables_or_models: Iterable[Any]) -> Iterator[str]:
@@ -171,7 +171,7 @@ def table_generations(*tables_or_models: Any, db_alias: str = DEFAULT_DB_ALIAS) 
 
 @dataclass(frozen=True, slots=True)
 class _Declared:
-    """The declared tables of a ``cached_data()`` function under one revision of the settings."""
+    """The declared tables of an ``orm_cached()`` function under one revision of the settings."""
 
     revision: int
     tables: frozenset[str]
@@ -222,7 +222,7 @@ def _set_parameters(func: Callable[..., Any], name: str, sets: tuple[str, ...]) 
         index = positions.get(parameter_name)
         kind = None if index is None else parameters[index].kind
         if kind is None or kind in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}:
-            msg = f"@cached_data() of {name}() names {parameter_name!r} in sets, which is not a named parameter."
+            msg = f"@orm_cached() of {name}() names {parameter_name!r} in sets, which is not a named parameter."
             raise TypeError(msg)
         yield parameter_name, None if kind is inspect.Parameter.KEYWORD_ONLY else index
 
@@ -249,8 +249,8 @@ def _code_hash(func: Callable[..., Any], version: int | str) -> str:
     return digest.hexdigest()
 
 
-class _CachedData:
-    """A ``cached_data()`` function: its results are stored in the ORM cache under the generations of its tables."""
+class _OrmCached:
+    """An ``orm_cached()`` function: its results are stored in the ORM cache under the generations of its tables."""
 
     def __init__(
         self,
@@ -279,7 +279,7 @@ class _CachedData:
         for declared, table in zip(self.declared, _table_names(self.declared), strict=True):
             if table not in known:
                 msg = (
-                    f"@cached_data() of {self.name}() declares {declared!r}, which is neither an installed model "
+                    f"@orm_cached() of {self.name}() declares {declared!r}, which is neither an installed model "
                     f"nor a table in `{SETTING_NAME}['ADDITIONAL_TABLES']`."
                 )
                 raise LookupError(msg)
@@ -316,7 +316,7 @@ class _CachedData:
         if not can_keep((*args, *kwargs.values()) if kwargs else args):
             msg = (
                 f"{self.name}() got an argument a caller can change, such as a list or a model instance, but "
-                "@cached_data() keys results by their arguments."
+                "@orm_cached() keys results by their arguments."
             )
             raise TypeError(msg)
         # Keyword arguments by name, so a call gets one key in any order of them.
@@ -363,7 +363,7 @@ class _CachedData:
         try:
             found = store.lookup(self.db_alias, key, table_keys, kind=DATA)
         except Exception:
-            logger.warning("Could not read a cached_data() result from the ORM cache.", exc_info=True)
+            logger.warning("Could not read an orm_cached() result from the ORM cache.", exc_info=True)
             found = BYPASS
         if found.hit:
             return found.value
@@ -380,13 +380,13 @@ class _CachedData:
                 outer.writes |= recording.writes
         if isinstance(result, QuerySet):
             msg = (
-                f"{self.name}() returned a QuerySet, which reads its tables after @cached_data() checked them; "
+                f"{self.name}() returned a QuerySet, which reads its tables after @orm_cached() checked them; "
                 "return a list or tuple of its rows instead."
             )
             raise TypeError(msg)
         if undeclared := self._undeclared(recording, state, table_keys):
             warnings.warn(
-                f"{self.name}() read tables its @cached_data() does not declare, so its result is not cached: "
+                f"{self.name}() read tables its @orm_cached() does not declare, so its result is not cached: "
                 f"{', '.join(undeclared)}.",
                 UndeclaredTableWarning,
                 # At the caller of the decorated function.
@@ -405,7 +405,7 @@ class _CachedData:
         try:
             store.store(self.db_alias, key, found.token, result, orm_settings.TIMEOUT, kind=DATA)
         except Exception:
-            logger.warning("Could not store a cached_data() result in the ORM cache.", exc_info=True)
+            logger.warning("Could not store an orm_cached() result in the ORM cache.", exc_info=True)
         return result
 
     def _wrote(self, table_keys: tuple[str, ...]) -> bool:
@@ -420,7 +420,7 @@ class _Decorator(Protocol):
     def __call__[**P, R](self, func: Callable[P, R]) -> Callable[P, R]: ...
 
 
-def cached_data(
+def orm_cached(
     *tables_or_models: Any,
     db_alias: str = DEFAULT_DB_ALIAS,
     version: int | str = 0,
@@ -432,29 +432,29 @@ def cached_data(
     parameters whose arguments become frozensets. The result must depend only on the arguments and declared tables.
     """
     if not tables_or_models:
-        msg = "cached_data() needs at least one table or model."
+        msg = "orm_cached() needs at least one table or model."
         raise TypeError(msg)
     for table_or_model in tables_or_models:
         if not isinstance(table_or_model, str) and not (
             isinstance(table_or_model, type) and issubclass(table_or_model, Model)
         ):
-            msg = f"cached_data() takes models and table names, not {table_or_model!r}."
+            msg = f"orm_cached() takes models and table names, not {table_or_model!r}."
             raise TypeError(msg)
     if isinstance(version, bool) or not isinstance(version, int | str):
-        msg = f"cached_data() needs an int or str version, not {version!r}."
+        msg = f"orm_cached() needs an int or str version, not {version!r}."
         raise TypeError(msg)
     if isinstance(sets, str):
-        msg = f"cached_data() takes a tuple of parameter names as sets, not the string {sets!r}."
+        msg = f"orm_cached() takes a tuple of parameter names as sets, not the string {sets!r}."
         raise TypeError(msg)
     sets = tuple(sets)
 
     def decorate(func: Callable[..., Any]) -> Callable[..., Any]:
         name = getattr(func, "__qualname__", repr(func))
         if inspect.iscoroutinefunction(func) or inspect.isasyncgenfunction(func):
-            msg = f"cached_data() cannot cache the results of async {name}(); call a sync function through "
+            msg = f"orm_cached() cannot cache the results of async {name}(); call a sync function through "
             msg += "sync_to_async() instead."
             raise TypeError(msg)
-        cached = _CachedData(func, name, tables_or_models, db_alias, version, sets)
+        cached = _OrmCached(func, name, tables_or_models, db_alias, version, sets)
 
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:

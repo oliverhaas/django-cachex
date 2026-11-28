@@ -16,10 +16,10 @@ from benchmarks.orm_runner import (
     OrmEnv,
     RaceResult,
     ScorecardResult,
-    format_cached_data,
     format_latency,
     format_migrate,
     format_mixed,
+    format_orm_cached,
     format_races,
     format_scorecard,
     format_sizes,
@@ -180,8 +180,8 @@ def orm_sizes() -> Iterator[_Sink[LatencyResult]]:
 
 
 @pytest.fixture(scope="session")
-def orm_cached_data() -> Iterator[_Sink[LatencyResult]]:
-    yield from _sink_fixture("ORM CACHE CACHED_DATA(), MS PER READ OF ALL PARENTS", format_cached_data)
+def orm_cached_calls() -> Iterator[_Sink[LatencyResult]]:
+    yield from _sink_fixture("ORM_CACHED(), MS PER READ OF ALL PARENTS", format_orm_cached)
 
 
 @pytest.fixture(scope="session")

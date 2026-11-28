@@ -38,7 +38,7 @@ class Lookup:
 
 BYPASS = Lookup()
 
-# The kinds of results, which keep their keys apart: of a query, and of a call of a cached_data() function.
+# The kinds of results, which keep their keys apart: of a query, and of a call of an orm_cached() function.
 QUERY = "q"
 DATA = "d"
 
@@ -49,7 +49,7 @@ class Store(Protocol):
         ...
 
     def lookup(self, db_alias: str, key: str, table_keys: Sequence[str], *, kind: str = QUERY) -> Lookup:
-        """Look up the result under ``key``, a query key, or the call of a ``cached_data()`` function for DATA."""
+        """Look up the result under ``key``, a query key, or the call of an ``orm_cached()`` function for DATA."""
         ...
 
     def store(

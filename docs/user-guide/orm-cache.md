@@ -86,7 +86,7 @@ Without [client tracking](client-tracking.md), a cached read costs one round tri
 
 ### Cache keys
 
-A result is stored under `orm:{<database alias>}:q:<query key>:<result type>`, a result of a [`cached_data()`](#cached_data) function under `orm:{<database alias>}:d:<function key>`, and the generation of a table under `orm:{<database alias>}:g:<table key>`, both under the cache alias's `KEY_PREFIX` and `VERSION`. The database alias is the hash tag, so on a cluster all keys of one database live on one shard. The keys name database aliases, not databases. Projects or environments sharing a cache server need distinct `KEY_PREFIX`es or database numbers, or each serves the results the other read.
+A result is stored under `orm:{<database alias>}:q:<query key>:<result type>`, a result of an [`orm_cached()`](#orm_cached) function under `orm:{<database alias>}:d:<function key>`, and the generation of a table under `orm:{<database alias>}:g:<table key>`, both under the cache alias's `KEY_PREFIX` and `VERSION`. The database alias is the hash tag, so on a cluster all keys of one database live on one shard. The keys name database aliases, not databases. Projects or environments sharing a cache server need distinct `KEY_PREFIX`es or database numbers, or each serves the results the other read.
 
 By default the query key is the sorted names of the tables the query reads, joined with `.`, then `:` and the SHA-1 digest of the database alias, SQL and parameters. Past 100 characters, the names that do not fit are left out and counted, as in `shop_customer.+3more`. The table key is the table name:
 
@@ -175,7 +175,7 @@ If the change after the write fails, or the process dies between the commit and 
 ## API
 
 ```python
-from django_cachex.orm.api import cached_data, invalidate, orm_cache_disabled, table_generations
+from django_cachex.orm.api import invalidate, orm_cache_disabled, orm_cached, table_generations
 ```
 
 ### invalidate()
@@ -195,7 +195,7 @@ Queries in the block run against the database, and writes in it still invalidate
 
 ### table_generations()
 
-`table_generations(*tables_or_models, db_alias="default")` returns the current generations of the given tables as a tuple of strings. With [client tracking](client-tracking.md), the generations come from the process's copies, at most `max_staleness` behind, and show its own writes after they return. Every committed write to one of the tables changes the tuple, so a value computed from the tables can be cached under it. [`cached_data()`](#cached_data) does this for the results of a function:
+`table_generations(*tables_or_models, db_alias="default")` returns the current generations of the given tables as a tuple of strings. With [client tracking](client-tracking.md), the generations come from the process's copies, at most `max_staleness` behind, and show its own writes after they return. Every committed write to one of the tables changes the tuple, so a value computed from the tables can be cached under it. [`orm_cached()`](#orm_cached) does this for the results of a function:
 
 ```python
 from django.core.cache import cache
@@ -222,17 +222,17 @@ Read the generations before computing the value, and name every table the comput
 
 Called without a table or model, it raises `TypeError`.
 
-### cached_data()
+### orm_cached()
 
-`cached_data(*tables_or_models, db_alias="default", version=0, sets=())` stores the results of the decorated function in the ORM cache until a write changes one of the given tables. A result is stored as a query result is, with the generations of the declared tables, so every process shares it. A hit is one `MGET` of the generations and the result, as for a cached query. It runs no query and builds no model instance, and with [client tracking](client-tracking.md) it sends no command.
+`orm_cached(*tables_or_models, db_alias="default", version=0, sets=())` stores the results of the decorated function in the ORM cache until a write changes one of the given tables. A result is stored as a query result is, with the generations of the declared tables, so every process shares it. A hit is one `MGET` of the generations and the result, as for a cached query. It runs no query and builds no model instance, and with [client tracking](client-tracking.md) it sends no command.
 
 Put the data that a page needs into a function that returns plain values, and look the values up in the loop instead of querying once per row:
 
 ```python
-from django_cachex.orm.api import cached_data
+from django_cachex.orm.api import orm_cached
 
 
-@cached_data(Category)
+@orm_cached(Category)
 def child_names_by_parent():
     names = {}
     for parent_id, name in Category.objects.exclude(parent=None).order_by("name").values_list("parent_id", "name"):
@@ -248,7 +248,7 @@ def render(parents):
 A function with arguments stores one result per set of arguments. Declare every table that the function reads, including the through table of a many-to-many relation:
 
 ```python
-@cached_data(Tag, Category.tags.through)
+@orm_cached(Tag, Category.tags.through)
 def tag_names(category_id: int) -> tuple[str, ...]:
     return tuple(Tag.objects.filter(categories__id=category_id).order_by("name").values_list("name", flat=True))
 ```
@@ -261,7 +261,7 @@ def tag_names(category_id: int) -> tuple[str, ...]:
 Name a parameter in `sets` when it takes a collection whose order and duplicates do not matter, such as primary keys. Its argument becomes a frozenset before the key is built and the function runs, so a caller can pass a list, a set or a generator, and every order of the same items shares one result. A string raises `TypeError`, since its characters would become the items:
 
 ```python
-@cached_data(Category, sets=("ids",))
+@orm_cached(Category, sets=("ids",))
 def category_names(ids: frozenset[int]) -> tuple[tuple[int, str], ...]:
     return tuple(Category.objects.filter(pk__in=ids).order_by("pk").values_list("pk", "name"))
 
@@ -288,7 +288,7 @@ The function must compute its result from its arguments and the declared tables 
 - Without client tracking, each call takes one round trip to the cache server. With it, a result can be up to `max_staleness` behind a write in another process. A process sees its own writes after they return.
 - Writes that the ORM cache does not see (see [Limits](#limits)) do not invalidate stored results.
 
-`cached_data()` raises `TypeError` for a decorated `async def` function, which you call through `sync_to_async()` instead, for no tables for a `version` that is not an int or a string, and for a name in `sets` that is not a named parameter of the function. A call raises `TypeError` for an argument that a caller can change, for a string in a parameter of `sets` and for a QuerySet result, and the first call raises `LookupError` when a declared name is neither an installed model nor a table in `ADDITIONAL_TABLES`.
+`orm_cached()` raises `TypeError` for a decorated `async def` function, which you call through `sync_to_async()` instead, for no tables for a `version` that is not an int or a string, and for a name in `sets` that is not a named parameter of the function. A call raises `TypeError` for an argument that a caller can change, for a string in a parameter of `sets` and for a QuerySet result, and the first call raises `LookupError` when a declared name is neither an installed model nor a table in `ADDITIONAL_TABLES`.
 
 ### Management command
 

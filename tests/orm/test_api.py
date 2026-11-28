@@ -15,7 +15,7 @@ from django.core.cache import DEFAULT_CACHE_ALIAS, caches
 from django.core.management import CommandError, call_command
 from django.db import DEFAULT_DB_ALIAS, OperationalError, connection, connections, transaction
 
-from django_cachex.orm.api import cached_data, invalidate, orm_cache_disabled, table_generations
+from django_cachex.orm.api import invalidate, orm_cache_disabled, orm_cached, table_generations
 from django_cachex.orm.exceptions import UndeclaredTableWarning
 from django_cachex.orm.store import LocMemStore
 from tests.orm.app.models import Test
@@ -181,10 +181,10 @@ def test_table_generations_in_a_transaction():
 
 
 def cached_names(*tables_or_models, **options):
-    """A cached_data() function that returns the names of the Test rows; ``calls`` lists its runs."""
+    """An orm_cached() function that returns the names of the Test rows; ``calls`` lists its runs."""
     calls = []
 
-    @cached_data(*tables_or_models, **options)
+    @orm_cached(*tables_or_models, **options)
     def names(*args, **kwargs):
         calls.append((args, kwargs))
         return tuple(Test.objects.values_list("name", flat=True))
@@ -209,7 +209,7 @@ class Mutable:
     name: str
 
 
-def test_cached_data_stores_the_result():
+def test_orm_cached_stores_the_result():
     names = cached_names(Test)
     assert names() == ("test1",)
 
@@ -217,7 +217,7 @@ def test_cached_data_stores_the_result():
     assert len(names.calls) == 1
 
 
-def test_cached_data_shares_results_between_decorations_of_one_function():
+def test_orm_cached_shares_results_between_decorations_of_one_function():
     assert cached_names(Test)() == ("test1",)
 
     again = cached_names(Test)
@@ -225,7 +225,7 @@ def test_cached_data_shares_results_between_decorations_of_one_function():
     assert again.calls == []
 
 
-def test_cached_data_keeps_the_results_of_another_version_apart():
+def test_orm_cached_keeps_the_results_of_another_version_apart():
     cached_names(Test)()
 
     other = cached_names(Test, version=1)
@@ -233,7 +233,7 @@ def test_cached_data_keeps_the_results_of_another_version_apart():
     assert len(other.calls) == 1
 
 
-def test_cached_data_keeps_the_results_of_changed_code_apart():
+def test_orm_cached_keeps_the_results_of_changed_code_apart():
     def names():
         return tuple(Test.objects.values_list("name", flat=True))
 
@@ -242,12 +242,12 @@ def test_cached_data_keeps_the_results_of_changed_code_apart():
 
     changed.__qualname__ = names.__qualname__
 
-    assert cached_data(Test)(names)() == ("test1",)
-    assert cached_data(Test)(changed)() == ("TEST1",)
+    assert orm_cached(Test)(names)() == ("test1",)
+    assert orm_cached(Test)(changed)() == ("TEST1",)
 
 
 def names_with_closure(suffix):
-    @cached_data(Test)
+    @orm_cached(Test)
     def names():
         return tuple(name + suffix for name in Test.objects.values_list("name", flat=True))
 
@@ -255,7 +255,7 @@ def names_with_closure(suffix):
 
 
 def names_with_default(suffix):
-    @cached_data(Test)
+    @orm_cached(Test)
     def names(suffix=suffix):
         return tuple(name + suffix for name in Test.objects.values_list("name", flat=True))
 
@@ -263,19 +263,19 @@ def names_with_default(suffix):
 
 
 @pytest.mark.parametrize("make", [names_with_closure, names_with_default])
-def test_cached_data_keeps_the_results_of_other_closures_and_defaults_apart(make):
+def test_orm_cached_keeps_the_results_of_other_closures_and_defaults_apart(make):
     assert make("a")() == ("test1a",)
     assert make("b")() == ("test1b",)
 
 
-def test_cached_data_keeps_the_results_of_swapped_parameters_apart():
-    @cached_data(Test)
+def test_orm_cached_keeps_the_results_of_swapped_parameters_apart():
+    @orm_cached(Test)
     def pick(first, second):
         return first
 
     picked = pick(first="a", second="b")
 
-    @cached_data(Test)
+    @orm_cached(Test)
     def pick(second, first):
         return second
 
@@ -289,7 +289,7 @@ def test_cached_data_keeps_the_results_of_swapped_parameters_apart():
         pytest.param(lambda: invalidate(Test), id="invalidate"),
     ],
 )
-def test_cached_data_runs_again_after_a_change(change):
+def test_orm_cached_runs_again_after_a_change(change):
     names = cached_names(Test)
     names()
 
@@ -306,7 +306,7 @@ def test_cached_data_runs_again_after_a_change(change):
         pytest.param(User, {"TABLE_KEYGEN": lambda **kwargs: "shared"}, id="sharing a key"),
     ],
 )
-def test_cached_data_in_a_transaction_that_wrote_a_declared_table(declared, options):
+def test_orm_cached_in_a_transaction_that_wrote_a_declared_table(declared, options):
     with override_orm_settings(**options):
         names = cached_names(declared)
         assert names() == ("test1",)
@@ -317,10 +317,10 @@ def test_cached_data_in_a_transaction_that_wrote_a_declared_table(declared, opti
         assert names() == ("test1",)
 
 
-def test_cached_data_does_not_store_a_result_with_its_own_uncommitted_write():
+def test_orm_cached_does_not_store_a_result_with_its_own_uncommitted_write():
     made = ["test2"]
 
-    @cached_data(Test)
+    @orm_cached(Test)
     def names():
         if made:
             Test.objects.create(name=made.pop())
@@ -336,10 +336,10 @@ def test_cached_data_does_not_store_a_result_with_its_own_uncommitted_write():
     "outer",
     [pytest.param(nullcontext, id="transaction"), pytest.param(transaction.atomic, id="savepoint")],
 )
-def test_cached_data_does_not_store_a_result_with_its_own_rolled_back_write(outer):
+def test_orm_cached_does_not_store_a_result_with_its_own_rolled_back_write(outer):
     made = ["rolled_back"]
 
-    @cached_data(Test)
+    @orm_cached(Test)
     def names():
         with transaction.atomic():
             if made:
@@ -364,7 +364,7 @@ def test_cached_data_does_not_store_a_result_with_its_own_rolled_back_write(oute
     ],
 )
 @pytest.mark.filterwarnings("error::django_cachex.orm.exceptions.UndeclaredTableWarning")
-def test_cached_data_runs_every_call_when_not_cached(not_cached):
+def test_orm_cached_runs_every_call_when_not_cached(not_cached):
     names = cached_names(Test)
 
     with not_cached():
@@ -373,7 +373,7 @@ def test_cached_data_runs_every_call_when_not_cached(not_cached):
     assert len(names.calls) == 2
 
 
-def test_cached_data_follows_a_settings_change():
+def test_orm_cached_follows_a_settings_change():
     names = cached_names(Test)
     names()
 
@@ -387,11 +387,11 @@ def test_cached_data_follows_a_settings_change():
 @pytest.mark.parametrize(
     ("method", "logged"),
     [
-        pytest.param("lookup", "Could not read a cached_data() result", id="lookup"),
-        pytest.param("store", "Could not store a cached_data() result", id="store"),
+        pytest.param("lookup", "Could not read an orm_cached() result", id="lookup"),
+        pytest.param("store", "Could not store an orm_cached() result", id="store"),
     ],
 )
-def test_cached_data_runs_every_call_when_the_cache_fails(mocker, caplog, method, logged):
+def test_orm_cached_runs_every_call_when_the_cache_fails(mocker, caplog, method, logged):
     names = cached_names(Test)
     mocker.patch.object(type(orm_store()), method, side_effect=ConnectionError("down"))
 
@@ -402,7 +402,7 @@ def test_cached_data_runs_every_call_when_the_cache_fails(mocker, caplog, method
     assert len(names.calls) == 2
 
 
-def test_cached_data_stores_a_result_per_arguments():
+def test_orm_cached_stores_a_result_per_arguments():
     names = cached_names(Test)
     row = Row("a", (Pair(1, "b"), frozenset({Decimal(2)})))
     names(1)
@@ -423,7 +423,7 @@ def test_cached_data_stores_a_result_per_arguments():
         pytest.param(lambda names, ids: names(ids=ids), id="keyword"),
     ],
 )
-def test_cached_data_keys_a_frozenset_by_its_items(call, extra):
+def test_orm_cached_keys_a_frozenset_by_its_items(call, extra):
     names = cached_names(Test)
     ids, reordered = frozenset([1, 9, *extra]), frozenset([9, 1, *extra])
     assert list(ids) != list(reordered)
@@ -439,10 +439,10 @@ def test_cached_data_keys_a_frozenset_by_its_items(call, extra):
         pytest.param(lambda names, ids: names(ids=ids), id="keyword"),
     ],
 )
-def test_cached_data_takes_a_collection_for_a_parameter_in_sets(call):
+def test_orm_cached_takes_a_collection_for_a_parameter_in_sets(call):
     calls = []
 
-    @cached_data(Test, sets=("ids",))
+    @orm_cached(Test, sets=("ids",))
     def names(ids):
         calls.append(ids)
         return tuple(Test.objects.filter(pk__in=ids).values_list("name", flat=True))
@@ -451,8 +451,8 @@ def test_cached_data_takes_a_collection_for_a_parameter_in_sets(call):
     assert calls == [frozenset({1, 9})]
 
 
-def test_cached_data_rejects_a_string_for_a_parameter_in_sets():
-    @cached_data(Test, sets=("ids",))
+def test_orm_cached_rejects_a_string_for_a_parameter_in_sets():
+    @orm_cached(Test, sets=("ids",))
     def names(ids):
         return ()
 
@@ -468,12 +468,12 @@ def test_cached_data_rejects_a_string_for_a_parameter_in_sets():
         pytest.param(("args",), "args", id="star args"),
     ],
 )
-def test_cached_data_rejects_bad_sets(sets, match):
+def test_orm_cached_rejects_bad_sets(sets, match):
     def names(ids, *args):
         return ()
 
     with pytest.raises(TypeError, match=match):
-        cached_data(Test, sets=sets)(names)
+        orm_cached(Test, sets=sets)(names)
 
 
 @pytest.mark.parametrize(
@@ -486,7 +486,7 @@ def test_cached_data_rejects_bad_sets(sets, match):
         pytest.param(Row("a", ["b"]), id="list in a frozen dataclass"),
     ],
 )
-def test_cached_data_rejects_an_argument_a_caller_can_change(argument):
+def test_orm_cached_rejects_an_argument_a_caller_can_change(argument):
     names = cached_names(Test)
     with pytest.raises(TypeError, match="can change"):
         names(argument)
@@ -495,10 +495,10 @@ def test_cached_data_rejects_an_argument_a_caller_can_change(argument):
     assert names.calls == []
 
 
-def test_cached_data_returns_a_result_a_caller_can_change_as_a_copy(t1):
+def test_orm_cached_returns_a_result_a_caller_can_change_as_a_copy(t1):
     calls = []
 
-    @cached_data(Test)
+    @orm_cached(Test)
     def names_by_pk():
         calls.append(1)
         return dict(Test.objects.values_list("pk", "name"))
@@ -510,7 +510,7 @@ def test_cached_data_returns_a_result_a_caller_can_change_as_a_copy(t1):
     assert len(calls) == 1
 
 
-def test_cached_data_shares_a_result_no_caller_can_change():
+def test_orm_cached_shares_a_result_no_caller_can_change():
     tracking = settings.CACHES[DEFAULT_CACHE_ALIAS].get("OPTIONS", {}).get("tracking")
     if not tracking and not isinstance(orm_store(), LocMemStore):
         pytest.skip("needs a local memory cache or client tracking")
@@ -522,8 +522,8 @@ def test_cached_data_shares_a_result_no_caller_can_change():
     assert names() is kept
 
 
-def test_cached_data_rejects_a_queryset_result():
-    @cached_data(Test)
+def test_orm_cached_rejects_a_queryset_result():
+    @orm_cached(Test)
     def tests():
         return Test.objects.all()
 
@@ -566,10 +566,10 @@ def count_users_with_the_cache_disabled():
         ),
     ],
 )
-def test_cached_data_does_not_store_a_result_read_from_an_undeclared_table(read, options, reported):
+def test_orm_cached_does_not_store_a_result_read_from_an_undeclared_table(read, options, reported):
     calls = []
 
-    @cached_data(Test)
+    @orm_cached(Test)
     def f():
         calls.append(1)
         return (Test.objects.count(), read())
@@ -583,10 +583,10 @@ def test_cached_data_does_not_store_a_result_read_from_an_undeclared_table(read,
 
 
 def cached_usernames(*tables_or_models):
-    """A cached_data() function that returns the usernames; ``calls`` counts its runs."""
+    """An orm_cached() function that returns the usernames; ``calls`` counts its runs."""
     calls = []
 
-    @cached_data(*tables_or_models)
+    @orm_cached(*tables_or_models)
     def usernames():
         calls.append(1)
         return tuple(User.objects.values_list("username", flat=True))
@@ -596,7 +596,7 @@ def cached_usernames(*tables_or_models):
 
 
 @pytest.mark.filterwarnings("error::django_cachex.orm.exceptions.UndeclaredTableWarning")
-def test_cached_data_accepts_a_table_sharing_a_declared_key(user):
+def test_orm_cached_accepts_a_table_sharing_a_declared_key(user):
     with override_orm_settings(TABLE_KEYGEN=lambda **kwargs: "shared"):
         usernames = cached_usernames(Test)
         assert usernames() == ("test",)
@@ -616,13 +616,13 @@ def test_cached_data_accepts_a_table_sharing_a_declared_key(user):
         ),
     ],
 )
-def test_cached_data_accepts_a_filter_on_a_trimmed_join(user, declared, read):
+def test_orm_cached_accepts_a_filter_on_a_trimmed_join(user, declared, read):
     permission = Permission.objects.first()
     Test.objects.create(name="owned", owner=user)
     user.user_permissions.add(permission)
     calls = []
 
-    @cached_data(*declared)
+    @orm_cached(*declared)
     def pks(user_pk):
         calls.append(user_pk)
         return tuple(read(User(pk=user_pk)).values_list("pk", flat=True))
@@ -634,10 +634,10 @@ def test_cached_data_accepts_a_filter_on_a_trimmed_join(user, declared, read):
 
 @pytest.mark.filterwarnings("error::django_cachex.orm.exceptions.UndeclaredTableWarning")
 @override_orm_settings(UNCACHABLE_TABLES=("auth_user",))
-def test_cached_data_accepts_a_trimmed_join_to_an_uncachable_table(user):
+def test_orm_cached_accepts_a_trimmed_join_to_an_uncachable_table(user):
     Test.objects.create(name="owned", owner=user)
 
-    @cached_data(Test)
+    @orm_cached(Test)
     def owned(user_pk):
         return tuple(Test.objects.filter(owner__id=user_pk).values_list("name", flat=True))
 
@@ -650,11 +650,11 @@ def test_cached_data_accepts_a_trimmed_join_to_an_uncachable_table(user):
 
 @pytest.mark.filterwarnings("error::django_cachex.orm.exceptions.UndeclaredTableWarning")
 @pytest.mark.parametrize("declared", [User, Test])
-def test_cached_data_reports_a_nested_function_to_the_outer_one(declared):
+def test_orm_cached_reports_a_nested_function_to_the_outer_one(declared):
     usernames = cached_usernames(declared)
     calls = []
 
-    @cached_data(Test)
+    @orm_cached(Test)
     def report():
         calls.append(1)
         return (Test.objects.count(), usernames())
@@ -666,7 +666,7 @@ def test_cached_data_reports_a_nested_function_to_the_outer_one(declared):
 
 
 @pytest.mark.parametrize("name", ["ormtest.Missing", "ormtest_missing"])
-def test_cached_data_rejects_an_unknown_table(name):
+def test_orm_cached_rejects_an_unknown_table(name):
     names = cached_names(name)
     with pytest.raises(LookupError, match=name):
         names()
@@ -681,24 +681,24 @@ def test_cached_data_rejects_an_unknown_table(name):
         pytest.param((Test,), {"version": True}, id="bool version"),
     ],
 )
-def test_cached_data_rejects_bad_arguments(args, options):
+def test_orm_cached_rejects_bad_arguments(args, options):
     with pytest.raises(TypeError):
-        cached_data(*args, **options)
+        orm_cached(*args, **options)
 
 
-def test_cached_data_rejects_an_async_function():
+def test_orm_cached_rejects_an_async_function():
     async def names():
         return ()
 
     with pytest.raises(TypeError, match="sync_to_async"):
-        cached_data(Test)(names)
+        orm_cached(Test)(names)
 
 
 @pytest.mark.skipif(
     not settings.CACHES[DEFAULT_CACHE_ALIAS].get("OPTIONS", {}).get("tracking"),
     reason="needs client tracking",
 )
-def test_cached_data_hit_reads_local_copies():
+def test_orm_cached_hit_reads_local_copies():
     names = cached_names(Test)
     names()
     names()

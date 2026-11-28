@@ -219,10 +219,10 @@ def sizes(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def cached_data(args: dict[str, Any]) -> dict[str, Any]:  # noqa: C901 (the ways it times are closures over the rows)
-    """Read the children of ``parents`` parents four ways, and time a single hit of a ``cached_data()`` function.
+def orm_cached(args: dict[str, Any]) -> dict[str, Any]:  # noqa: C901 (the ways it times are closures over the rows)
+    """Read the children of ``parents`` parents four ways, and time a single hit of an ``orm_cached()`` function.
 
-    The ways: a query per parent, ``prefetch_related()`` (which reads the parents too), a ``cached_data()``
+    The ways: a query per parent, ``prefetch_related()`` (which reads the parents too), an ``orm_cached()``
     function called per parent, and one returning a map from each parent to its children.
     """
     # Only the cachex contenders install the ORM cache app.
@@ -235,11 +235,11 @@ def cached_data(args: dict[str, Any]) -> dict[str, Any]:  # noqa: C901 (the ways
     parents = Parent.objects.bulk_create(Parent() for _ in range(args["parents"]))
     Child.objects.bulk_create(Child(parent=parent) for parent in parents for _ in range(2))
 
-    @api.cached_data(Child)
+    @api.orm_cached(Child)
     def child_ids(parent_id: int) -> tuple[int, ...]:
         return tuple(Child.objects.filter(parent_id=parent_id).order_by("pk").values_list("pk", flat=True))
 
-    @api.cached_data(Child)
+    @api.orm_cached(Child)
     def child_ids_by_parent() -> dict[int, tuple[int, ...]]:
         ids: dict[int, list[int]] = {}
         for parent_id, pk in Child.objects.order_by("pk").values_list("parent_id", "pk"):
@@ -322,7 +322,7 @@ ROLES: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "race_writer": race_writer,
     "latency": latency,
     "sizes": sizes,
-    "cached_data": cached_data,
+    "orm_cached": orm_cached,
     "mixed": mixed,
     "migrate_noop": migrate_noop,
 }

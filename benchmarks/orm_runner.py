@@ -262,11 +262,11 @@ def run_sizes(env: OrmEnv, contender: str, *, sizes: list[tuple[int, int]], warm
     return LatencyResult(contender, run_role(env, contender, "sizes", {"sizes": sizes, "warmup": warmup}))
 
 
-def run_cached_data(env: OrmEnv, contender: str, *, parents: int, ops: int, hit_ops: int, warmup: int) -> LatencyResult:
-    """Time reading the children of ``parents`` parents four ways, and a single hit of a ``cached_data()`` function."""
+def run_orm_cached(env: OrmEnv, contender: str, *, parents: int, ops: int, hit_ops: int, warmup: int) -> LatencyResult:
+    """Time reading the children of ``parents`` parents four ways, and a single hit of an ``orm_cached()`` function."""
     reset(env)
     args = {"parents": parents, "ops": ops, "hit_ops": hit_ops, "warmup": warmup}
-    return LatencyResult(contender, run_role(env, contender, "cached_data", args))
+    return LatencyResult(contender, run_role(env, contender, "orm_cached", args))
 
 
 @dataclass
@@ -419,7 +419,7 @@ def format_sizes(results: Iterable[LatencyResult]) -> str:
     return _render_table(headers, rows)
 
 
-def format_cached_data(results: Iterable[LatencyResult]) -> str:
+def format_orm_cached(results: Iterable[LatencyResult]) -> str:
     results = list(results)
     ways = [phase for phase in results[0].phases if phase != "hit"]
     headers = ["Contender", *(f"{way} ms" for way in ways), "hit µs"]
