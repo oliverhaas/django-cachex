@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Improvements
+
+- A `cached_data()` function that takes primary keys needed `frozenset(...)` at every call site, since a list raises `TypeError`. `@cached_data(..., sets=("ids",))` now turns the arguments of the named parameters into frozensets, so a caller can pass a list, a set or a generator, and every order of the same ids shares one result. See [cached_data()](../user-guide/orm-cache.md#cached_data).
+
+### Fixes
+
+- A frozenset argument of `cached_data()` was keyed by its `repr()`, whose order follows the hashes and the insertion order of its items. Equal frozensets could get separate results, and a frozenset of strings got its own results in each process. The key now sorts its items, so a result stored for a frozenset of two or more items can miss once after the upgrade.
+
 ## 0.16.0 (November 2026)
 
 ### Improvements

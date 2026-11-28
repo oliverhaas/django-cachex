@@ -415,6 +415,67 @@ def test_cached_data_stores_a_result_per_arguments():
     assert names.calls == [((1,), {}), ((2,), {}), ((1,), {"upper": True, "strip": False}), ((row,), {})]
 
 
+@pytest.mark.parametrize("extra", [(), (None,)], ids=["sortable", "unsortable"])
+@pytest.mark.parametrize(
+    "call",
+    [
+        pytest.param(lambda names, ids: names(ids), id="positional"),
+        pytest.param(lambda names, ids: names(ids=ids), id="keyword"),
+    ],
+)
+def test_cached_data_keys_a_frozenset_by_its_items(call, extra):
+    names = cached_names(Test)
+    ids, reordered = frozenset([1, 9, *extra]), frozenset([9, 1, *extra])
+    assert list(ids) != list(reordered)
+    call(names, ids)
+    call(names, reordered)
+    assert len(names.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        pytest.param(lambda names, ids: names(ids), id="positional"),
+        pytest.param(lambda names, ids: names(ids=ids), id="keyword"),
+    ],
+)
+def test_cached_data_takes_a_collection_for_a_parameter_in_sets(call):
+    calls = []
+
+    @cached_data(Test, sets=("ids",))
+    def names(ids):
+        calls.append(ids)
+        return tuple(Test.objects.filter(pk__in=ids).values_list("name", flat=True))
+
+    assert call(names, [1, 9, 9]) == call(names, (9, 1))
+    assert calls == [frozenset({1, 9})]
+
+
+def test_cached_data_rejects_a_string_for_a_parameter_in_sets():
+    @cached_data(Test, sets=("ids",))
+    def names(ids):
+        return ()
+
+    with pytest.raises(TypeError, match="collection"):
+        names("1, 2")
+
+
+@pytest.mark.parametrize(
+    ("sets", "match"),
+    [
+        pytest.param("ids", "string", id="a string"),
+        pytest.param(("missing",), "missing", id="unknown name"),
+        pytest.param(("args",), "args", id="star args"),
+    ],
+)
+def test_cached_data_rejects_bad_sets(sets, match):
+    def names(ids, *args):
+        return ()
+
+    with pytest.raises(TypeError, match=match):
+        cached_data(Test, sets=sets)(names)
+
+
 @pytest.mark.parametrize(
     "argument",
     [

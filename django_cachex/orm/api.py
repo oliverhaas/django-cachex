@@ -202,6 +202,31 @@ def _code_parts(value: Any) -> Iterator[bytes]:
         yield repr(value).encode()
 
 
+def _argument_repr(value: Any) -> str:
+    """The ``repr()`` of an argument, with the items of a frozenset sorted, so every process keys it alike."""
+    if value.__class__ is not frozenset or len(value) < 2:
+        return repr(value)
+    # A frozenset iterates in the order of the hashes and insertions of its items, which differ between processes.
+    try:
+        items = sorted(value)  # ty: ignore[invalid-argument-type]
+    except TypeError:
+        items = sorted(value, key=repr)
+    return f"frozenset({{{', '.join(map(repr, items))}}})"
+
+
+def _set_parameters(func: Callable[..., Any], name: str, sets: tuple[str, ...]) -> Iterator[tuple[str, int | None]]:
+    """Yield the name and, if it takes a positional argument, the position of each parameter that ``sets`` names."""
+    parameters = list(inspect.signature(func).parameters.values())
+    positions = {parameter.name: index for index, parameter in enumerate(parameters)}
+    for parameter_name in sets:
+        index = positions.get(parameter_name)
+        kind = None if index is None else parameters[index].kind
+        if kind is None or kind in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}:
+            msg = f"@cached_data() of {name}() names {parameter_name!r} in sets, which is not a named parameter."
+            raise TypeError(msg)
+        yield parameter_name, None if kind is inspect.Parameter.KEYWORD_ONLY else index
+
+
 def _code_hash(func: Callable[..., Any], version: int | str) -> str:
     """A digest of the code, defaults and closure of ``func`` and of ``version``, the same in every process."""
     func = inspect.unwrap(func)
@@ -234,11 +259,13 @@ class _CachedData:
         declared: tuple[Any, ...],
         db_alias: str,
         version: int | str,
+        sets: tuple[str, ...],
     ) -> None:
         self.func = func
         self.name = name
         self.declared = declared
         self.db_alias = db_alias
+        self.sets = tuple(_set_parameters(func, name, sets))
         self.lock = threading.Lock()
         self.state: _Declared | None = None
         module = getattr(func, "__module__", None)
@@ -293,8 +320,30 @@ class _CachedData:
             )
             raise TypeError(msg)
         # Keyword arguments by name, so a call gets one key in any order of them.
-        arguments = ", ".join([*map(repr, args), *(f"{name}={kwargs[name]!r}" for name in sorted(kwargs))])
+        arguments = ", ".join(
+            [*map(_argument_repr, args), *(f"{name}={_argument_repr(kwargs[name])}" for name in sorted(kwargs))],
+        )
         return f"{self.key_prefix}({arguments})"
+
+    def _as_set(self, parameter: str, value: Any) -> frozenset[Any]:
+        if isinstance(value, str | bytes):
+            # frozenset() would take the characters as the items.
+            msg = f"{self.name}() takes a collection for {parameter!r} in sets, not a {type(value).__name__}."
+            raise TypeError(msg)
+        return frozenset(value)
+
+    def as_sets(self, args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[Any, ...]:
+        """Return ``args`` with the arguments of the parameters in ``sets`` as frozensets; convert ``kwargs`` in place."""
+        if not self.sets:
+            return args
+        converted = list(args)
+        for parameter, position in self.sets:
+            if position is not None and position < len(converted):
+                converted[position] = self._as_set(parameter, converted[position])
+            elif parameter in kwargs:
+                # The wrapper's own dict, made for this call.
+                kwargs[parameter] = self._as_set(parameter, kwargs[parameter])
+        return tuple(converted)
 
     def call(self, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
         key = self._key(args, kwargs)
@@ -371,11 +420,16 @@ class _Decorator(Protocol):
     def __call__[**P, R](self, func: Callable[P, R]) -> Callable[P, R]: ...
 
 
-def cached_data(*tables_or_models: Any, db_alias: str = DEFAULT_DB_ALIAS, version: int | str = 0) -> _Decorator:
+def cached_data(
+    *tables_or_models: Any,
+    db_alias: str = DEFAULT_DB_ALIAS,
+    version: int | str = 0,
+    sets: Iterable[str] = (),
+) -> _Decorator:
     """Cache the results of the decorated function in the ORM cache until a write changes a declared table.
 
-    Results are keyed by the function's module, name, code and ``version``, and by its arguments, which no caller
-    can change. The function must compute its result from its arguments and the declared tables alone.
+    Results are keyed by the function's module, name, code, ``version`` and immutable arguments; ``sets`` names the
+    parameters whose arguments become frozensets. The result must depend only on the arguments and declared tables.
     """
     if not tables_or_models:
         msg = "cached_data() needs at least one table or model."
@@ -389,6 +443,10 @@ def cached_data(*tables_or_models: Any, db_alias: str = DEFAULT_DB_ALIAS, versio
     if isinstance(version, bool) or not isinstance(version, int | str):
         msg = f"cached_data() needs an int or str version, not {version!r}."
         raise TypeError(msg)
+    if isinstance(sets, str):
+        msg = f"cached_data() takes a tuple of parameter names as sets, not the string {sets!r}."
+        raise TypeError(msg)
+    sets = tuple(sets)
 
     def decorate(func: Callable[..., Any]) -> Callable[..., Any]:
         name = getattr(func, "__qualname__", repr(func))
@@ -396,11 +454,11 @@ def cached_data(*tables_or_models: Any, db_alias: str = DEFAULT_DB_ALIAS, versio
             msg = f"cached_data() cannot cache the results of async {name}(); call a sync function through "
             msg += "sync_to_async() instead."
             raise TypeError(msg)
-        cached = _CachedData(func, name, tables_or_models, db_alias, version)
+        cached = _CachedData(func, name, tables_or_models, db_alias, version, sets)
 
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            return cached.call(args, kwargs)
+            return cached.call(cached.as_sets(args, kwargs), kwargs)
 
         return wrapper
 

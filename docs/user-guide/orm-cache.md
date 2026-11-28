@@ -224,7 +224,7 @@ Called without a table or model, it raises `TypeError`.
 
 ### cached_data()
 
-`cached_data(*tables_or_models, db_alias="default", version=0)` stores the results of the decorated function in the ORM cache until a write changes one of the given tables. A result is stored as a query result is, with the generations of the declared tables, so every process shares it. A hit is one `MGET` of the generations and the result, as for a cached query. It runs no query and builds no model instance, and with [client tracking](client-tracking.md) it sends no command.
+`cached_data(*tables_or_models, db_alias="default", version=0, sets=())` stores the results of the decorated function in the ORM cache until a write changes one of the given tables. A result is stored as a query result is, with the generations of the declared tables, so every process shares it. A hit is one `MGET` of the generations and the result, as for a cached query. It runs no query and builds no model instance, and with [client tracking](client-tracking.md) it sends no command.
 
 Put the data that a page needs into a function that returns plain values, and look the values up in the loop instead of querying once per row:
 
@@ -256,10 +256,22 @@ def tag_names(category_id: int) -> tuple[str, ...]:
 - `tables_or_models`: models, `"app_label.ModelName"` strings or table names, as `table_generations()` takes them. At least one is required.
 - `db_alias`: the database that the function reads.
 - `version`: an int or a string in the key. Change it when the results change for a reason that the function's own code does not show, such as a change in a function that it calls.
+- `sets`: the names of parameters whose arguments the function gets as frozensets.
+
+Name a parameter in `sets` when it takes a collection whose order and duplicates do not matter, such as primary keys. Its argument becomes a frozenset before the key is built and the function runs, so a caller can pass a list, a set or a generator, and every order of the same items shares one result. A string raises `TypeError`, since its characters would become the items:
+
+```python
+@cached_data(Category, sets=("ids",))
+def category_names(ids: frozenset[int]) -> tuple[tuple[int, str], ...]:
+    return tuple(Category.objects.filter(pk__in=ids).order_by("pk").values_list("pk", "name"))
+
+
+category_names([child.category_id for child in children])
+```
 
 A result is stored under `orm:{<database alias>}:d:<module>.<qualified name>:<hash>:(<arguments>)`, for `TIMEOUT`. The hash covers the function's code and parameter names, its defaults, the values it closes over and `version`, so the results of changed code and those of the old code in a process that still runs it are kept apart. Functions that one factory makes with different closure values are kept apart too. A closure value whose `repr()` holds its address, such as another function, gives each process its own results.
 
-The key holds the `repr()` of each argument, with keyword arguments sorted by name. An argument must be a value that no caller can change, as client tracking [keeps them](client-tracking.md#decoded-values): a string, number, `Decimal`, date, `UUID`, enum member or `None`, or a tuple, frozenset, named tuple, frozen dataclass or, from Python 3.15, `frozendict` of such values. Any other argument, such as a list, dict or model instance, raises `TypeError`, so pass primary keys. Arguments with the same `repr()` share a result, so a frozen dataclass with `repr=False` must not be one. A frozenset of strings has a different `repr()` in each process, so each process gets its own results for it.
+The key holds the `repr()` of each argument, with keyword arguments sorted by name and the items of a frozenset sorted. An argument must be a value that no caller can change, as client tracking [keeps them](client-tracking.md#decoded-values): a string, number, `Decimal`, date, `UUID`, enum member or `None`, or a tuple, frozenset, named tuple, frozen dataclass or, from Python 3.15, `frozendict` of such values. Any other argument, such as a list, dict or model instance, raises `TypeError`, so pass primary keys. Arguments with the same `repr()` share a result, so a frozen dataclass with `repr=False` must not be one. A frozenset inside another argument, such as a tuple, keeps the order of its `repr()`, which can differ between processes, so each process can get its own results for it.
 
 A result can be anything that the cache's serializer stores. A result that no caller can change, of the kinds that an argument can be, is shared: with `LocMemCache` every hit returns the stored object, and with client tracking every hit from the third read of a copy on. Any other result, such as a `dict` or a `list`, is decoded for each hit, so a caller can change the result it gets without changing the stored one. A QuerySet raises `TypeError`, since it would read its tables after the decorator checked them. Return a tuple of its rows instead.
 
@@ -276,7 +288,7 @@ The function must compute its result from its arguments and the declared tables 
 - Without client tracking, each call takes one round trip to the cache server. With it, a result can be up to `max_staleness` behind a write in another process. A process sees its own writes after they return.
 - Writes that the ORM cache does not see (see [Limits](#limits)) do not invalidate stored results.
 
-`cached_data()` raises `TypeError` for a decorated `async def` function, which you call through `sync_to_async()` instead, for no tables and for a `version` that is not an int or a string. A call raises `TypeError` for an argument that a caller can change and for a QuerySet result, and the first call raises `LookupError` when a declared name is neither an installed model nor a table in `ADDITIONAL_TABLES`.
+`cached_data()` raises `TypeError` for a decorated `async def` function, which you call through `sync_to_async()` instead, for no tables for a `version` that is not an int or a string, and for a name in `sets` that is not a named parameter of the function. A call raises `TypeError` for an argument that a caller can change, for a string in a parameter of `sets` and for a QuerySet result, and the first call raises `LookupError` when a declared name is neither an installed model nor a table in `ADDITIONAL_TABLES`.
 
 ### Management command
 
