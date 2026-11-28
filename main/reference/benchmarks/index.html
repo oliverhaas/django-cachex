@@ -1128,10 +1128,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#cached_data" class="md-nav__link">
+  <a href="#orm_cached" class="md-nav__link">
     <span class="md-ellipsis">
       
-        cached_data()
+        orm_cached()
       
     </span>
   </a>
@@ -1391,10 +1391,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#cached_data" class="md-nav__link">
+  <a href="#orm_cached" class="md-nav__link">
     <span class="md-ellipsis">
       
-        cached_data()
+        orm_cached()
       
     </span>
   </a>
@@ -2311,23 +2311,23 @@ the query alone.</p>
 <li>A <code>migrate</code> with nothing to apply emptied cachalot's cache of 100 queries
   and left the ORM cache's intact.</li>
 </ul>
-<h3 id="cached_data">cached_data()<a class="headerlink" href="#cached_data" title="Permanent link">&para;</a></h3>
+<h3 id="orm_cached">orm_cached()<a class="headerlink" href="#orm_cached" title="Permanent link">&para;</a></h3>
 <p>Milliseconds to read the children of 100 parents, 2 each, as the median of
 200 runs, with Django 6.1.3. A loop runs a query per parent,
 <code>prefetch_related()</code> reads the parents and their children in two queries, and
-a <a href="../../user-guide/orm-cache/#cached_data"><code>cached_data()</code></a> function returns
+an <a href="../../user-guide/orm-cache/#orm_cached"><code>orm_cached()</code></a> function returns
 the ids of one parent's children, or a map of every parent's. The last column
 is the median of 2,000 single hits, in µs. Only the ORM cache has
-<code>cached_data()</code>.</p>
+<code>orm_cached()</code>.</p>
 <table>
 <thead>
 <tr>
 <th>Contender</th>
 <th style="text-align: right;">Query per parent</th>
 <th style="text-align: right;"><code>prefetch_related()</code></th>
-<th style="text-align: right;"><code>cached_data()</code> per parent</th>
-<th style="text-align: right;"><code>cached_data()</code> map</th>
-<th style="text-align: right;"><code>cached_data()</code> hit (µs)</th>
+<th style="text-align: right;"><code>orm_cached()</code> per parent</th>
+<th style="text-align: right;"><code>orm_cached()</code> map</th>
+<th style="text-align: right;"><code>orm_cached()</code> hit (µs)</th>
 </tr>
 </thead>
 <tbody>
@@ -2350,7 +2350,7 @@ is the median of 2,000 single hits, in µs. Only the ORM cache has
 </tbody>
 </table>
 <ul>
-<li>Without client tracking, each <code>cached_data()</code> call takes a round trip for
+<li>Without client tracking, each <code>orm_cached()</code> call takes a round trip for
   the generations and the result. A call per parent saves the work of
   building the query and the model instances but not the round trip, and a
   map takes one round trip for all parents.</li>
